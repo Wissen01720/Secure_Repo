@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secure-repo"
+version = "1.0.0"
+description = "Repository security auditor with a hacker-style CLI and a neural-map GUI: static analysis, secrets, library vulnerabilities, supply chain and optional compliance evidence."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Wissen01720" }]
+requires-python = ">=3.9"
+dependencies = [
+    "rich>=13.0",
+    "tomli>=1.1; python_version < '3.11'",
+]
+keywords = ["security", "sast", "secrets", "sbom", "vulnerability", "compliance", "audit", "git"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: Other/Proprietary License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+hardened = ["defusedxml>=0.7"]
+
+[project.scripts]
+secure-repo = "secure_repo.cli.main:main"
+securerepo = "secure_repo.cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["secure_repo*"]
+
+[tool.setuptools.package-data]
+"secure_repo.gui" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

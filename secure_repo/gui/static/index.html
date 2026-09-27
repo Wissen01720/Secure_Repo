@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<!-- SR:REPORT-CSP -->
+<title>Secure Repo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4 8 13v17c0 15 10 26 24 30 14-4 24-15 24-30V13z' fill='%23051a12' stroke='%2300ff9c' stroke-width='4'/%3E%3Ccircle cx='32' cy='30' r='7' fill='%2300e5ff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#00ff9c"/><stop offset=".6" stop-color="#00e5ff"/><stop offset="1" stop-color="#9d7bff"/></linearGradient></defs>
+      <path d="M32 4 8 13v17c0 15 10 26 24 30 14-4 24-15 24-30V13z" fill="rgba(0,255,156,.06)" stroke="url(#lg)" stroke-width="3"/>
+      <circle cx="22" cy="26" r="3.5" fill="#00ff9c"/><circle cx="42" cy="26" r="3.5" fill="#00e5ff"/><circle cx="32" cy="40" r="4" fill="#ff2e97"/>
+      <path d="M22 26 32 40 42 26M22 26h20" stroke="url(#lg)" stroke-width="1.6" fill="none" opacity=".8"/>
+    </svg>
+    <span class="brand-name"><b>SECURE</b><i>//</i>REPO</span>
+    <span class="brand-ver" id="brand-ver">v1.0.0</span>
+  </div>
+  <nav class="top-actions">
+    <span class="pill" id="conn-status"><span class="dot"></span><span id="conn-text">initializing</span></span>
+    <label class="btn small ghost" id="load-label" title="Open a previously generated report.json">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3M12 4v12M7 9l5-5 5 5"/></svg>
+      Load report<input type="file" id="file-load" accept=".json,application/json" hidden>
+    </label>
+    <button class="btn small primary" id="btn-new" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New scan
+    </button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============================================================ BOOT -->
+  <section class="view active" id="view-boot">
+    <div class="boot-term" id="boot-term"></div>
+  </section>
+
+  <!-- ============================================================ SETUP -->
+  <section class="view" id="view-setup">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">// repository security auditor</div>
+        <h1>Audit every line.<br><span class="grad">See every weakness.</span></h1>
+        <p class="lead">Static analysis, secret detection, library vulnerability intelligence and optional compliance evidence &mdash; rendered as a living neural map of your repository.</p>
+        <div class="hero-stats">
+          <div class="stat"><b id="stat-rules">-</b><span>detection rules</span></div>
+          <div class="stat"><b>12+</b><span>ecosystems</span></div>
+          <div class="stat"><b id="stat-fw">-</b><span>compliance frameworks</span></div>
+          <div class="stat"><b>0</b><span>bytes of code sent</span></div>
+        </div>
+      </div>
+      <div class="hero-art"><canvas id="hero-canvas"></canvas></div>
+    </div>
+
+    <div class="steps">
+      <div class="card step" id="step-target">
+        <div class="step-head"><span class="step-num">01</span><h2>Select target</h2></div>
+        <div class="target-grid">
+          <button class="target-card" type="button" data-kind="current">
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg></span>
+            <span><b>This repository</b><small id="current-sub">detecting...</small></span>
+          </button>
+          <button class="target-card" type="button" data-kind="remote">
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+            <span><b>Remote Git URL</b><small>https:// or ssh (git@host:owner/repo)</small></span>
+          </button>
+          <button class="target-card" type="button" data-kind="local">
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+            <span><b>Local folder</b><small>any path on this machine</small></span>
+          </button>
+        </div>
+        <div class="target-input" id="input-remote" hidden>
+          <input type="text" class="mono" id="in-url" placeholder="https://github.com/owner/repository.git" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="target-input" id="input-local" hidden>
+          <input type="text" class="mono" id="in-path" placeholder="/path/to/repository" spellcheck="false" autocomplete="off">
+        </div>
+        <button class="btn primary" id="btn-discover" type="button" disabled style="width:100%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          Discover branches
+        </button>
+      </div>
+
+      <div class="card step locked" id="step-branch">
+        <div class="step-head"><span class="step-num">02</span><h2>Choose branch</h2></div>
+        <input type="search" id="branch-filter" placeholder="Filter branches..." hidden>
+        <div class="branch-list" id="branch-list">
+          <div class="empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg>
+            Select a target and discover its branches.
+          </div>
+        </div>
+      </div>
+
+      <div class="card step locked" id="step-options">
+        <div class="step-head"><span class="step-num">03</span><h2>Engagement options</h2></div>
+        <div class="opts">
+          <label class="toggle"><input type="checkbox" id="opt-online" checked><span class="slider"></span>
+            <span><b>Online vulnerability intelligence</b><small>OSV.dev + deps.dev. Only library names &amp; versions leave this machine.</small></span></label>
+          <label class="toggle"><input type="checkbox" id="opt-compliance"><span class="slider"></span>
+            <span><b>Compliance audit (optional)</b><small>Map evidence to OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIST SSDF.</small></span></label>
+          <div class="fw-box" id="fw-box" hidden>
+            <p>Frameworks to evaluate &mdash; evidence helps you comply; it is not a certification.</p>
+            <div class="chips" id="fw-chips"></div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-tests" checked><span class="slider"></span>
+            <span><b>Include test files</b><small>Findings in tests are flagged and weigh 50% in the score.</small></span></label>
+          <div class="two">
+            <div class="field"><label for="opt-size">Max file size</label>
+              <select id="opt-size"><option value="512">512 KB</option><option value="2048" selected>2 MB</option><option value="8192">8 MB</option><option value="32768">32 MB</option></select></div>
+            <div class="field"><label for="opt-auditor">Auditor (audit trail)</label>
+              <input type="text" id="opt-auditor" placeholder="name / organisation" maxlength="120"></div>
+          </div>
+          <label class="consent"><input type="checkbox" id="opt-authorized">
+            <span><b>I am authorized to audit this repository.</b> Secure Repo is read-only: it never executes target code, never exploits findings and redacts secrets in every report.</span></label>
+          <button class="btn launch" id="btn-launch" type="button" disabled>&#9654; INITIATE SCAN</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ SCAN -->
+  <section class="view" id="view-scan">
+    <div class="card scan-header">
+      <div>
+        <div class="eyebrow">// live operation</div>
+        <h2 id="scan-title">Scanning</h2>
+        <div class="mono muted" id="scan-sub"></div>
+      </div>
+      <div class="scan-metrics">
+        <div class="metric"><b id="m-elapsed">00:00</b><span>elapsed</span></div>
+        <div class="metric"><b id="m-files">0</b><span>files</span></div>
+        <div class="metric"><b id="m-findings">0</b><span>findings</span></div>
+        <div class="metric"><b id="m-pct">0%</b><span>progress</span></div>
+      </div>
+      <button class="btn danger ghost" id="btn-cancel" type="button">Abort</button>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="scan-progress"></div></div>
+    <div class="scan-grid">
+      <div class="card pipeline">
+        <h3>Attack surface pipeline</h3>
+        <ol class="stage-list" id="stage-list"></ol>
+        <div class="sev-counters" id="live-counters"></div>
+        <div id="scan-failed" class="scan-failed" hidden></div>
+      </div>
+      <div class="card live-map">
+        <div class="card-head"><h3>Live structure map</h3><span class="mono muted" id="live-current" style="font-size:11px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></div>
+        <div class="boxmap live" id="live-boxmap"></div>
+      </div>
+      <div class="card terminal">
+        <div class="term-head"><span class="dots"><i></i><i></i><i></i></span>root@secure-repo:~# tail -f activity.log</div>
+        <div class="term-body" id="log"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ RESULTS -->
+  <section class="view" id="view-results">
+    <div class="report-banner" id="report-banner">Offline report &middot; generated by Secure Repo &middot; secrets are redacted</div>
+    <div class="card results-head">
+      <div class="score-ring" id="score-ring">
+        <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52" fill="none" stroke-width="10"/>
+          <circle class="val" id="score-arc" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg>
+        <div class="score-center"><div><b id="score-num">0</b><small>SECURITY SCORE</small></div></div>
+        <div class="grade" id="score-grade">-</div>
+      </div>
+      <div class="res-meta">
+        <div class="eyebrow">// mission report</div>
+        <h2 id="res-name">repository</h2>
+        <div class="meta-chips" id="res-chips"></div>
+        <div class="sev-cards" id="sev-cards"></div>
+      </div>
+      <div class="res-actions" id="res-actions"></div>
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="overview" type="button">Overview</button>
+      <button class="tab" data-tab="neural" type="button">Neural map</button>
+      <button class="tab" data-tab="structure" type="button">Structure</button>
+      <button class="tab" data-tab="findings" type="button">Findings <span class="n" id="n-findings">0</span></button>
+      <button class="tab" data-tab="deps" type="button">Libraries <span class="n" id="n-deps">0</span></button>
+      <button class="tab" data-tab="compliance" type="button">Compliance</button>
+      <button class="tab" data-tab="export" type="button">Export</button>
+    </nav>
+
+    <div class="tab-panel active" id="tab-overview"></div>
+
+    <div class="tab-panel" id="tab-neural">
+      <div class="neural-toolbar">
+        <div class="seg" id="nm-layout"><button class="on" data-layout="neural" type="button">Neural layers</button><button data-layout="organic" type="button">Organic</button></div>
+        <div class="chips" id="nm-sev"></div>
+        <input type="search" id="nm-search" placeholder="Highlight file, weakness, CWE..." style="max-width:260px">
+        <button class="btn small" id="nm-fit" type="button">Fit</button>
+        <button class="btn small" id="nm-pulse" type="button">Pulses: on</button>
+      </div>
+      <div class="neural-wrap">
+        <canvas id="neural-canvas"></canvas>
+        <div class="neural-empty" id="neural-empty" hidden>No findings to map &mdash; nothing insecure detected.</div>
+        <div class="neural-legend" id="nm-legend"></div>
+        <div class="neural-hint">click a node for the explanation &middot; scroll to zoom &middot; drag to pan &middot; double-click to fit</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-structure">
+      <div class="card">
+        <div class="bm-toolbar">
+          <div class="crumbs" id="crumbs"></div>
+          <div class="seg" id="bm-metric"><button class="on" data-metric="size" type="button">Size</button><button data-metric="lines" type="button">Lines</button></div>
+          <div class="legend" id="bm-legend"></div>
+        </div>
+        <div class="boxmap big" id="res-boxmap"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-findings">
+      <div class="filters">
+        <div class="chips" id="f-sev"></div>
+        <select id="f-cat"><option value="">All categories</option></select>
+        <input type="search" id="f-q" placeholder="Search title, file, rule, CWE...">
+        <label class="chip" id="f-tests-chip"><input type="checkbox" id="f-tests" hidden>Hide test code</label>
+      </div>
+      <div id="findings-list"></div>
+      <div class="show-more"><button class="btn" id="f-more" type="button" hidden>Show more</button></div>
+    </div>
+
+    <div class="tab-panel" id="tab-deps">
+      <div class="eco-cards" id="eco-cards"></div>
+      <div class="filters">
+        <input type="search" id="d-q" placeholder="Search library...">
+        <select id="d-eco"><option value="">All ecosystems</option></select>
+        <label class="chip" id="d-vuln-chip"><input type="checkbox" id="d-vuln" hidden>Vulnerable / risky only</label>
+        <label class="chip" id="d-direct-chip"><input type="checkbox" id="d-direct" hidden>Direct only</label>
+      </div>
+      <div class="table-wrap"><table class="data" id="deps-table"></table></div>
+      <div class="show-more"><button class="btn" id="d-more" type="button" hidden>Show more</button></div>
+    </div>
+
+    <div class="tab-panel" id="tab-compliance"></div>
+    <div class="tab-panel" id="tab-export"></div>
+    <div class="footer" id="footer"></div>
+  </section>
+</main>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head"><span class="eyebrow" id="drawer-kicker">// details</span><button class="close-x" id="drawer-close" type="button" aria-label="Close">&times;</button></div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+<div class="tooltip" id="tooltip"></div>
+<div class="toast-wrap" id="toasts"></div>
+
+<!-- SR:REPORT-DATA -->
+<script src="/static/core.js"></script>
+<script src="/static/neural.js"></script>
+<script src="/static/boxmap.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

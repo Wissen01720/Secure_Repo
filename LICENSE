@@ -1,0 +1,88 @@
+SECURE REPO ETHICAL SOURCE-AVAILABLE LICENSE
+Version 1.0
+
+Copyright (c) 2026 Wissen01720. All rights reserved.
+
+Secure Repo (the "Software") is the exclusive intellectual property of Wissen01720 (the "Author").
+This is NOT an open-source license. The Software is made available to the public under the terms
+below. By downloading, installing, copying, running or otherwise using the Software you ("You")
+accept these terms. If You do not accept them, You may not use the Software.
+
+1. OWNERSHIP
+
+   1.1 The Author is and remains the sole owner and the only author of the Software, including its
+       source code, detection rules, documentation, visual design and every derivative of them.
+   1.2 No ownership, authorship or other right is transferred to You except the limited license
+       expressly granted in Section 2. All rights not expressly granted are reserved by the Author.
+
+2. LICENSE GRANT
+
+   Subject to full and continuous compliance with this license, the Author grants You a worldwide,
+   royalty-free, non-exclusive, non-transferable, non-sublicensable and revocable license to:
+
+   a) download, install and run the Software on devices You control;
+   b) read and study the source code, and modify it for Your own private or internal use;
+   c) use the reports produced by the Software for any lawful purpose, including internal
+      security reviews, remediation work and compliance evidence, also within a company;
+   d) share an unmodified copy of the Software, provided that this LICENSE file, the copyright
+      notice and the attribution to the Author are kept intact and no fee is charged for it.
+
+3. LAWFUL AND AUTHORIZED USE ONLY
+
+   You may use the Software only against repositories, source code and systems that You own or
+   that You are explicitly authorized, in writing, to assess. You are solely responsible for
+   complying with every law, regulation, contract and policy that applies to Your use, including
+   computer misuse, privacy, data protection and intellectual property laws.
+
+4. PROHIBITED USES
+
+   You must NOT, directly or indirectly, and must not allow anyone else to:
+
+   a) use the Software to access, clone, scan or analyze any repository, code or system without
+      the permission of its owner;
+   b) steal, extract, collect, store, publish, sell or otherwise misuse secrets, credentials,
+      keys, tokens, personal data, trade secrets or any other information discovered with the
+      Software, beyond what is strictly necessary to report and fix it for its rightful owner;
+   c) use the Software or its results to exploit vulnerabilities, gain unauthorized access,
+      develop or distribute malware, commit fraud, extortion, espionage or any other unlawful act;
+   d) use the Software to monitor, profile, harass or harm any individual;
+   e) remove, hide or alter the copyright notice, this license, the authorship attribution or the
+      ethical-use safeguards built into the Software (such as secret redaction and the
+      authorization confirmation);
+   f) claim authorship of the Software, present it as Your own work, or register any right over it;
+   g) sell, rent, lease, sublicense, or offer the Software or a modified version of it as a paid
+      product or as a hosted/online service, without the Author's prior written permission;
+   h) publicly distribute modified versions of the Software without the Author's prior written
+      permission.
+
+5. CONTRIBUTIONS
+
+   The Author has no obligation to accept, review or merge contributions of any kind. Any
+   material You voluntarily submit to the Author may be used, changed or discarded by the Author
+   without any obligation, attribution or compensation.
+
+6. TERMINATION
+
+   This license terminates automatically and immediately, without notice, if You breach any of its
+   terms. Upon termination You must stop using the Software and destroy every copy in Your
+   possession. Sections 1, 4, 7 and 8 survive termination.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+   NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY AND
+   NON-INFRINGEMENT. Automated security analysis can produce false positives and false negatives;
+   the absence of findings does not mean that the audited software is secure. Compliance results
+   are technical evidence only and are not a certification, attestation or legal advice.
+
+8. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE,
+   ITS RESULTS OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. You are solely responsible for how
+   You use the Software and for any consequence of that use.
+
+9. PERMISSIONS
+
+   Requests for permissions not granted by this license (commercial use as a product or service,
+   redistribution of modified versions, etc.) must be addressed to the Author, Wissen01720.

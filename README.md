@@ -1,0 +1,523 @@
+<div align="center">
+
+# SECURE//REPO
+
+**Repository security auditor with a hacker-style CLI and a neural-map GUI.**
+
+Static code analysis · secret detection · library & supply-chain intelligence · repository structure mapping ·
+optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIST SSDF)
+
+![Python](https://img.shields.io/badge/python-3.9%2B-00e5ff?style=flat-square)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
+![Rules](https://img.shields.io/badge/detection%20rules-163-ff2e97?style=flat-square)
+![License](https://img.shields.io/badge/license-Ethical%20Source--Available-9d7bff?style=flat-square)
+
+<img src="docs/images/cli-banner.svg" alt="Secure Repo CLI banner and boot sequence" width="900">
+
+</div>
+
+---
+
+## Table of contents
+
+1. [What Secure Repo does](#what-secure-repo-does)
+2. [Rules of engagement](#rules-of-engagement)
+3. [Requirements](#requirements)
+4. [Installation (Windows, macOS, Linux)](#installation)
+5. [CLI field guide - step by step](#cli-field-guide)
+6. [CLI command reference](#cli-command-reference)
+7. [The report folder](#the-report-folder)
+8. [Graphical interface (GUI)](#graphical-interface-gui)
+9. [What is analyzed](#what-is-analyzed)
+10. [Compliance audit](#compliance-audit)
+11. [Privacy & data handling](#privacy--data-handling)
+12. [Suppressing findings](#suppressing-findings)
+13. [Troubleshooting](#troubleshooting)
+14. [Project layout](#project-layout)
+15. [License](#license)
+
+---
+
+## What Secure Repo does
+
+| Capability | Details |
+|---|---|
+| **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
+| **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
+| **Static analysis** | 163 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
+| **Every library** | Parses 25+ manifest and lock formats across PyPI, npm/yarn/pnpm, Go, crates.io, RubyGems, Packagist, Maven/Gradle, NuGet and Pub. Every library is inventoried and checked against **OSV.dev** (CVE/GHSA/malware advisories) and **deps.dev** (license, latest version), plus built-in lists of compromised and deprecated packages. |
+| **Structure map** | Repository structure rendered as **boxes** - live in the terminal while scanning, as an interactive treemap in the GUI. |
+| **Neural map (GUI)** | Insecure points shown as a connected neural network: *files → weaknesses → OWASP categories → severity*. Click any node for a plain-English explanation of **why it is insecure** and **how to fix it**. |
+| **Live process view** | Every stage, file and finding is streamed as it happens (terminal dashboard / GUI pipeline + log). |
+| **Organized evidence** | Each CLI run creates a timestamped folder with HTML, JSON, SARIF, Markdown, CSV, CycloneDX SBOM, compliance evidence, logs and a SHA-256 integrity manifest. |
+| **Optional compliance audit** | Toggle it on/off in the CLI or GUI. Maps technical evidence to 7 frameworks to help you **meet** your obligations. |
+| **Cross-platform** | Pure Python + Git. Windows, macOS and every mainstream Linux distribution. |
+
+---
+
+## Rules of engagement
+
+> **Only audit repositories you own or have explicit, written permission to assess.**
+
+Secure Repo is built for defenders and it enforces that posture:
+
+- It **never executes** the audited code, never installs its dependencies and never exploits a finding.
+- It asks you to **confirm your authorization** before every engagement (`--yes` confirms it in automation).
+- Detected secrets are **redacted** in the terminal, the GUI and every report.
+- Git runs hardened: hooks disabled, `ext::` transport blocked, shallow clones, LFS downloads skipped.
+
+Using the tool to steal information or for any malicious purpose is forbidden by the [license](LICENSE).
+
+---
+
+## Requirements
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | 3.9 or newer | <https://www.python.org/downloads/> (on Windows tick *"Add python.exe to PATH"*) |
+| Git | 2.20 or newer | <https://git-scm.com/downloads> - needed for branches and remote repositories |
+| Internet | optional | Only for vulnerability intelligence. Everything else works with `--offline`. |
+| Browser | any modern one | Only for the GUI and the HTML report |
+
+Python dependencies: [`rich`](https://github.com/Textualize/rich) (and `tomli` on Python < 3.11). Nothing else.
+
+---
+
+## Installation
+
+### Option A - one-step launchers (recommended)
+
+The launchers create a private virtual environment next to the project on the first run, install Secure Repo in
+it and forward every argument you pass.
+
+**Windows (PowerShell or CMD)**
+
+```powershell
+git clone https://github.com/Wissen01720/Secure_Repo.git
+cd Secure_Repo
+.\run.bat
+```
+
+**macOS / Linux**
+
+```bash
+git clone https://github.com/Wissen01720/Secure_Repo.git
+cd Secure_Repo
+chmod +x run.sh
+./run.sh
+```
+
+To audit **another** repository with the launcher, run it from inside that repository:
+
+```bash
+cd ~/projects/my-api
+~/tools/Secure_Repo/run.sh            # macOS / Linux
+C:\tools\Secure_Repo\run.bat          # Windows
+```
+
+### Option B - install the `secure-repo` command
+
+```bash
+git clone https://github.com/Wissen01720/Secure_Repo.git
+cd Secure_Repo
+python -m pip install .          # use "py -m pip install ." on Windows if "python" is not on PATH
+secure-repo --version
+```
+
+Tip: `pipx install .` installs it in an isolated environment and makes `secure-repo` available everywhere.
+
+### Option C - run from source
+
+```bash
+python -m pip install -r requirements.txt
+python -m secure_repo
+```
+
+---
+
+## CLI field guide
+
+The CLI is the heart of Secure Repo. This section walks you through a full engagement.
+
+### Step 1 - Launch the console
+
+Open a terminal (Windows Terminal, PowerShell, macOS Terminal, iTerm2, GNOME Terminal, ...) and run:
+
+```bash
+secure-repo
+```
+
+You will see the banner, an ASCII figure and the **boot sequence**, which checks the engine, the detection
+signatures, Git, the vulnerability intelligence mode, your platform and whether the current directory is a Git
+repository.
+
+> Tip: `secure-repo --no-anim` skips the animations. They are disabled automatically when the output is not a
+> terminal or when the `CI` environment variable is set.
+
+### Step 2 - Choose what to audit in the main console
+
+```
+──────────────────────────── ⟦ MAIN CONSOLE ⟧ ────────────────────────────
+  [1]  Audit THIS repository  →  /home/you/projects/my-api  @ main
+  [2]  Audit a REMOTE repository by Git URL (https / ssh)
+  [3]  Audit a LOCAL repository or folder by path
+  [4]  Launch the GRAPHICAL interface (GUI)
+  [5]  Settings  [compliance: OFF · intel: ON · output: secure-repo-reports]
+  [6]  List detection rules (163)
+  [7]  Usage guide
+  [0]  Exit
+
+[?] root@secure-repo:~# (1):
+```
+
+| Option | When to use it |
+|---|---|
+| **1** | You launched Secure Repo inside a repository. It was detected automatically. |
+| **2** | Audit a repository you have not cloned: paste `https://github.com/owner/repo.git` or `git@github.com:owner/repo.git`. |
+| **3** | Audit another folder on disk (Git or not). |
+| **4** | Open the GUI in your browser. |
+| **5** | Enable the compliance audit, offline mode, test-file handling, max file size, output folder, exclusions, auditor name and animations. |
+
+### Step 3 - Confirm your authorization
+
+Before the first scan of a target, Secure Repo shows the **rules of engagement** and asks:
+
+```
+[?] I confirm I am authorized to audit <target> [y/n] (n):
+```
+
+Answer `y` only if you own the repository or have written permission.
+
+### Step 4 - Branch recon: pick a branch
+
+Secure Repo enumerates the branches and prints them. For remote URLs it uses `git ls-remote` (nothing is
+downloaded yet); for local repositories it lists local and remote-tracking branches.
+
+<img src="docs/images/cli-menu-branches.svg" alt="Main console and branch recon" width="900">
+
+- Press **Enter** to accept the highlighted default (the branch you are on, or the remote default branch).
+- Or type the **number** or the **name** of a branch.
+- Local repository, current branch → the working tree is scanned (uncommitted changes included).
+- Local repository, another branch → the branch is exported with `git archive` to a temporary folder.
+- Remote repository → a shallow clone (`--depth 1`) of that single branch is made in a temporary folder and
+  deleted afterwards.
+- A folder that is not a Git repository is scanned as-is.
+
+### Step 5 - Optional compliance audit
+
+```
+[?] Run the optional compliance audit as well? [y/n] (n):
+```
+
+Answer `y` and choose the frameworks (numbers separated by commas, or `all`). You can also turn it on
+permanently for the session in **Settings**.
+
+### Step 6 - Watch the live operation
+
+While the scan runs, the terminal shows a live dashboard:
+
+<img src="docs/images/cli-live-dashboard.svg" alt="Live operation dashboard" width="900">
+
+| Panel | What it tells you |
+|---|---|
+| **LIVE OPERATION** | Target, branch, elapsed time and the file being analyzed right now. |
+| **ATTACK SURFACE PIPELINE** | The 9 stages: acquire source → map structure → code/secret/config analysis → libraries → vulnerability intelligence → hygiene → compliance → scoring → reports. `[+]` done, spinner = running, `[-]` skipped. |
+| **STRUCTURE MAP** | One box per top-level directory with its progress bar and the number of findings (`▲`). The border takes the color of the worst severity inside. |
+| **ACTIVITY FEED** | Every step and every critical/high/medium finding, as it happens. |
+| **Footer** | Live counters per severity and files processed. |
+
+Press `Ctrl+C` at any time to abort; temporary files are cleaned up.
+
+### Step 7 - Read the mission report
+
+When the scan ends you get the full picture:
+
+<img src="docs/images/cli-mission-report.svg" alt="Mission report" width="900">
+
+- **Security posture**: score 0-100, grade A-F and severity histogram.
+- **OWASP Top 10 (2021)** distribution.
+- **Top findings** with ID, severity, location and CWE.
+- **Libraries & supply chain**: vulnerable, compromised, deprecated or unpinned libraries with advisories and
+  the latest available version.
+- **Compliance audit** scores (when enabled).
+- **Repository structure map** as boxes, with the worst severity per directory.
+- **Evidence locker**: the tree of the report folder that was just created.
+
+### Step 8 - Post-scan actions
+
+```
+──────────────────────────── ⟦ POST-SCAN ACTIONS ⟧ ────────────────────────────
+  [1]  Browse findings & explanations
+  [2]  Repository structure (boxes + tree)
+  [3]  Full library inventory
+  [4]  Compliance details
+  [5]  Open interactive HTML report in the browser
+  [6]  Open the report folder
+  [7]  Explore these results in the GUI
+  [0]  Back to main menu
+```
+
+In **Browse findings** you can filter by severity (`critical`, `high`, ...), search by text, or type a finding
+ID such as `SR-0004` to read:
+
+- the evidence (secrets redacted),
+- **WHY IS THIS INSECURE?** - a plain-English explanation of the risk,
+- **HOW TO FIX** - the recommended remediation,
+- CWE and OWASP references, and for libraries the advisories with the fixed versions.
+
+### Step 9 - Non-interactive mode (scripts & CI/CD)
+
+Everything in the menus is also available as flags:
+
+```bash
+# audit the repository in the current directory (asks for the branch if the terminal is interactive)
+secure-repo scan
+
+# audit a remote repository, a specific branch, with the compliance audit for two frameworks
+secure-repo scan https://github.com/owner/repo.git -b develop --compliance pci-dss,gdpr
+
+# CI pipeline: no prompts, no network, fail the job on high or critical findings
+secure-repo scan . --yes --offline --plain --no-menu --fail-on high
+```
+
+Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/above `--fail-on` · `130` aborted.
+
+---
+
+## CLI command reference
+
+| Command | Description |
+|---|---|
+| `secure-repo` | Interactive console (banner, boot sequence, menus). |
+| `secure-repo scan [TARGET]` | Audit a path, the current directory (default `.`) or a Git URL. |
+| `secure-repo branches [TARGET]` | Only list the branches of a local repository or a Git URL. |
+| `secure-repo gui` | Launch the graphical interface. |
+| `secure-repo rules [--search TEXT]` | List the detection rules (filter by id, language, CWE...). |
+| `secure-repo frameworks` | List the compliance frameworks. |
+| `secure-repo --version` | Show the version. |
+
+`scan` options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-b, --branch NAME` | picker / current | Branch to audit. Skips the interactive picker. |
+| `--compliance [LIST]` | off | Enable the compliance audit. Without a value: all frameworks. Values: `owasp`, `pci-dss`, `iso27001`, `soc2`, `gdpr`, `hipaa`, `nist-ssdf`. |
+| `--offline` | off | No network requests (no OSV.dev / deps.dev). |
+| `--no-enrich` | off | Skip license / latest-version lookups but keep vulnerability lookups. |
+| `-o, --output DIR` | `secure-repo-reports` | Where report folders are created. |
+| `-y, --yes` | off | Confirm you are authorized to audit the target (required when not interactive). |
+| `--no-tests` | off | Do not analyze files that look like tests or fixtures. |
+| `--max-file-size KB` | `2048` | Skip larger files. |
+| `--exclude GLOB` | - | Exclude paths (repeatable), e.g. `--exclude "legacy/*"`. |
+| `--auditor NAME` | - | Name recorded in the audit trail of the reports. |
+| `--fail-on SEVERITY` | - | Exit with code 3 when findings of this severity or worse exist. |
+| `--plain` | off | Line-by-line output instead of the live dashboard. |
+| `--no-anim` | off | Disable animations. |
+| `--no-menu` | off | Do not show the post-scan menu. |
+| `--open` | off | Open the HTML report when finished. |
+
+`gui` options: `--port N` (default: random free port), `--no-browser`, `-o/--output DIR`, `--offline`.
+
+---
+
+## The report folder
+
+Every scan creates an organized, timestamped folder:
+
+```
+secure-repo-reports/
+├── .gitignore                       ← "*": reports can never be committed by accident
+└── my-api_main_20260926-213000/
+    ├── README.txt                   ← index of the folder
+    ├── report.html                  ← interactive report (neural map, boxes, explanations) - works offline
+    ├── report.json                  ← complete machine-readable results
+    ├── report.sarif                 ← SARIF 2.1.0 (GitHub code scanning, Azure DevOps, IDEs)
+    ├── summary.md                   ← executive summary
+    ├── findings/
+    │   ├── critical.md  high.md  medium.md  low.md  info.md
+    │   ├── by-category/<category>.md
+    │   └── findings.csv
+    ├── dependencies/
+    │   ├── inventory.csv            ← every library, direct and transitive
+    │   ├── inventory.json
+    │   ├── vulnerabilities.md       ← advisories, CVSS, fixed versions
+    │   └── sbom.cdx.json            ← CycloneDX 1.5 SBOM
+    ├── structure/
+    │   ├── tree.txt                 ← repository tree annotated with findings
+    │   ├── structure.json
+    │   └── languages.md
+    ├── compliance/                  ← only when the compliance audit is enabled
+    │   ├── compliance.json
+    │   └── <framework>.md
+    ├── logs/scan.log                ← chronological log of every step
+    └── MANIFEST.sha256              ← SHA-256 of every file (integrity / chain of custody)
+```
+
+Treat these folders as **confidential**: they describe weaknesses of the audited software.
+
+---
+
+## Graphical interface (GUI)
+
+```bash
+secure-repo gui
+```
+
+The GUI is a local web application. Secure Repo starts a server on `127.0.0.1`, prints the URL and opens your
+browser. Close it with `Ctrl+C` in the terminal.
+
+1. **Select target** - *This repository* (auto-detected), *Remote Git URL* or *Local folder*.
+2. **Discover branches** - the same branch recon as the CLI; pick one from the list.
+3. **Engagement options** - online intelligence, optional compliance audit (choose frameworks), test files, max
+   file size, auditor name, and the authorization confirmation.
+4. **Initiate scan** - watch the pipeline, the live log and the **live structure map**: boxes light up as files are
+   analyzed and turn orange/red when findings appear.
+5. **Results** - overview, neural map, structure boxes, findings, libraries, compliance and export.
+
+| | |
+|---|---|
+| <img src="docs/images/gui-overview.png" alt="Overview" width="440"> | <img src="docs/images/gui-neural-map.png" alt="Neural map" width="440"> |
+| **Overview** - score, severity distribution, OWASP Top 10, hygiene, most exposed files and top weaknesses. | **Neural map** - files → weaknesses → OWASP categories → severity, with animated signal pulses. |
+| <img src="docs/images/gui-neural-highlight.png" alt="Highlighted activation path" width="440"> | <img src="docs/images/gui-explanation.png" alt="Explanation drawer" width="440"> |
+| **Activation paths** - search or click a node to light up everything connected to it. | **Explanations** - why it is insecure, how to fix it, evidence and references. |
+| <img src="docs/images/gui-structure-boxes.png" alt="Structure boxes" width="440"> | <img src="docs/images/gui-compliance.png" alt="Compliance" width="440"> |
+| **Structure** - nested boxes sized by bytes or lines and colored by risk. Click a folder to zoom in. | **Compliance** - per-framework score and every control with its evidence. |
+
+Neural map controls: click a node for its explanation · scroll to zoom · drag to pan · double-click to fit ·
+switch between *Neural layers* and *Organic* (force-directed) layouts · filter by severity · toggle pulses.
+
+**Downloads**: HTML report, full evidence ZIP, JSON, SARIF, Markdown summary, CycloneDX SBOM and CSV files, plus
+*Print / Save as PDF*. You can also re-open any `report.json` with **Load report**.
+
+**GUI security model**: listens on `127.0.0.1` only · random per-session token (sent in the URL fragment, never
+logged) · `Host` header validation against DNS rebinding · strict Content-Security-Policy with zero third-party
+resources · the downloadable HTML report blocks all network access.
+
+---
+
+## What is analyzed
+
+**Languages & technologies**: Python, JavaScript, TypeScript, Vue, Svelte, HTML templates (Jinja, EJS,
+Handlebars, Razor, Thymeleaf, Twig), Java, Kotlin, Scala, Groovy, C#, PHP, Go, Ruby, Rust, C, C++,
+Objective-C, Swift, Shell, PowerShell, Batch, Dockerfile, Docker Compose, Kubernetes, Terraform, CloudFormation,
+GitHub Actions, GitLab CI, Android manifests, iOS plists, `.env`/INI/YAML/TOML/properties configuration.
+
+**Weakness families**: injection (SQL, NoSQL, OS command, code, template, file inclusion), XSS, insecure
+deserialization, SSRF, path traversal, open redirect, CSRF, weak cryptography and randomness, TLS/certificate
+validation bypasses, hardcoded credentials and tokens, sensitive files, personal/payment data, debug and
+permissive configurations, over-privileged containers, public cloud resources, CI/CD injection and unpinned
+actions, memory-unsafe C functions, sensitive logging and repository security hygiene.
+
+**Library ecosystems**:
+
+| Ecosystem | Manifests / lockfiles |
+|---|---|
+| Python (PyPI) | `requirements*.txt`, `pyproject.toml` (PEP 621, Poetry, dependency groups), `Pipfile`, `Pipfile.lock`, `poetry.lock`, `uv.lock`, `pdm.lock`, `setup.py`, `setup.cfg` |
+| JavaScript (npm) | `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` (v1 & Berry), `pnpm-lock.yaml` |
+| Go | `go.mod` |
+| Rust (crates.io) | `Cargo.toml`, `Cargo.lock` |
+| Ruby (RubyGems) | `Gemfile`, `Gemfile.lock` |
+| PHP (Packagist) | `composer.json`, `composer.lock` |
+| Java (Maven) | `pom.xml` (with property resolution), `build.gradle(.kts)`, `libs.versions.toml` |
+| .NET (NuGet) | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config`, `Directory.Packages.props`, `packages.lock.json` |
+| Dart (Pub) | `pubspec.yaml`, `pubspec.lock` |
+
+For each library Secure Repo reports: version, direct/transitive, scope, source (registry/VCS/URL/path),
+whether it is locked, known vulnerabilities (OSV), compromised/malicious or deprecated status, license and the
+latest version (deps.dev).
+
+---
+
+## Compliance audit
+
+The audit is **optional** - enable it with `--compliance`, from *Settings* in the CLI or with the toggle in the
+GUI. Each control receives **PASS**, **WARNING**, **FAIL** or **MANUAL** (needs human verification) with the
+evidence that supports it.
+
+| Framework | Scope evaluated |
+|---|---|
+| OWASP Top 10 (2021) | A01-A10 |
+| PCI DSS 4.0.1 | 2.2.6, 3.5.1, 3.6.1, 4.2.1, 6.2.4, 6.3.1-6.3.3, 8.3.2, 8.6.2, 10.2.1, 11.3.1 |
+| ISO/IEC 27001:2022 Annex A | A.5.32, A.8.4, A.8.8, A.8.9, A.8.12, A.8.15, A.8.20, A.8.24-A.8.26, A.8.28, A.8.29, A.8.32 |
+| SOC 2 (TSC) | CC6.1, CC6.6, CC6.7, CC6.8, CC7.1, CC7.2, CC8.1, C1.1 |
+| GDPR | Art. 5(1)(f), 25, 30, 32(1)(a), 32(1)(b), 32(1)(d), 33 |
+| HIPAA Security Rule | 164.308(a)(1)(ii)(A), 164.308(a)(5)(ii)(B), 164.312(a)(1), (a)(2)(iv), (b), (c)(1), (d), (e)(1) |
+| NIST SSDF (SP 800-218) | PO.1, PO.3, PS.1, PS.3, PW.4, PW.5, PW.7, PW.9, RV.1 |
+
+The results are **technical evidence that helps you comply** - they are not a certification, attestation or
+legal opinion and they do not replace a qualified auditor. The audit itself respects audit principles: it is
+read-only, reproducible (commit SHA recorded), attributable (auditor name), time-stamped and tamper-evident
+(`MANIFEST.sha256`).
+
+---
+
+## Privacy & data handling
+
+- Source code **never leaves your machine**.
+- In online mode only **package names and versions** are sent to `api.osv.dev` and `api.deps.dev` over HTTPS.
+  `--offline` disables every network request.
+- Secrets are **masked** (`AKIA****************`) in every output; card numbers are truncated.
+- Remote repositories are cloned to a temporary folder that is **deleted** after the scan.
+- Reports are written only to the folder you choose, protected by a `.gitignore` that ignores everything.
+
+---
+
+## Suppressing findings
+
+| Mechanism | Effect |
+|---|---|
+| `# nosec` or `// nosec` (or `securerepo:ignore`) on the line | Ignore findings on that line. Add a short justification. |
+| `securerepo:ignore-file` in the first lines of a file | Skip pattern analysis for the whole file (e.g. test fixtures). |
+| `--exclude "path/*"` | Do not scan matching paths. |
+| `--no-tests` | Skip files that look like tests or fixtures. |
+
+Dependency folders (`node_modules`, `vendor`, virtual environments, build output) are skipped automatically;
+their libraries are still analyzed through the manifests and lockfiles.
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `git is not installed or not on PATH` | Install Git and open a new terminal. |
+| Private repository: branch discovery fails | Configure your Git credentials first (SSH key, Git Credential Manager or `gh auth login`), check that `git ls-remote <url>` works, or use an SSH URL. |
+| `Vulnerability intelligence unavailable` | No internet or a proxy blocks it. Set `HTTPS_PROXY`, or run with `--offline`. |
+| Strange characters on old Windows consoles | Use Windows Terminal, or run with `--plain`. |
+| `secure-repo` command not found | Use `python -m secure_repo`, the launchers, or add Python's `Scripts`/`bin` folder to `PATH`. |
+| GUI says "Invalid or missing session token" | Open the exact URL printed in the terminal (it contains `#token=...`). |
+| Scan is slow on huge repositories | Use `--exclude` for generated folders and a lower `--max-file-size`. |
+
+---
+
+## Project layout
+
+```
+Secure_Repo/
+├── secure_repo/
+│   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
+│   ├── core/         scanner, 163 rules, custom detectors, Git operations, dependency parsers,
+│   │                 vulnerability intelligence, compliance frameworks, scoring
+│   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
+│   └── gui/          local server + static web app (neural map, box map, UI)
+├── tests/            pytest suite
+├── docs/images/      screenshots used in this README
+├── run.sh / run.bat  one-step launchers
+├── LICENSE           Secure Repo Ethical Source-Available License
+└── SECURITY.md       how to report a vulnerability in Secure Repo
+```
+
+Run the test suite with `python -m pip install -e ".[dev]"` and `python -m pytest`.
+
+---
+
+## License
+
+Copyright © 2026 **Wissen01720**. All rights reserved.
+
+Secure Repo is distributed under the **Secure Repo Ethical Source-Available License**: you may use it, study it
+and use its reports (also inside your company) for lawful, authorized security work. You may **not** use it to
+access code without permission, steal or misuse the information it finds, attack systems, remove the
+attribution, claim authorship, sell it or publish modified versions without permission. Read the full
+[LICENSE](LICENSE).

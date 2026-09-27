@@ -1,0 +1,237 @@
+"""Entry point: ``secure-repo`` / ``python -m secure_repo``."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import platform
+import sys
+from typing import List, Optional
+
+from rich import box
+from rich.table import Table
+from rich.text import Text
+
+from secure_repo import __author__, __version__
+from secure_repo.cli import views
+from secure_repo.cli.banner import boot_sequence, section, show_banner
+from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authorization, main_menu, open_path,
+                                  post_scan_menu, run_scan)
+from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say
+from secure_repo.core import compliance, gitops
+from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
+from secure_repo.core.rules import RULES
+from secure_repo.core.scanner import ScanOptions
+from secure_repo.core.workspace import Target, discover_branches
+
+EPILOG = """examples:
+  secure-repo                                   interactive menu
+  secure-repo scan                              audit the repository in the current directory
+  secure-repo scan https://github.com/o/r.git   pick a remote branch, clone (depth 1) and audit it
+  secure-repo scan ../project -b develop        audit branch 'develop' without touching your working tree
+  secure-repo scan . --compliance pci-dss,gdpr  add the compliance audit for selected frameworks
+  secure-repo scan . --offline --fail-on high   CI mode: no network, exit code 3 on high+ findings
+  secure-repo branches https://github.com/o/r   list remote branches
+  secure-repo gui                               open the graphical interface in your browser
+
+Only audit repositories you own or are explicitly authorized to assess."""
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="secure-repo", formatter_class=argparse.RawDescriptionHelpFormatter, epilog=EPILOG,
+        description="Secure Repo - repository security auditor (static analysis, secrets, libraries, "
+                    "supply chain and optional compliance audit).")
+    parser.add_argument("--version", action="version", version=f"Secure Repo {__version__} by {__author__}")
+    parser.add_argument("--no-anim", dest="root_no_anim", action="store_true", help="disable terminal animations")
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
+
+    scan = sub.add_parser("scan", help="audit a repository (local path, current directory or Git URL)",
+                          formatter_class=argparse.RawDescriptionHelpFormatter, epilog=EPILOG)
+    scan.add_argument("target", nargs="?", default=".", help="path or Git URL (default: current directory)")
+    scan.add_argument("-b", "--branch", help="branch to audit (skips the interactive branch picker)")
+    scan.add_argument("--compliance", nargs="?", const="all", default=None, metavar="FRAMEWORKS",
+                      help="enable the compliance audit: 'all' or comma list "
+                           f"({', '.join(compliance.FRAMEWORKS)})")
+    scan.add_argument("--offline", action="store_true", help="disable OSV.dev / deps.dev lookups")
+    scan.add_argument("--no-enrich", action="store_true", help="skip license/latest-version lookups (deps.dev)")
+    scan.add_argument("-o", "--output", default="secure-repo-reports", help="reports folder (default: %(default)s)")
+    scan.add_argument("-y", "--yes", action="store_true", help="confirm you are authorized to audit the target")
+    scan.add_argument("--no-tests", action="store_true", help="skip files that look like tests/fixtures")
+    scan.add_argument("--max-file-size", type=int, default=2048, metavar="KB", help="skip larger files (default 2048)")
+    scan.add_argument("--exclude", action="append", default=[], metavar="GLOB", help="exclude paths (repeatable)")
+    scan.add_argument("--auditor", default="", help="auditor name recorded in the audit trail")
+    scan.add_argument("--fail-on", choices=SEVERITIES, help="exit with code 3 if findings of this severity or worse exist")
+    scan.add_argument("--plain", action="store_true", help="plain line output (no live dashboard)")
+    scan.add_argument("--no-anim", action="store_true", help="disable animations")
+    scan.add_argument("--no-menu", action="store_true", help="do not show the post-scan menu")
+    scan.add_argument("--open", action="store_true", help="open the HTML report when finished")
+
+    branches = sub.add_parser("branches", help="list the branches of a local repository or Git URL")
+    branches.add_argument("target", nargs="?", default=".")
+
+    gui = sub.add_parser("gui", help="launch the graphical interface (local web app)")
+    gui.add_argument("--port", type=int, default=0, help="port (default: random free port)")
+    gui.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
+    gui.add_argument("-o", "--output", default="secure-repo-reports", help="reports folder")
+    gui.add_argument("--offline", action="store_true", help="default the GUI to offline mode")
+
+    rules = sub.add_parser("rules", help="list detection rules")
+    rules.add_argument("--search", default="", help="filter by text (id, title, language, CWE)")
+
+    sub.add_parser("frameworks", help="list compliance frameworks")
+    return parser
+
+
+def _boot(state: SessionState) -> None:
+    git_ok = gitops.git_available()
+    cwd = os.getcwd()
+    root = gitops.find_repo_root(cwd) if git_ok else None
+    checks = [
+        ("ok", "Core engine", f"Secure Repo {__version__}"),
+        ("ok", "Detection signatures", f"{len(RULES)} rules loaded"),
+        ("ok", "Compliance frameworks", f"{len(compliance.FRAMEWORKS)} available (optional)"),
+        ("ok" if git_ok else "fail", "Git engine", gitops.git_version() if git_ok else "NOT FOUND - install git"),
+        ("warn" if state.options.offline else "ok", "Vulnerability intelligence",
+         "offline mode" if state.options.offline else "OSV.dev + deps.dev (online)"),
+        ("info", "Host platform", f"{platform.system()} {platform.release()} · Python {platform.python_version()}"),
+        ("info", "Working directory", f"Git repo @ {gitops.current_branch(root) or 'detached'}" if root
+         else "not a Git repository"),
+    ]
+    boot_sequence(checks, animate=state.animate)
+
+
+def _state_from_args(args) -> SessionState:
+    options = ScanOptions()
+    if getattr(args, "command", None) == "scan":
+        options = ScanOptions(
+            offline=args.offline, compliance=args.compliance is not None,
+            frameworks=[p.strip() for p in (args.compliance or "all").split(",") if p.strip()],
+            max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
+            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output)
+    elif getattr(args, "command", None) == "gui":
+        options = ScanOptions(offline=args.offline, output_dir=args.output)
+    interactive = console.is_terminal and sys.stdin is not None and sys.stdin.isatty()
+    no_anim = getattr(args, "root_no_anim", False) or getattr(args, "no_anim", False) or bool(os.environ.get("CI"))
+    return SessionState(options=options, animate=interactive and not no_anim,
+                        plain=getattr(args, "plain", False), assume_yes=getattr(args, "yes", False))
+
+
+def cmd_scan(args, state: SessionState) -> int:
+    if args.compliance is not None and not compliance.resolve_frameworks(state.options.frameworks):
+        say(f"Unknown framework list '{args.compliance}'. Available: {', '.join(compliance.FRAMEWORKS)}", "error")
+        return 2
+    if not state.plain:
+        show_banner(state.animate)
+        _boot(state)
+    target = Target.parse(args.target, args.branch)
+    if target.kind == "local" and not os.path.isdir(target.location):
+        say(f"Directory not found: {target.location}", "error")
+        return 1
+    if not confirm_authorization(target, state):
+        return 1
+    interactive = console.is_terminal and sys.stdin.isatty()
+    if args.branch:
+        try:
+            gitops.validate_branch(args.branch)
+        except gitops.GitError as exc:
+            say(str(exc), "error")
+            return 2
+    elif interactive:
+        ok, branch = choose_branch(target, state)
+        if not ok:
+            return 1
+        target.branch = branch
+    report, report_dir = run_scan(target, state)
+    if report is None:
+        return 1
+    if args.open and report_dir:
+        open_path(os.path.join(report_dir, "report.html"))
+    if interactive and not args.no_menu and not state.plain:
+        post_scan_menu(report, report_dir, state)
+    if args.fail_on:
+        threshold = SEVERITY_RANK[args.fail_on]
+        failing = [f for f in report["findings"] if SEVERITY_RANK[f["severity"]] <= threshold]
+        if failing:
+            say(f"{len(failing)} finding(s) at or above '{args.fail_on}' - exiting with code 3 (--fail-on).", "error")
+            return 3
+    return 0
+
+
+def cmd_branches(args, state: SessionState) -> int:
+    target = Target.parse(args.target)
+    try:
+        with console.status(Text(" Enumerating branches...", style=DIM), spinner="dots12", spinner_style=NEON):
+            branches = discover_branches(target, interactive=False)
+    except gitops.GitError as exc:
+        say(f"Branch discovery failed: {exc}", "error")
+        return 1
+    if not branches:
+        say("No branches found (not a Git repository?).", "warn")
+        return 1
+    table = Table(box=box.SIMPLE_HEAVY, header_style=f"bold {CYAN}", title=Text(target.location, style=f"bold {NEON}"))
+    table.add_column("#", justify="right", style=f"bold {NEON}")
+    table.add_column("Branch", style="bold white")
+    table.add_column("Type", style=DIM)
+    table.add_column("Commit", style="grey62")
+    table.add_column("Date", style=DIM)
+    table.add_column("", style=VIOLET)
+    for index, branch in enumerate(branches, 1):
+        marker = "current" if branch.current else ("default" if branch.default else "")
+        table.add_row(str(index), branch.name, "remote" if branch.remote else "local", branch.commit, branch.date, marker)
+    console.print(table)
+    return 0
+
+
+def cmd_frameworks() -> int:
+    table = Table(box=box.SIMPLE_HEAVY, header_style=f"bold {VIOLET}")
+    table.add_column("ID", style=f"bold {NEON}")
+    table.add_column("Framework", style="bold white")
+    table.add_column("Version", style=DIM)
+    table.add_column("Controls", justify="right")
+    table.add_column("Scope", overflow="fold", style=DIM)
+    for fw in compliance.list_frameworks():
+        table.add_row(fw["id"], fw["name"], fw["version"], str(fw["controls"]), fw["description"])
+    console.print(table)
+    console.print(Text("usage: secure-repo scan . --compliance owasp,pci-dss   (or --compliance for all)", style=DIM))
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    state = _state_from_args(args)
+    try:
+        if args.command is None:
+            if not (console.is_terminal and sys.stdin.isatty()):
+                parser.print_help()
+                return 0
+            show_banner(state.animate)
+            _boot(state)
+            return main_menu(state)
+        if args.command == "scan":
+            return cmd_scan(args, state)
+        if args.command == "branches":
+            return cmd_branches(args, state)
+        if args.command == "gui":
+            from secure_repo.gui.server import serve
+
+            show_banner(False)
+            serve(state.options, port=args.port, open_browser=not args.no_browser)
+            return 0
+        if args.command == "rules":
+            section(f"DETECTION RULES ({len(RULES)})", NEON)
+            views.render_rules(RULES, args.search)
+            return 0
+        if args.command == "frameworks":
+            return cmd_frameworks()
+    except KeyboardInterrupt:
+        console.print()
+        say("Aborted by user.", "warn")
+        return 130
+    parser.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
