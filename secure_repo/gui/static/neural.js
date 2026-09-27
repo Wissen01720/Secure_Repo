@@ -65,7 +65,8 @@
     }
 
     rebuild() {
-      const findings = (this.report.findings || []).filter((f) => this.severities.has(f.severity));
+      const findings = (this.report.findings || []).filter((f) => this.severities.has(f.severity) &&
+        f.status !== 'false_positive' && f.status !== 'filtered');
       const weight = { critical: 15, high: 7, medium: 3, low: 1, info: 0.3 };
       const fileScore = new Map();
       const weakScore = new Map();

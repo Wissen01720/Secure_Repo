@@ -1,0 +1,174 @@
+"""Project configuration (``.securerepo.toml``) and user-level custom rules.
+
+Lets a team tune the analysis for its code base: disable noisy rules, change severities,
+allow-list known-safe paths or values, set a minimum confidence and add custom detection rules.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+import re
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+from secure_repo.core.models import SEVERITIES
+from secure_repo.core.rules import RULES_BY_ID, Rule
+
+try:  # Python 3.11+
+    import tomllib as _toml
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as _toml  # type: ignore
+
+CONFIG_NAMES = (".securerepo.toml", "securerepo.toml")
+CONFIDENCE_LEVELS = ("low", "medium", "high")
+
+TEMPLATE = '''# Secure Repo project configuration - https://github.com/Wissen01720/Secure_Repo
+# Commit this file so every analyst and CI job applies the same tuning.
+
+[scan]
+# Paths that are not analyzed at all (glob patterns, relative to the repository root).
+exclude = ["docs/examples/*", "third_party/*"]
+# Findings below this confidence are filtered out: "low" (show everything), "medium" or "high".
+min_confidence = "low"
+
+[rules]
+# Rules that make no sense for this project.
+disable = []
+
+[rules.severity]
+# Override a rule's severity, e.g. "SR-GEN-006" = "info"
+# "SR-GEN-006" = "info"
+
+[allowlist]
+# Findings in these paths are kept in the report but marked as false positives (audit trail).
+paths = []
+# Regular expressions matched against the (redacted) evidence of a finding.
+values = []
+
+# Custom detection rules. "context" = "code" (strings & comments masked), "strings" (comments masked)
+# or "raw" (whole text, e.g. for secrets). "languages" uses Secure Repo language names or ["*"].
+# [[custom_rules]]
+# id = "ACME-001"
+# title = "Internal debug endpoint enabled"
+# severity = "medium"
+# pattern = "enable_debug_endpoint\\\\s*=\\\\s*True"
+# languages = ["Python"]
+# context = "code"
+# cwe = "CWE-489"
+# owasp = "A05"
+# description = "The internal debug endpoint exposes diagnostics that must never reach production."
+# recommendation = "Remove the flag or drive it from an environment variable that defaults to False."
+'''
+
+
+@dataclass
+class ProjectConfig:
+    source: Optional[str] = None
+    exclude: List[str] = field(default_factory=list)
+    min_confidence: str = "low"
+    disable: List[str] = field(default_factory=list)
+    severity: Dict[str, str] = field(default_factory=dict)
+    allow_paths: List[str] = field(default_factory=list)
+    allow_values: List[re.Pattern] = field(default_factory=list)
+    custom_rules: List[Rule] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+
+    def allowlisted(self, finding: Dict) -> Optional[str]:
+        path = finding.get("file") or ""
+        for pattern in self.allow_paths:
+            if fnmatch.fnmatch(path, pattern):
+                return f"path allow-listed in {os.path.basename(self.source or '.securerepo.toml')} ({pattern})"
+        evidence = f"{finding.get('snippet', '')}\n{finding.get('detail', '')}"
+        for regex in self.allow_values:
+            if regex.search(evidence):
+                return f"value allow-listed in {os.path.basename(self.source or '.securerepo.toml')}"
+        return None
+
+
+def _custom_rule(raw: Dict, errors: List[str], origin: str) -> Optional[Rule]:
+    rule_id = str(raw.get("id", "")).strip()
+    if not rule_id or not raw.get("pattern"):
+        errors.append(f"{origin}: custom rule without 'id' or 'pattern' ignored")
+        return None
+    if rule_id in RULES_BY_ID:
+        errors.append(f"{origin}: custom rule id {rule_id} collides with a built-in rule")
+        return None
+    severity = str(raw.get("severity", "medium")).lower()
+    if severity not in SEVERITIES:
+        errors.append(f"{origin}: {rule_id} has an invalid severity '{severity}'")
+        return None
+    try:
+        re.compile(raw["pattern"])
+    except re.error as exc:
+        errors.append(f"{origin}: {rule_id} has an invalid pattern ({exc})")
+        return None
+    context = str(raw.get("context", "strings")).lower()
+    languages = tuple(raw.get("languages") or ["*"])
+    return Rule(
+        id=rule_id, title=str(raw.get("title", rule_id)), severity=severity,
+        category=str(raw.get("category", "Custom")), cwe=str(raw.get("cwe", "")), owasp=str(raw.get("owasp", "OTHER")),
+        description=str(raw.get("description", "Custom rule defined by the project.")),
+        recommendation=str(raw.get("recommendation", "Review this finding according to the project guidelines.")),
+        pattern=raw["pattern"], languages=languages, path=str(raw.get("path", "")), exclude=str(raw.get("exclude", "")),
+        keywords=tuple(k.lower() for k in raw.get("keywords", [])), tags=tuple(raw.get("tags", ["custom"])),
+        confidence=str(raw.get("confidence", "medium")), scan_comments=context == "raw",
+        needs_strings=context in ("strings", "raw"), source="secret" if raw.get("secret") else "code",
+        redact=bool(raw.get("secret")),
+    )
+
+
+def _read(path: str, errors: List[str]) -> Dict:
+    try:
+        with open(path, "rb") as handle:
+            return _toml.load(handle)
+    except (OSError, ValueError) as exc:
+        errors.append(f"{path}: {exc}")
+        return {}
+
+
+def load_config(root: str, user_dir: Optional[str] = None) -> ProjectConfig:
+    config = ProjectConfig()
+    sources = []
+    if user_dir:
+        sources.append(os.path.join(user_dir, "config.toml"))
+    sources += [os.path.join(root, name) for name in CONFIG_NAMES]
+    for path in sources:
+        if not os.path.isfile(path):
+            continue
+        data = _read(path, config.errors)
+        if not data:
+            continue
+        if path.startswith(root):
+            config.source = path
+        scan = data.get("scan", {}) or {}
+        config.exclude += [str(p) for p in scan.get("exclude", [])]
+        level = str(scan.get("min_confidence", config.min_confidence)).lower()
+        if level in CONFIDENCE_LEVELS:
+            config.min_confidence = level
+        rules = data.get("rules", {}) or {}
+        config.disable += [str(r) for r in rules.get("disable", [])]
+        for rule_id, severity in (rules.get("severity", {}) or {}).items():
+            if str(severity).lower() in SEVERITIES:
+                config.severity[str(rule_id)] = str(severity).lower()
+        allow = data.get("allowlist", {}) or {}
+        config.allow_paths += [str(p) for p in allow.get("paths", [])]
+        for value in allow.get("values", []):
+            try:
+                config.allow_values.append(re.compile(str(value)))
+            except re.error as exc:
+                config.errors.append(f"{path}: invalid allowlist regex {value!r} ({exc})")
+        for raw in data.get("custom_rules", []) or []:
+            rule = _custom_rule(raw, config.errors, os.path.basename(path))
+            if rule:
+                config.custom_rules.append(rule)
+    return config
+
+
+def write_template(directory: str) -> str:
+    path = os.path.join(directory, CONFIG_NAMES[0])
+    if os.path.exists(path):
+        raise FileExistsError(path)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(TEMPLATE)
+    return path

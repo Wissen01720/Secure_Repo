@@ -171,7 +171,7 @@ def browse_findings(report: Dict) -> None:
     while True:
         counts = report["summary"]["by_severity"]
         options = " ".join(f"{s}({counts[s]})" for s in SEVERITIES if counts[s])
-        answer = ask(f"Filter by severity [all {options}] or type a finding ID (e.g. SR-0001), 'q' to go back",
+        answer = ask(f"Filter by severity [all {options}], 'suppressed', or a finding ID (e.g. SR-0001), 'q' to go back",
                      default="all").strip()
         if answer.lower() in ("q", "quit", "back", "0"):
             return
@@ -180,10 +180,13 @@ def browse_findings(report: Dict) -> None:
         if match:
             views.render_finding_detail(report, match)
             continue
+        active = [f for f in findings if f.get("status") not in ("false_positive", "filtered")]
         if answer.lower() in SEVERITIES:
-            subset = [f for f in findings if f["severity"] == answer.lower()]
+            subset = [f for f in active if f["severity"] == answer.lower()]
         elif answer.lower() == "all":
-            subset = findings
+            subset = active
+        elif answer.lower() == "suppressed":
+            subset = [f for f in findings if f.get("status") in ("false_positive", "filtered")]
         else:
             subset = [f for f in findings if answer.lower() in (f["title"] + f["file"] + f["rule_id"]).lower()]
         views.render_findings_table(subset, limit=60, title=f"FINDINGS · {answer}")
@@ -197,12 +200,14 @@ def post_scan_menu(report: Dict, report_dir: Optional[str], state: SessionState)
         section("POST-SCAN ACTIONS", VIOLET)
         items = [
             ("1", "Browse findings & explanations"),
-            ("2", "Repository structure (boxes + tree)"),
-            ("3", "Full library inventory"),
-            ("4", "Compliance details" + ("" if report["compliance"].get("enabled") else " (audit was disabled)")),
-            ("5", "Open interactive HTML report in the browser"),
-            ("6", "Open the report folder"),
-            ("7", "Explore these results in the GUI"),
+            ("2", "Triage findings - mark false positives / accepted risk (the engine learns)"),
+            ("3", "Repository structure (boxes + tree)"),
+            ("4", "Full library inventory + virtual lockfile"),
+            ("5", "Compliance details" + ("" if report["compliance"].get("enabled") else " (audit was disabled)")),
+            ("6", "Analysis quality (engines, noise discarded, suppressed findings)"),
+            ("7", "Open interactive HTML report in the browser"),
+            ("8", "Open the report folder"),
+            ("9", "Explore these results in the GUI"),
             ("0", "Back to main menu"),
         ]
         _print_menu(items)
@@ -210,20 +215,27 @@ def post_scan_menu(report: Dict, report_dir: Optional[str], state: SessionState)
         if choice == "1":
             browse_findings(report)
         elif choice == "2":
+            from secure_repo.cli.learning import interactive_triage
+
+            interactive_triage(report, report_dir)
+        elif choice == "3":
             views.render_structure_boxes(report["structure"], max_boxes=24)
             views.render_structure_tree(report["structure"])
-        elif choice == "3":
-            views.render_dependencies(report)
         elif choice == "4":
+            views.render_dependencies(report)
+            views.render_lockfile(report)
+        elif choice == "5":
             if report["compliance"].get("enabled"):
                 views.render_compliance(report, detailed=True)
             else:
                 say("Enable the compliance audit in Settings (or use --compliance) and scan again.", "warn")
-        elif choice == "5" and report_dir:
+        elif choice == "6":
+            views.render_quality(report, detailed=True)
+        elif choice == "7" and report_dir:
             open_path(os.path.join(report_dir, "report.html"))
-        elif choice == "6" and report_dir:
+        elif choice == "8" and report_dir:
             open_path(report_dir)
-        elif choice == "7":
+        elif choice == "9":
             from secure_repo.gui.server import serve
 
             serve(state.options, open_browser=True, preload_report=report, preload_dir=report_dir)
@@ -246,6 +258,10 @@ def settings_menu(state: SessionState) -> None:
             ("6", f"Exclude patterns ............ {', '.join(opts.exclude) or '-'}"),
             ("7", f"Auditor name (audit trail) .. {opts.auditor or '-'}"),
             ("8", f"Animations .................. {'ON' if state.animate else 'OFF'}"),
+            ("9", f"Minimum confidence .......... {opts.min_confidence.upper()}"),
+            ("10", f"Learning from triage ........ {'ON' if opts.learning else 'OFF'}"),
+            ("11", f"Analysis engine ............. {'LAYERED (masking + AST + data flow)' if opts.semantic else 'PATTERNS (legacy)'}"),
+            ("12", f"Virtual lockfile resolution . {'ON' if opts.resolve_versions else 'OFF'}"),
             ("0", "Back"),
         ]
         _print_menu(items)
@@ -271,6 +287,14 @@ def settings_menu(state: SessionState) -> None:
             opts.auditor = ask("Auditor name / organisation", default=opts.auditor or "")
         elif choice == "8":
             state.animate = not state.animate
+        elif choice == "9":
+            opts.min_confidence = ask("Minimum confidence", choices=["low", "medium", "high"], default=opts.min_confidence)
+        elif choice == "10":
+            opts.learning = not opts.learning
+        elif choice == "11":
+            opts.semantic = not opts.semantic
+        elif choice == "12":
+            opts.resolve_versions = not opts.resolve_versions
         elif choice == "0":
             return
 

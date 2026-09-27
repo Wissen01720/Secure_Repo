@@ -61,8 +61,18 @@ def markdown_summary(report: Dict) -> str:
     lines += ["", "## Most affected files", "", "| File | Findings | Worst severity |", "|---|---:|---|"]
     for entry in summary["top_files"]:
         lines.append(f"| `{_md_escape(entry['file'] if entry['file'] != '.' else '(repository)')}` | {entry['count']} | {entry['risk']} |")
+    analysis = report.get("analysis") or {}
+    if analysis:
+        engines = summary.get("by_engine", {})
+        lines += ["", "## Analysis quality", "",
+                  f"- Findings by engine: " + (", ".join(f"{k} {v}" for k, v in engines.items()) or "none"),
+                  f"- Noisy matches discarded automatically: {analysis.get('noise_total', 0)} (see quality.md)",
+                  f"- Suppressed findings (false positives / filtered): {summary.get('suppressed', 0)}",
+                  f"- Learning: {'on' if analysis.get('learning') else 'off'} - "
+                  f"{(analysis.get('knowledge') or {}).get('decisions', 0)} triage decisions and "
+                  f"{(analysis.get('knowledge') or {}).get('learned_patterns', 0)} learned patterns applied"]
     lines += ["", "## Top findings", ""]
-    for finding in report["findings"][:25]:
+    for finding in [f for f in report["findings"] if f.get("status", "open") not in ("false_positive", "filtered")][:25]:
         lines.append(f"- {SEVERITY_ICON[finding['severity']]} **{finding['id']} {_md_escape(finding['title'])}** "
                      f"- `{_md_escape(_where(finding))}`")
     if report["compliance"].get("enabled"):
@@ -86,8 +96,9 @@ def markdown_findings(report: Dict, findings: List[Dict], title: str) -> str:
         lines += [
             f"## {SEVERITY_ICON[finding['severity']]} {finding['id']} - {_md_escape(finding['title'])}",
             "",
-            f"- **Severity:** {finding['severity']}  |  **Confidence:** {finding['confidence']}"
-            f"{'  |  in test code' if finding.get('in_test') else ''}",
+            f"- **Severity:** {finding['severity']}  |  **Confidence:** {finding['confidence']} "
+            f"({finding.get('confidence_score', '-')}/100)  |  **Engine:** {finding.get('engine', 'pattern')}  |  "
+            f"**Status:** {finding.get('status', 'open')}{'  |  in test code' if finding.get('in_test') else ''}",
             f"- **Location:** `{_md_escape(_where(finding))}`",
             f"- **Rule:** {finding['rule_id']}  |  **Category:** {finding['category']}  |  "
             f"**CWE:** {finding.get('cwe') or '-'}  |  **OWASP:** {finding.get('owasp') or '-'}",
@@ -96,6 +107,12 @@ def markdown_findings(report: Dict, findings: List[Dict], title: str) -> str:
             lines += ["", "```", finding["snippet"].replace("```", "'''"), "```"]
         if finding.get("detail"):
             lines += ["", f"**Detail:** {_md_escape(finding['detail'])}"]
+        if finding.get("flow"):
+            lines += ["", "**Data flow:**", ""]
+            lines += [f"{n}. line {step['line']} - {_md_escape(step['label'])}: `{_md_escape(step.get('code', ''))[:160]}`"
+                      for n, step in enumerate(finding["flow"], 1)]
+        if finding.get("triage"):
+            lines += ["", f"**Triage:** {finding.get('status')} - {_md_escape(finding['triage'].get('reason', ''))}"]
         if rule:
             lines += ["", f"**Why it is insecure:** {rule['description']}", "",
                       f"**How to fix:** {rule['recommendation']}"]
@@ -135,6 +152,87 @@ def markdown_dependencies(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def markdown_quality(report: Dict) -> str:
+    analysis = report.get("analysis") or {}
+    summary = report["summary"]
+    engines = analysis.get("engines") or {}
+    lines = ["# Analysis quality", "",
+             "Secure Repo combines several engines to keep false positives low:", "",
+             "| Layer | What it does | Activity in this scan |", "|---|---|---|",
+             f"| Lexical masking | Comments, docstrings and string contents are removed before code patterns run | "
+             f"{engines.get('masked_files', 0)} files |",
+             f"| Python syntax tree + taint | Resolves imports, inspects arguments and follows untrusted data to sinks | "
+             f"{engines.get('python_ast', 0)} files ({engines.get('python_fallback', 0)} fell back to patterns) |",
+             f"| JS/TS data flow | Confirms, escalates or discards sink findings | {engines.get('js_flow', 0)} files |",
+             f"| Confidence model | Engine, location, and your triage history | min confidence: "
+             f"{analysis.get('min_confidence', 'low')} |",
+             f"| Triage knowledge | Decisions, learned patterns, rule statistics | "
+             f"{'enabled' if analysis.get('learning') else 'disabled'} |", "",
+             "## Findings by engine", "", "| Engine | Findings |", "|---|---:|"]
+    lines += [f"| {engine} | {count} |" for engine, count in (summary.get("by_engine") or {}).items()]
+    lines += ["", f"## Noise discarded automatically ({analysis.get('noise_total', 0)})", "",
+              "| Reason | Matches |", "|---|---:|"]
+    lines += [f"| {_md_escape(reason)} | {count} |" for reason, count in (analysis.get("noise_filtered") or {}).items()]
+    knowledge = analysis.get("knowledge") or {}
+    lines += ["", "## Learning & configuration", "",
+              f"- Triage decisions applied: {knowledge.get('decisions', 0)}",
+              f"- Learned false-positive patterns matched: {knowledge.get('learned_patterns', 0)}",
+              f"- Allow-listed by project configuration: {knowledge.get('allowlisted', 0)}",
+              f"- Filtered below minimum confidence: {knowledge.get('below_min_confidence', 0)}",
+              f"- Project configuration: {analysis.get('config') or 'none (.securerepo.toml)'}",
+              f"- Custom rules: {', '.join(analysis.get('custom_rules') or []) or 'none'}", "",
+              "## Status of findings", "", "| Status | Findings |", "|---|---:|"]
+    lines += [f"| {status} | {count} |" for status, count in (summary.get("by_status") or {}).items()]
+    return "\n".join(lines) + "\n"
+
+
+def markdown_suppressed(report: Dict) -> str:
+    suppressed = [f for f in report["findings"] if f.get("status") in ("false_positive", "filtered")]
+    lines = ["# Suppressed findings (audit trail)", "",
+             f"{len(suppressed)} finding(s) are excluded from the score and the compliance audit.", "",
+             "| ID | Rule | Location | Status | Reason | Author | Date |", "|---|---|---|---|---|---|---|"]
+    for f in suppressed:
+        t = f.get("triage") or {}
+        lines.append(f"| {f['id']} | {f['rule_id']} | `{_md_escape(_where(f))}` | {f['status']} | "
+                     f"{_md_escape(t.get('reason', ''))} | {_md_escape(t.get('author', ''))} | {t.get('date', '')} |")
+    return "\n".join(lines) + "\n"
+
+
+def markdown_lockfile_guide(report: Dict) -> str:
+    from secure_repo.core.resolver import pinned_snippet
+
+    lock = report.get("lockfile") or {}
+    resolution = report["dependency_summary"].get("resolution") or {}
+    lines = ["# Lockfile guide", "",
+             "A lockfile pins the exact version of every direct and transitive dependency so every build installs "
+             "the same, reviewed code. Without it, Secure Repo resolves the versions *virtually*:", "",
+             "1. **environment** - versions installed next to the project (node_modules, virtualenv, vendor/);",
+             "2. **registry** - the version the package manager would install today for the declared range;",
+             "3. **registry-graph** - transitive dependencies of those versions (deps.dev dependency graph).", "",
+             "Resolution in this scan: " + (", ".join(f"{k}: {v}" for k, v in resolution.items()) or "n/a"), ""]
+    if not lock.get("manifests") and not lock.get("unresolved"):
+        lines.append("Every dependency is already pinned by a manifest or a lockfile. Nothing to do.")
+        return "\n".join(lines) + "\n"
+    for entry in lock.get("manifests", []):
+        lines += [f"## `{entry['manifest']}` ({entry['ecosystem']})", "",
+                  "Create a real lockfile (run in a trusted environment; the commands avoid install scripts where "
+                  "possible):", ""]
+        lines += [f"- `{command}`" for command in entry["commands"]]
+        snippet = pinned_snippet(entry)
+        if snippet:
+            lines += ["", "Or pin the resolved versions directly:", "", "```", snippet, "```"]
+        lines += ["", "| Package | Declared | Resolved | How | Direct | Vulnerable |", "|---|---|---|---|---|---|"]
+        for p in entry["packages"][:400]:
+            lines.append(f"| {_md_escape(p['name'])} | `{_md_escape(p['declared'])}` | {p['resolved']} | {p['resolved_by']} | "
+                         f"{'yes' if p['direct'] else 'no'} | {'YES' if p['vulnerable'] else 'no'} |")
+        lines.append("")
+    if lock.get("unresolved"):
+        lines += ["## Could not be resolved", "",
+                  "Run online (without `--offline`) or install the dependencies locally, then scan again:", ""]
+        lines += [f"- {u['name']} `{_md_escape(u['declared'])}` ({u['ecosystem']}, {u['manifest']})" for u in lock["unresolved"]]
+    return "\n".join(lines) + "\n"
+
+
 def markdown_compliance(report: Dict, framework: Dict) -> str:
     icons = {"pass": "✅ PASS", "warning": "⚠️ WARNING", "fail": "❌ FAIL", "manual": "📝 MANUAL"}
     s = framework["summary"]
@@ -159,10 +257,13 @@ def findings_csv(report: Dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(["id", "severity", "title", "rule_id", "category", "cwe", "owasp", "file", "line", "confidence",
-                     "in_test", "detail", "snippet"])
+                     "confidence_score", "engine", "status", "triage_reason", "in_test", "fingerprint", "detail",
+                     "snippet"])
     for f in report["findings"]:
         writer.writerow([f["id"], f["severity"], f["title"], f["rule_id"], f["category"], f["cwe"], f["owasp"],
-                         f["file"], f["line"], f["confidence"], f["in_test"], f["detail"], f["snippet"]])
+                         f["file"], f["line"], f["confidence"], f.get("confidence_score", ""), f.get("engine", ""),
+                         f.get("status", "open"), (f.get("triage") or {}).get("reason", ""), f["in_test"],
+                         f.get("fingerprint", ""), f["detail"], f["snippet"]])
     return buffer.getvalue()
 
 
@@ -170,12 +271,13 @@ def dependencies_csv(report: Dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(["name", "version", "spec", "ecosystem", "direct", "scope", "source", "locked", "manifests",
-                     "vulnerabilities", "max_severity", "advisories", "licenses", "latest", "issues"])
+                     "vulnerabilities", "max_severity", "advisories", "licenses", "latest", "resolved_by", "parent",
+                     "issues"])
     for d in report["dependencies"]:
         writer.writerow([d["name"], d["version"] or "", d["spec"], d["ecosystem"], d["direct"], d["scope"], d["source"],
                          d["locked"], ";".join(d["manifests"]), len(d["vulnerabilities"]), d["max_severity"] or "",
                          ";".join(v["id"] for v in d["vulnerabilities"]), ";".join(d["licenses"]), d["latest"] or "",
-                         ";".join(d["issues"])])
+                         d.get("resolved_by") or "", d.get("parent") or "", ";".join(d["issues"])])
     return buffer.getvalue()
 
 
@@ -196,12 +298,23 @@ def sarif(report: Dict) -> Dict:
         location = {"physicalLocation": {"artifactLocation": {"uri": f["file"] if f["file"] not in ("", ".") else "."}}}
         if f.get("line"):
             location["physicalLocation"]["region"] = {"startLine": f["line"]}
-        results.append({
+        result = {
             "ruleId": f["rule_id"], "level": SARIF_LEVEL[f["severity"]],
             "message": {"text": f"{f['title']}. {f['detail']}".strip()},
             "locations": [location],
-            "properties": {"severity": f["severity"], "id": f["id"], "security-severity": SARIF_SCORE[f["severity"]]},
-        })
+            "partialFingerprints": {"secureRepo/v1": f.get("fingerprint", "")},
+            "properties": {"severity": f["severity"], "id": f["id"], "security-severity": SARIF_SCORE[f["severity"]],
+                           "confidence": f.get("confidence"), "engine": f.get("engine"), "status": f.get("status")},
+        }
+        if f.get("flow"):
+            result["codeFlows"] = [{"threadFlows": [{"locations": [
+                {"location": {"physicalLocation": {"artifactLocation": {"uri": f["file"]},
+                                                   "region": {"startLine": max(1, step["line"])}},
+                              "message": {"text": step["label"]}}} for step in f["flow"]]}]}]
+        if f.get("status") in ("false_positive", "filtered", "accepted_risk"):
+            result["suppressions"] = [{"kind": "external", "status": "accepted",
+                                       "justification": f"{f['status']}: {(f.get('triage') or {}).get('reason', '')}"}]
+        results.append(result)
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
         "runs": [{

@@ -4,10 +4,12 @@
   const SR = window.SR;
   const $ = SR.$, $$ = SR.$$, esc = SR.esc, el = SR.el;
 
-  const STAGE_WEIGHT = { acquire: 6, enumerate: 4, analyze: 48, dependencies: 6, intel: 20, hygiene: 3, compliance: 3, scoring: 2, report: 8 };
+  const STAGE_WEIGHT = { acquire: 6, enumerate: 4, analyze: 44, dependencies: 5, resolve: 8, intel: 16, hygiene: 3, compliance: 3, scoring: 2, report: 9 };
+  const SUPPRESSED = new Set(['false_positive', 'filtered']);
+  const STATUS_LABEL = { open: 'open', confirmed: 'confirmed', accepted_risk: 'accepted risk', false_positive: 'false positive', filtered: 'filtered' };
   const DEFAULT_STAGES = [
     { id: 'acquire', title: 'Acquiring source' }, { id: 'enumerate', title: 'Mapping repository structure' },
-    { id: 'analyze', title: 'Static code, secret & config analysis' }, { id: 'dependencies', title: 'Discovering libraries & dependencies' },
+    { id: 'analyze', title: 'Static code, secret & config analysis' }, { id: 'dependencies', title: 'Discovering libraries & dependencies' }, { id: 'resolve', title: 'Resolving versions (virtual lockfile)' },
     { id: 'intel', title: 'Vulnerability intelligence lookup' }, { id: 'hygiene', title: 'Repository security hygiene' },
     { id: 'compliance', title: 'Compliance audit' }, { id: 'scoring', title: 'Risk scoring' }, { id: 'report', title: 'Generating reports' },
   ];
@@ -34,7 +36,7 @@
     neural: null,
     boxLive: null,
     boxRes: null,
-    fState: { sev: new Set(SR.SEV), cat: '', q: '', hideTests: false, limit: 150 },
+    fState: { sev: new Set(SR.SEV), cat: '', q: '', hideTests: false, flow: false, suppressed: false, limit: 150 },
     dState: { q: '', eco: '', vuln: false, direct: false, limit: 200 },
   };
 
@@ -117,6 +119,9 @@
     $('#current-sub').textContent = ctx.repo_root ? ctx.repo_root + ' @ ' + (ctx.current_branch || 'detached') : ctx.cwd + ' (not a Git repository)';
     $('#in-path').value = ctx.cwd;
     $('#opt-online').checked = !ctx.defaults.offline;
+    if (ctx.defaults.min_confidence) $('#opt-confidence').value = ctx.defaults.min_confidence;
+    if (ctx.defaults.learning === false) $('#opt-learning').checked = false;
+    if (ctx.defaults.semantic === false) $('#opt-engine').value = 'patterns';
     const chips = $('#fw-chips');
     ctx.frameworks.forEach((fw) => {
       S.frameworks.add(fw.id);
@@ -236,6 +241,8 @@
         offline: !$('#opt-online').checked, compliance: $('#opt-compliance').checked,
         frameworks: Array.from(S.frameworks), include_tests: $('#opt-tests').checked,
         max_file_size_kb: parseInt($('#opt-size').value, 10), auditor: $('#opt-auditor').value.trim(),
+        min_confidence: $('#opt-confidence').value, learning: $('#opt-learning').checked,
+        semantic: $('#opt-engine').value === 'layered',
       },
     };
     try {
@@ -428,11 +435,11 @@
   }
 
   /* ================================================================== results */
-  function showResults(report, scanId, reportDir) {
+  function showResults(report, scanId, reportDir, options) {
     S.report = report;
     S.scanId = scanId;
     S.reportDir = reportDir;
-    S.fState = { sev: new Set(SR.SEV), cat: '', q: '', hideTests: false, limit: 150 };
+    if (!options || !options.keepFilters) S.fState = { sev: new Set(SR.SEV), cat: '', q: '', hideTests: false, flow: false, suppressed: false, limit: 150 };
     show('results');
     const sum = report.summary, meta = report.meta;
     $('#res-name').textContent = meta.name;
@@ -468,7 +475,7 @@
       SR.countUp(b, sum.by_severity[s] || 0, 1000);
     });
     renderActions();
-    $('#n-findings').textContent = report.findings.length;
+    $('#n-findings').textContent = report.findings.filter((x) => !SUPPRESSED.has(x.status)).length;
     $('#n-deps').textContent = report.dependencies.length;
     renderOverview();
     renderFindingsFilters();
@@ -480,7 +487,8 @@
     $('#footer').textContent = 'Secure Repo ' + report.tool.version + ' · ' + report.tool.rules + ' rules · by ' + report.tool.author +
       ' · read-only analysis · secrets redacted';
     const wanted = /(?:^|[#&])tab=(\w+)/.exec(window.location.hash || '');
-    openTab(wanted && $('#tab-' + wanted[1]) ? wanted[1] : 'overview');
+    if (options && options.tab) openTab(options.tab);
+    else openTab(wanted && $('#tab-' + wanted[1]) ? wanted[1] : 'overview');
   }
 
   function renderActions() {
@@ -582,10 +590,37 @@
     const ds = r.dependency_summary;
     hygCard.appendChild(el('div', { class: 'muted', style: { marginTop: '12px', fontSize: '12px' },
       text: ds.total + ' libraries · ' + ds.vulnerable + ' vulnerable · ' + ds.vulnerabilities + ' advisories · intel ' + (ds.online ? 'online' : 'offline') }));
+    const analysis = r.analysis || {};
+    const qualityCard = el('div', { class: 'card' }, [el('h3', { text: 'Analysis quality' })]);
+    const engines = sum.by_engine || {};
+    const emax = Math.max(1, ...Object.values(engines));
+    const engineColor = { taint: '#ff2e97', ast: '#9d7bff', lexical: '#00e5ff', pattern: '#8892b0', dependency: '#ff8a00', hygiene: '#7ee787', custom: '#ffd23f' };
+    Object.keys(engines).forEach((k) => qualityCard.appendChild(hbar(k === 'taint' ? 'taint (data flow)' : k, engines[k], emax, engineColor[k] || '#00e5ff')));
+    const kn = analysis.knowledge || {};
+    [['Noise discarded automatically', analysis.noise_total || 0], ['Suppressed (false positive / filtered)', sum.suppressed || 0],
+      ['Triage decisions applied', kn.decisions || 0], ['Learned patterns matched', kn.learned_patterns || 0]].forEach((m) => {
+      qualityCard.appendChild(el('div', { class: 'check yes' }, [el('i', { text: String(m[1]) }), el('span', { text: m[0] })]));
+    });
+    qualityCard.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', marginTop: '8px' },
+      text: 'Learning ' + (analysis.learning ? 'on' : 'off') + ' · config ' + (analysis.config || 'none') + ' · min confidence ' + (analysis.min_confidence || 'low') }));
     const notes = (r.meta.notes || []).map((n) => el('div', { class: 'muted', style: { fontSize: '12px' }, text: '• ' + n }));
     panel.appendChild(el('div', { class: 'grid-3' }, [sevCard, owCard, hygCard]));
     panel.appendChild(el('div', { class: 'grid-3', style: { marginTop: '18px' } }, [filesCard, weakCard, langCard]));
+    if (r.analysis) panel.appendChild(el('div', { class: 'grid-2', style: { marginTop: '18px' } }, [qualityCard, lockCard(r)]));
     if (notes.length) panel.appendChild(el('div', { class: 'card', style: { marginTop: '18px' } }, [el('h3', { text: 'Notes' })].concat(notes)));
+  }
+
+  function lockCard(r) {
+    const card = el('div', { class: 'card' }, [el('h3', { text: 'Virtual lockfile' })]);
+    const res = (r.dependency_summary && r.dependency_summary.resolution) || {};
+    const colors = { lockfile: '#00ff9c', manifest: '#7ee787', environment: '#00e5ff', registry: '#9d7bff', 'registry-graph': '#ff2e97', unresolved: '#ff8a00' };
+    const max = Math.max(1, ...Object.values(res));
+    Object.keys(res).forEach((k) => card.appendChild(hbar(k, res[k], max, colors[k] || '#8892b0')));
+    const lock = r.lockfile || {};
+    const pending = (lock.manifests || []).length;
+    card.appendChild(el('p', { class: 'muted', style: { fontSize: '12px', marginTop: '10px' },
+      text: pending ? pending + ' manifest(s) without lockfile were resolved virtually and checked; the lockfile guide explains how to create the real one.' : 'Every dependency is pinned by a manifest or lockfile.' }));
+    return card;
   }
 
   /* ---------------------------------------------------------------- neural */
@@ -681,7 +716,9 @@
     $$('#f-sev .chip').forEach((c) => c.classList.toggle('on', S.fState.sev.has(c.dataset.sev)));
     const f = S.fState;
     const q = f.q.toLowerCase();
+    $('#f-supp-n').textContent = S.report.findings.filter((x) => SUPPRESSED.has(x.status)).length;
     const items = S.report.findings.filter((x) => f.sev.has(x.severity) && (!f.cat || x.category === f.cat) && (!f.hideTests || !x.in_test) &&
+      (f.suppressed || !SUPPRESSED.has(x.status)) && (!f.flow || x.engine === 'taint') &&
       (!q || (x.title + ' ' + x.file + ' ' + x.rule_id + ' ' + x.cwe + ' ' + x.snippet + ' ' + x.id).toLowerCase().indexOf(q) >= 0));
     const list = $('#findings-list');
     list.textContent = '';
@@ -691,9 +728,13 @@
     items.slice(0, f.limit).forEach((x) => {
       const row = el('div', { class: 'finding' });
       row.style.setProperty('--c', SR.SEV_COLOR[x.severity]);
+      if (SUPPRESSED.has(x.status)) row.classList.add('suppressed');
       SR.setHTML(row, '<div>' + SR.sevTag(x.severity) + '</div><div style="min-width:0"><div class="ft">' + esc(x.title) +
+        (x.engine === 'taint' ? '<span class="tag flow-tag">data flow</span>' : '') +
+        (x.status && x.status !== 'open' ? '<span class="tag status-' + esc(x.status) + '">' + esc(STATUS_LABEL[x.status] || x.status) + '</span>' : '') +
         (x.in_test ? '<span class="tag">test</span>' : '') + '<span class="tag">' + esc(x.category) + '</span></div><div class="fl">' + esc(SR.where(x)) +
-        '</div>' + (x.snippet ? '<div class="fs">' + esc(x.snippet) + '</div>' : '') + '</div><div class="fid">' + esc(x.id) + '<br>' + esc(x.cwe || '') + '</div>');
+        '</div>' + (x.snippet ? '<div class="fs">' + esc(x.snippet) + '</div>' : '') + '</div><div class="fid">' + esc(x.id) + '<br>' + esc(x.cwe || '') +
+        '<br><span class="conf conf-' + esc(x.confidence) + '">' + esc(x.confidence) + ' ' + esc(x.confidence_score || '') + '</span></div>');
       row.addEventListener('click', () => openFindingDrawer(x));
       list.appendChild(row);
     });
@@ -728,14 +769,17 @@
       SR.setHTML(table, '<tbody><tr><td class="muted">No dependency manifests were found in this repository.</td></tr></tbody>');
       return;
     }
-    SR.setHTML(table, '<thead><tr><th>Library</th><th>Version</th><th>Ecosystem</th><th>Type</th><th>Risk</th><th>Advisories / issues</th><th>License</th><th>Latest</th><th>Manifest</th></tr></thead>');
+    SR.setHTML(table, '<thead><tr><th>Library</th><th>Version</th><th>Resolved by</th><th>Ecosystem</th><th>Type</th><th>Risk</th><th>Advisories / issues</th><th>License</th><th>Latest</th><th>Manifest</th></tr></thead>');
     const body = el('tbody');
     rows.slice(0, d.limit).forEach((x) => {
       const tr = el('tr', { class: 'click' });
       const risk = x.max_severity ? SR.sevTag(x.max_severity) : (x.issues.length ? '<span class="st warning">REVIEW</span>' : '<span class="st pass">OK</span>');
       const adv = x.vulnerabilities.slice(0, 3).map((v) => esc(v.id)).join(', ') + (x.vulnerabilities.length > 3 ? ' +' + (x.vulnerabilities.length - 3) : '') +
         (x.issues.length ? (x.vulnerabilities.length ? ' · ' : '') + esc(x.issues[0]) : '');
-      SR.setHTML(tr, '<td class="mono">' + esc(x.name) + '</td><td class="mono">' + esc(x.version || x.spec || '*') + '</td><td>' + esc(x.ecosystem) +
+      const how = x.resolved_by || (x.source === 'registry' ? 'unresolved' : x.source);
+      SR.setHTML(tr, '<td class="mono">' + esc(x.name) + (x.parent ? '<div class="muted" style="font-size:11px">via ' + esc(x.parent) + '</div>' : '') + '</td><td class="mono">' + esc(x.version || x.spec || '*') +
+        (x.version && x.spec && x.spec !== x.version && x.direct ? '<div class="muted" style="font-size:11px">declared ' + esc(x.spec) + '</div>' : '') +
+        '</td><td><span class="res res-' + esc(how) + '">' + esc(how) + '</span></td><td>' + esc(x.ecosystem) +
         '</td><td>' + (x.direct ? 'direct' : '<span class="muted">transitive</span>') + '</td><td>' + risk + '</td><td class="mono" style="max-width:320px">' + (adv || '<span class="muted">-</span>') +
         '</td><td class="mono">' + esc((x.licenses || []).join(', ') || '-') + '</td><td class="mono">' + esc(x.latest || '-') + '</td><td class="mono muted">' + esc(x.manifest) + '</td>');
       tr.addEventListener('click', () => openDepDrawer(x));
@@ -801,6 +845,9 @@
       ['sbom', 'SBOM', 'CycloneDX 1.5 SBOM', 'Software bill of materials with vulnerabilities.'],
       ['csv', 'CSV', 'Findings spreadsheet', 'All findings as CSV.'],
       ['deps', 'CSV', 'Library inventory', 'Every library (direct & transitive) as CSV.'],
+      ['lock', 'LOCK', 'Lockfile guide', 'Versions resolved for unpinned dependencies + how to create the real lockfile.'],
+      ['vlock', 'JSON', 'Virtual lockfile', 'Machine-readable resolution of every unpinned dependency.'],
+      ['quality', 'QA', 'Analysis quality', 'Engines, noise discarded, confidence and suppressed findings (audit trail).'],
     ];
     const grid = el('div', { class: 'export-grid' });
     const live = S.scanId && !S.reportMode;
@@ -868,17 +915,71 @@
         '</dd><dt>CWE</dt><dd>' + esc(f.cwe || '-') + '</dd><dt>OWASP</dt><dd>' + esc((f.owasp || '-') + ' ' + (owasp.name || '')) + '</dd></dl>';
       if (f.snippet) html += '<div class="snippet">' + esc(f.snippet) + '</div>';
       if (f.detail) html += '<h5 class="where">Detail</h5><p>' + esc(f.detail) + '</p>';
+      if (f.flow && f.flow.length) {
+        html += '<h5 class="why">Data flow - untrusted source to sink</h5><ol class="flow">' + f.flow.map((step, i) =>
+          '<li class="' + (i === 0 ? 'src' : (i === f.flow.length - 1 ? 'sink' : 'step')) + '"><span class="fl-line">L' + esc(step.line) + '</span><b>' +
+          esc(step.label) + '</b><code>' + esc(step.code || '') + '</code></li>').join('') + '</ol>';
+      }
+      const reasons = (f.extra && f.extra.confidence_reasons) || [];
+      html += '<h5 class="where">Confidence</h5><p><span class="conf conf-' + esc(f.confidence) + '">' + esc(f.confidence) + ' · ' +
+        esc(f.confidence_score) + '/100</span> engine <b>' + esc(f.engine || 'pattern') + '</b>' + (reasons.length ? ' — ' + esc(reasons.join('; ')) : '') + '</p>';
+      if (f.status && f.status !== 'open') {
+        const t = f.triage || {};
+        html += '<div class="triage-note status-' + esc(f.status) + '"><b>' + esc(STATUS_LABEL[f.status] || f.status) + '</b> ' + esc(t.reason || '') +
+          (t.author ? ' <span class="muted">— ' + esc(t.author) + '</span>' : '') + (t.origin === 'learned-pattern' ? ' <span class="muted">(learned pattern)</span>' : '') + '</div>';
+      }
       if (rule.description) html += '<h5 class="why">Why is this insecure?</h5><p>' + esc(rule.description) + '</p>';
       if (rule.recommendation) html += '<h5 class="fix">How to fix it</h5><p>' + esc(rule.recommendation) + '</p>';
       html += vulnTable(f.extra && f.extra.vulnerabilities);
       if (rule.references && rule.references.length) html += '<h5 class="refs">References</h5><div class="refs">' + refsHTML(rule) + '</div>';
       SR.setHTML(body, html);
+      body.appendChild(triagePanel(f));
       const others = S.report.findings.filter((x) => x.rule_id === f.rule_id && x.id !== f.id);
       if (others.length) {
         body.appendChild(el('h5', { class: 'where', text: 'Other occurrences (' + others.length + ')' }));
         others.slice(0, 40).forEach((o) => body.appendChild(occRow(o)));
       }
     });
+  }
+
+  function triagePanel(f) {
+    const panel = el('div', { class: 'triage-panel' });
+    if (!S.scanId || S.reportMode) {
+      panel.appendChild(el('p', { class: 'muted', text: 'Triage is available when the results come from a scan run in this GUI (or with "secure-repo triage mark" on the report folder).' }));
+      return panel;
+    }
+    panel.appendChild(el('h5', { class: 'fix', text: 'Triage - teach Secure Repo' }));
+    const reason = el('textarea', { rows: '2', placeholder: 'Reason / justification (required for false positives - it goes to the audit trail)' });
+    const scope = el('select', {}, [
+      el('option', { value: 'finding', text: 'Only this finding' }),
+      el('option', { value: 'project-pattern', text: 'This code pattern in this project' }),
+      el('option', { value: 'global-pattern', text: 'This code pattern in every project' })]);
+    const buttons = el('div', { class: 'triage-buttons' });
+    [['false_positive', 'False positive', 'good'], ['accepted_risk', 'Accept risk', 'warn'], ['confirmed', 'Confirm', 'bad'], ['open', 'Reopen', '']].forEach((b) => {
+      if (b[0] === f.status) return;
+      buttons.appendChild(el('button', { class: 'btn small ' + b[2], type: 'button', text: b[1], onclick: () => submitTriage(f, b[0], reason.value, scope.value) }));
+    });
+    panel.appendChild(reason);
+    panel.appendChild(el('div', { class: 'row', style: { marginTop: '8px' } }, [el('span', { class: 'muted', style: { fontSize: '12px' }, text: 'Scope for false positives:' }), scope]));
+    panel.appendChild(buttons);
+    return panel;
+  }
+
+  async function submitTriage(f, status, reason, scope) {
+    try {
+      const data = await SR.api('/api/scans/' + S.scanId + '/triage', { method: 'POST', body: { finding_ids: [f.id], status: status, reason: reason, scope: status === 'false_positive' ? scope : 'finding' } });
+      const learned = data.result.learned ? ' · ' + data.result.learned + ' similar finding(s) suppressed' : '';
+      SR.toast(f.id + ' → ' + (STATUS_LABEL[status] || status) + learned + ' · score ' + data.result.score + '/100', 'ok');
+      const keep = S.fState;
+      showResults(data.report, S.scanId, S.reportDir, { keepFilters: true, tab: 'findings' });
+      S.fState = keep;
+      renderFindingsFilters();
+      renderFindings();
+      const updated = data.report.findings.find((x) => x.id === f.id);
+      if (updated) openFindingDrawer(updated);
+    } catch (err) {
+      SR.toast(err.message, 'error');
+    }
   }
 
   function occRow(f) {
@@ -1119,6 +1220,14 @@
       renderFindings();
     });
     $('#f-more').addEventListener('click', () => { S.fState.limit += 300; renderFindings(); });
+    [['#f-flow-chip', 'flow'], ['#f-supp-chip', 'suppressed']].forEach((pair) => {
+      $(pair[0]).addEventListener('click', (ev) => {
+        ev.preventDefault();
+        S.fState[pair[1]] = !S.fState[pair[1]];
+        $(pair[0]).classList.toggle('on', S.fState[pair[1]]);
+        renderFindings();
+      });
+    });
     $('#d-q').addEventListener('input', SR.debounce((ev) => { S.dState.q = ev.target.value; S.dState.limit = 200; renderDeps(); }, 150));
     $('#d-eco').addEventListener('change', (ev) => { S.dState.eco = ev.target.value; renderDeps(); });
     [['#d-vuln-chip', 'vuln'], ['#d-direct-chip', 'direct']].forEach((pair) => {

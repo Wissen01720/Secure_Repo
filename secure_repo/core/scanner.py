@@ -1,4 +1,15 @@
-"""Scan orchestrator: runs every analysis stage and assembles the report."""
+"""Scan orchestrator: runs every analysis stage and assembles the report.
+
+Analysis layers applied to each source file:
+
+1. **Lexical masking** - comments and string literals are blanked (offsets preserved) so code
+   patterns never match inside comments, docstrings or messages.
+2. **Semantic engines** - Python is parsed into a syntax tree with taint tracking; JavaScript /
+   TypeScript get a data-flow pass that confirms, escalates or discards pattern findings.
+3. **Patterns** - 160+ rules for every other language and for configuration/IaC/CI files.
+4. **Confidence & learning** - each finding is scored and the triage knowledge base (decisions,
+   learned false-positive patterns, per-rule statistics) plus the project configuration are applied.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +17,6 @@ import bisect
 import os
 import platform
 import re
-import sys
 import time
 import urllib.error
 from dataclasses import asdict, dataclass, field
@@ -14,20 +24,19 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from secure_repo import __author__, __version__
-from secure_repo.core import checks, compliance, deps as depmod, gitops, intel
+from secure_repo.core import (checks, compliance, confidence, deps as depmod, gitops, intel, jsflow, lexer, pyast,
+                              resolver, summary as summarymod, triage)
+from secure_repo.core.config import ProjectConfig, load_config
 from secure_repo.core.events import EventBus
-from secure_repo.core.languages import DOCUMENTATION, PROGRAMMING
-from secure_repo.core.models import (OWASP_TOP10, SEVERITIES, SEVERITY_RANK, Dependency, Finding, owasp_key)
+from secure_repo.core.languages import DOCUMENTATION
+from secure_repo.core.models import OWASP_TOP10, SEVERITY_RANK, SUPPRESSED_STATUSES, Dependency, Finding, owasp_key
 from secure_repo.core.rules import PATTERN_RULES, RULES, RULES_BY_ID, Rule
-from secure_repo.core.scoring import compute_score
 from secure_repo.core.walker import FileInfo, StructureTree, enumerate_files, read_text
 from secure_repo.core.workspace import Target, Workspace, prepare_workspace
 
 NOSEC_RE = re.compile(r"(?i)\bnosec\b|securerepo:ignore\b|noqa:\s*secure")
 COMMENT_PREFIXES = ("#", "//", "/*", "* ", "*/", "--", "<!--", ";", "rem ", "REM ", "::")
 MAX_PER_RULE_PER_FILE = 50
-STRING_AWARE = PROGRAMMING - {"Shell", "PowerShell", "Batch"}
-PATH_RULES = [rule for rule in PATTERN_RULES if rule.path]
 
 
 @dataclass
@@ -41,6 +50,10 @@ class ScanOptions:
     enrich: bool = True
     auditor: str = ""
     output_dir: str = "secure-repo-reports"
+    min_confidence: str = "low"
+    learning: bool = True          # apply the triage knowledge base (decisions, learned patterns, rule stats)
+    resolve_versions: bool = True  # virtual lockfile resolution for unpinned dependencies
+    semantic: bool = True          # lexical masking + syntax tree + data flow (False = legacy pattern-only engine)
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -51,11 +64,17 @@ class ScanCancelled(Exception):
 
 
 class Scanner:
-    def __init__(self, options: ScanOptions, bus: Optional[EventBus] = None):
+    def __init__(self, options: ScanOptions, bus: Optional[EventBus] = None, knowledge: Optional[triage.KnowledgeBase] = None):
         self.options = options
         self.bus = bus or EventBus()
         self.findings: List[Finding] = []
         self.cancelled = False
+        self.rules: List[Rule] = list(PATTERN_RULES)
+        self.path_rules: List[Rule] = [r for r in self.rules if r.path]
+        self.config = ProjectConfig()
+        self.knowledge = knowledge if knowledge is not None else (triage.KnowledgeBase() if options.learning else None)
+        self.noise: Dict[str, int] = {}
+        self.engine_stats: Dict[str, int] = {"python_ast": 0, "python_fallback": 0, "js_flow": 0, "masked_files": 0}
         self._rule_cache: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
         self.log_lines: List[str] = []
         self.bus.subscribe(self._collect_log)
@@ -75,6 +94,9 @@ class Scanner:
         if self.cancelled:
             raise ScanCancelled("Scan cancelled by user")
 
+    def _count_noise(self, reason: str, amount: int = 1) -> None:
+        self.noise[reason] = self.noise.get(reason, 0) + amount
+
     def _add(self, finding: Finding) -> None:
         self.findings.append(finding)
         self.bus.emit("finding", rule_id=finding.rule_id, title=finding.title, severity=finding.severity,
@@ -82,24 +104,29 @@ class Scanner:
 
     def _finding_from_rule(self, rule: Rule, info_rel: str, line: int, snippet: str = "", detail: str = "",
                            severity: Optional[str] = None, in_test: bool = False, title: Optional[str] = None,
-                           extra: Optional[Dict] = None) -> Finding:
+                           extra: Optional[Dict] = None, engine: Optional[str] = None,
+                           flow: Optional[List[Dict]] = None, confidence_label: Optional[str] = None) -> Finding:
+        default_engine = {"dependency": "dependency", "hygiene": "hygiene"}.get(rule.source, "pattern")
+        if rule.category == "Custom":
+            default_engine = "custom"
         return Finding(rule_id=rule.id, title=title or rule.title, severity=severity or rule.severity,
                        category=rule.category, file=info_rel, line=line, snippet=snippet, detail=detail,
-                       cwe=rule.cwe, owasp=owasp_key(rule.owasp), tags=list(rule.tags), confidence=rule.confidence,
-                       source=rule.source, in_test=in_test, extra=extra or {})
+                       cwe=rule.cwe, owasp=owasp_key(rule.owasp), tags=list(rule.tags),
+                       confidence=confidence_label or rule.confidence, source=rule.source, in_test=in_test,
+                       extra=extra or {}, engine=engine or default_engine, flow=flow or [])
 
     def _rules_for(self, info: FileInfo) -> List[Rule]:
-        path_signature = tuple(rule.id for rule in PATH_RULES if rule.applies_to(info.language, info.rel))
+        path_signature = tuple(rule.id for rule in self.path_rules if rule.applies_to(info.language, info.rel))
         key = (info.language, path_signature)
         cached = self._rule_cache.get(key)
         if cached is None:
-            cached = [rule for rule in PATTERN_RULES if rule.applies_to(info.language, info.rel)]
+            cached = [rule for rule in self.rules if rule.applies_to(info.language, info.rel)]
             self._rule_cache[key] = cached
         return cached
 
     @staticmethod
     def _inside_string(line_text: str, column: int) -> bool:
-        """True when ``column`` falls inside a single-line string literal (e.g. a message or docstring)."""
+        """True when ``column`` falls inside a single-line string literal."""
         quote = None
         index = 0
         while index < column and index < len(line_text):
@@ -127,58 +154,133 @@ class Scanner:
         return checks.redact_text(stripped)
 
     # ------------------------------------------------------------------ analysis
-    def analyze_text(self, info: FileInfo, text: str) -> None:
-        lower = text.lower()
-        newlines: Optional[List[int]] = None
-        lines: Optional[List[str]] = None
-        secret_lines = set()
+    def analyze_text(self, info: FileInfo, text: str) -> List[Finding]:
+        """Analyze one file with every applicable engine; returns (and registers) its findings."""
+        newlines = [m.start() for m in re.finditer("\n", text)]
+        lines = text.split("\n")
 
         def locate(offset: int) -> Tuple[int, str, int]:
-            nonlocal newlines, lines
-            if newlines is None:
-                newlines = [m.start() for m in re.finditer("\n", text)]
-                lines = text.split("\n")
             index = bisect.bisect_right(newlines, offset - 1) if offset else 0
             line_start = newlines[index - 1] + 1 if index > 0 else 0
             return index + 1, lines[index] if index < len(lines) else "", offset - line_start
 
+        def line_text_of(line_no: int) -> str:
+            return lines[line_no - 1] if 0 < line_no <= len(lines) else ""
+
         in_test = info.in_test
         is_doc = info.language in DOCUMENTATION
-        string_aware = info.language in STRING_AWARE
+        views = None if is_doc or not self.options.semantic else lexer.mask(text, info.language)
+        if views is not None:
+            self.engine_stats["masked_files"] += 1
+        lower = text.lower()
+        file_findings: List[Finding] = []
+        secret_lines = set()
+
+        # Layer 2a - Python syntax tree + taint -------------------------------------
+        python_semantic = False
+        if info.language == "Python" and self.options.semantic:
+            try:
+                py_findings, suppressed = pyast.analyze_python(text, info.rel)
+                python_semantic = True
+                self.engine_stats["python_ast"] += 1
+                for reason, amount in suppressed.items():
+                    self._count_noise(f"python: {reason}", amount)
+                for item in py_findings:
+                    if NOSEC_RE.search(line_text_of(item.line)):
+                        continue
+                    rule = RULES_BY_ID[item.rule_id]
+                    file_findings.append(self._finding_from_rule(
+                        rule, info.rel, item.line, self._snippet(line_text_of(item.line), item.col),
+                        detail=item.detail, severity=item.severity, in_test=in_test, title=item.title,
+                        engine=item.engine, flow=item.flow, confidence_label=item.confidence))
+            except (SyntaxError, ValueError, RecursionError, MemoryError):
+                self.engine_stats["python_fallback"] += 1
+
+        # Layer 3 - patterns on the right lexical view ------------------------------------------
         for rule in self._rules_for(info):
+            if python_semantic and rule.id in pyast.OWNED_RULES:
+                continue
             if rule.keywords and not any(keyword in lower for keyword in rule.keywords):
                 continue
             regex = rule.regex
             if regex is None:
                 continue
+            if views is None or rule.view == "raw":
+                subject, engine = text, "pattern"
+            else:
+                subject, engine = (views["code"] if rule.view == "code" else views["no_comments"]), "lexical"
+            if rule.category == "Custom":
+                engine = "custom"
             seen = set()
-            for match in regex.finditer(text):
-                line_no, line_text, column = locate(match.start())
+            for match in regex.finditer(subject):
+                line_no, _masked_line, column = locate(match.start())
+                line_text = line_text_of(line_no)
                 if line_no in seen:
                     continue
-                if not rule.scan_comments and line_text.lstrip().startswith(COMMENT_PREFIXES):
+                if views is None and not rule.scan_comments and line_text.lstrip().startswith(COMMENT_PREFIXES):
                     continue
                 if NOSEC_RE.search(line_text):
                     continue
                 if rule.exclude_re and rule.exclude_re.search(line_text):
                     continue
-                if string_aware and rule.source == "code" and self._inside_string(line_text, column):
+                if views is not None and rule.view == "strings" and rule.source == "code" \
+                        and self._inside_string(line_text, column):
                     end = column + max(len(match.group(0).split("\n", 1)[0]) - 1, 0)
                     if self._inside_string(line_text, end):
-                        continue  # the whole match lives inside a string literal (message, docstring...)
-                seen.add(line_no)
-                severity = rule.severity
+                        self._count_noise("match entirely inside a string literal")
+                        continue
                 if is_doc and rule.source == "code":
                     continue  # code patterns inside documentation are examples, not code
+                seen.add(line_no)
+                severity = rule.severity
                 if is_doc and rule.source == "secret" and SEVERITY_RANK[severity] < SEVERITY_RANK["medium"]:
                     severity = "medium"
                 if rule.source == "secret":
                     secret_lines.add(line_no)
-                self._add(self._finding_from_rule(rule, info.rel, line_no, self._snippet(line_text, column),
-                                                  severity=severity, in_test=in_test))
+                file_findings.append(self._finding_from_rule(rule, info.rel, line_no, self._snippet(line_text, column),
+                                                             severity=severity, in_test=in_test, engine=engine))
                 if len(seen) >= MAX_PER_RULE_PER_FILE:
                     break
 
+        # Layer 2b - JavaScript / TypeScript data flow --------------------------------------------
+        if views is not None and info.language in lexer.JS_LIKE:
+            self.engine_stats["js_flow"] += 1
+            decisions, suppressed = jsflow.analyze_js(text, views["code"])
+            for reason, amount in suppressed.items():
+                self._count_noise(f"javascript: {reason}", amount)
+            by_key: Dict[Tuple[str, int], jsflow.Decision] = {}
+            for decision in decisions:
+                current = by_key.get((decision.rule_id, decision.line))
+                if current is None or decision.kind == "tainted":
+                    by_key[(decision.rule_id, decision.line)] = decision
+            kept: List[Finding] = []
+            covered = set()
+            for finding in file_findings:
+                decision = by_key.get((finding.rule_id, finding.line))
+                if finding.rule_id not in jsflow.HANDLED_RULES or decision is None:
+                    kept.append(finding)
+                    continue
+                covered.add((finding.rule_id, finding.line))
+                if decision.kind == "constant":
+                    self._count_noise("javascript: constant or superseded sink")
+                    continue
+                if decision.kind == "tainted":
+                    finding.severity = decision.severity or finding.severity
+                    finding.engine, finding.flow, finding.detail = "taint", decision.flow, decision.detail
+                    finding.confidence = "high"
+                kept.append(finding)
+            for (rule_id, line_no), decision in by_key.items():
+                if decision.kind != "tainted" or (rule_id, line_no) in covered:
+                    continue
+                if NOSEC_RE.search(line_text_of(line_no)):
+                    continue
+                rule = RULES_BY_ID[rule_id]
+                kept.append(self._finding_from_rule(rule, info.rel, line_no, self._snippet(line_text_of(line_no), 0),
+                                                    detail=decision.detail, severity=decision.severity, in_test=in_test,
+                                                    engine="taint", flow=decision.flow, confidence_label="high"))
+            file_findings = kept
+
+        # Secrets, personal data and Dockerfile semantics (always on the raw text) ------------------
         if info.language != "Other" or os.path.basename(info.rel).startswith("."):
             generic = RULES_BY_ID["SR-SEC-019"]
             for offset, key, value, entropy in checks.find_generic_credentials(text, info.language):
@@ -191,8 +293,8 @@ class Scanner:
                     severity = "low"
                 detail = (f"'{key}' is assigned a literal value ({len(value)} characters, entropy "
                           f"{entropy:.2f} bits/char). Value redacted: {checks.mask(value)}")
-                self._add(self._finding_from_rule(generic, info.rel, line_no, self._snippet(line_text, column),
-                                                  detail=detail, severity=severity, in_test=in_test))
+                file_findings.append(self._finding_from_rule(generic, info.rel, line_no, self._snippet(line_text, column),
+                                                             detail=detail, severity=severity, in_test=in_test))
 
         if any(ch.isdigit() for ch in text[:200000]):
             card_rule = RULES_BY_ID["SR-PII-001"]
@@ -205,14 +307,18 @@ class Scanner:
                 severity = card_rule.severity
                 if is_test_card:
                     severity, detail = "info", detail + " It is a well-known test card number."
-                self._add(self._finding_from_rule(card_rule, info.rel, line_no,
-                                                  self._snippet(line_text.replace(number, checks.mask(number)), column),
-                                                  detail=detail, severity=severity, in_test=in_test))
+                file_findings.append(self._finding_from_rule(
+                    card_rule, info.rel, line_no, self._snippet(line_text.replace(number, checks.mask(number)), column),
+                    detail=detail, severity=severity, in_test=in_test))
 
         if info.language == "Dockerfile":
             for rule_id, line_no, snippet, detail in checks.analyze_dockerfile(text):
-                self._add(self._finding_from_rule(RULES_BY_ID[rule_id], info.rel, line_no, snippet, detail=detail,
-                                                  in_test=in_test))
+                file_findings.append(self._finding_from_rule(RULES_BY_ID[rule_id], info.rel, line_no, snippet,
+                                                             detail=detail, in_test=in_test, engine="ast"))
+
+        for finding in file_findings:
+            self._add(finding)
+        return file_findings
 
     # ------------------------------------------------------------------ stages
     def _stage_analyze(self, files: List[FileInfo], tree: StructureTree, stats: Dict) -> None:
@@ -276,6 +382,9 @@ class Scanner:
             for dep in result:
                 if is_lock:
                     dep.direct = dep.direct and parser is depmod.parse_nuget_lock
+                    dep.resolved_by = "lockfile"
+                elif dep.version:
+                    dep.resolved_by = "manifest"
                 parsed.append((dep, is_lock))
             ecosystems = sorted({d.ecosystem for d in result}) or ["-"]
             self.bus.log(f"{info.rel} -> {len(result)} libraries ({', '.join(ecosystems)})", "ok")
@@ -317,6 +426,7 @@ class Scanner:
                     versions = lock_index.get((dep.ecosystem, directory, depmod.normalize_name(dep.ecosystem, dep.name)))
                     if versions and not dep.version and dep.source == "registry":
                         dep.version = sorted(set(versions))[0]
+                        dep.resolved_by = "lockfile"
                     break
 
         inventory: Dict[Tuple[str, str, str], Dependency] = {}
@@ -334,10 +444,27 @@ class Scanner:
                 existing.locked = existing.locked or dep.locked
         return list(inventory.values()), issues, [m.rel for m in manifests]
 
+    def _stage_resolve(self, inventory: List[Dependency], root: str) -> Dict[str, int]:
+        counts = {"environment": 0, "registry": 0, "graph": 0}
+        if not self.options.resolve_versions or not inventory:
+            return counts
+        counts["environment"] = resolver.resolve_from_environment(inventory, root)
+        if counts["environment"]:
+            self.bus.log(f"{counts['environment']} version(s) resolved from the installed environment", "ok")
+        if not self.options.offline:
+            try:
+                counts["registry"] = resolver.resolve_from_registry(inventory, self.bus)
+                added = resolver.resolve_graph(inventory, self.bus)
+                inventory.extend(added)
+                counts["graph"] = len(added)
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                self.bus.log(f"Registry resolution unavailable: {getattr(exc, 'reason', exc)}", "warn")
+        return counts
+
     def _dependency_findings(self, inventory: List[Dependency], issues: List[depmod.ParseIssue]) -> None:
         unlocked: Dict[str, List[Dependency]] = {}
         for dep in inventory:
-            if dep.direct and not dep.locked and not dep.version and dep.source == "registry" \
+            if dep.direct and not dep.locked and dep.source == "registry" and dep.resolved_by not in ("manifest", "lockfile") \
                     and dep.ecosystem not in ("Go",) and dep.spec not in ("managed",):
                 unlocked.setdefault(dep.manifest, []).append(dep)
             if dep.source in ("git", "url"):
@@ -354,13 +481,20 @@ class Scanner:
                                                   extra={"package": dep.name, "ecosystem": dep.ecosystem}))
                 dep.issues.append(bad[1])
         for manifest, items in unlocked.items():
-            names = ", ".join(sorted(d.name for d in items)[:15]) + (" ..." if len(items) > 15 else "")
+            resolved = [d for d in items if d.version]
+            pending = [d for d in items if not d.version]
+            detail = f"{len(items)} dependencies use version ranges and no lockfile pins them."
+            if resolved:
+                sample = ", ".join(f"{d.name} {d.spec} -> {d.version} ({d.resolved_by})" for d in resolved[:6])
+                detail += (f" Secure Repo resolved {len(resolved)} of them virtually ({sample}{' ...' if len(resolved) > 6 else ''})"
+                           " and checked those versions; see dependencies/lockfile-guide.md to create a real lockfile.")
+            if pending:
+                detail += " Not resolvable: " + ", ".join(d.name for d in pending[:10]) + (" ..." if len(pending) > 10 else "") + "."
             rule = RULES_BY_ID["SR-DEP-004"]
-            self._add(self._finding_from_rule(rule, manifest, 0, manifest,
-                                              detail=f"{len(items)} dependencies use version ranges and no lockfile "
-                                                     f"pins them: {names}"))
+            self._add(self._finding_from_rule(rule, manifest, 0, manifest, detail=detail,
+                                              extra={"unlocked": [d.name for d in items]}))
             for dep in items:
-                dep.issues.append("Version not pinned and no lockfile")
+                dep.issues.append("Version range without lockfile" + (f" (resolved to {dep.version})" if dep.version else ""))
         for issue in issues:
             rule = RULES_BY_ID[issue.rule_id]
             self._add(self._finding_from_rule(rule, issue.manifest, issue.line,
@@ -376,7 +510,9 @@ class Scanner:
                        for v in dep.vulnerabilities]
                 fixes = sorted({f for v in dep.vulnerabilities for f in v["fixed"]})
                 count = len(dep.vulnerabilities)
-                detail = (f"{dep.name} {dep.version} ({dep.ecosystem}) is affected by {count} known "
+                how = {"registry": " (version resolved from the declared range)", "environment": " (installed version)",
+                       "registry-graph": f" (transitive, pulled in by {dep.parent})"}.get(dep.resolved_by or "", "")
+                detail = (f"{dep.name} {dep.version}{how} ({dep.ecosystem}) is affected by {count} known "
                           f"vulnerabilit{'y' if count == 1 else 'ies'}: {', '.join(ids[:8])}"
                           f"{' ...' if len(ids) > 8 else ''}.")
                 if fixes:
@@ -388,7 +524,8 @@ class Scanner:
                     rule, dep.manifest, dep.line if dep.direct else 0, f"{dep.name}@{dep.version}", detail=detail,
                     severity=worst, title=f"Vulnerable library: {dep.name}@{dep.version}",
                     extra={"package": dep.name, "version": dep.version, "ecosystem": dep.ecosystem,
-                           "direct": dep.direct, "vulnerabilities": dep.vulnerabilities, "fixed": fixes}))
+                           "direct": dep.direct, "vulnerabilities": dep.vulnerabilities, "fixed": fixes,
+                           "resolved_by": dep.resolved_by}))
             if dep.latest and dep.version:
                 current, latest = intel.major(dep.version), intel.major(dep.latest)
                 if current is not None and latest is not None and latest > current:
@@ -403,6 +540,26 @@ class Scanner:
                         RULES_BY_ID["SR-DEP-008"], dep.manifest, dep.line, f"{dep.name}: {', '.join(dep.licenses)}",
                         detail=f"{dep.name} is licensed under {', '.join(dep.licenses)}.",
                         title=f"License review: {dep.name}", extra={"package": dep.name, "ecosystem": dep.ecosystem}))
+
+    def _range_findings(self, inventory: List[Dependency]) -> None:
+        candidates = [d for d in inventory if d.resolved_by == "registry" and d.range_lowest
+                      and d.range_lowest != d.version and not d.vulnerabilities]
+        if not candidates:
+            return
+        found = intel.osv_vulnerability_ids([(d.ecosystem, d.name, d.range_lowest) for d in candidates])
+        rule = RULES_BY_ID["SR-DEP-009"]
+        for dep in candidates:
+            ids = found.get((dep.ecosystem, dep.name, dep.range_lowest))
+            if not ids:
+                continue
+            self._add(self._finding_from_rule(
+                rule, dep.manifest, dep.line, f"{dep.name} {dep.spec}",
+                detail=(f"'{dep.name} {dep.spec}' resolves today to {dep.version} (not affected), but the range also "
+                        f"admits {dep.range_lowest}, affected by {len(ids)} advisor{'y' if len(ids) == 1 else 'ies'} "
+                        f"({', '.join(ids[:5])}). Raise the minimum version."),
+                title=f"Range admits vulnerable releases: {dep.name}",
+                extra={"package": dep.name, "ecosystem": dep.ecosystem, "range_lowest": dep.range_lowest, "advisories": ids}))
+            dep.issues.append(f"Range admits vulnerable {dep.range_lowest}")
 
     def _stage_hygiene(self, files: List[FileInfo], workspace_path: str, has_deps: bool) -> Dict[str, bool]:
         paths = {f.rel.lower() for f in files}
@@ -452,6 +609,50 @@ class Scanner:
             missing("SR-HYG-006", "No CODEOWNERS file was found.")
         return facts
 
+    # ------------------------------------------------------------------ configuration & learning
+    def _load_configuration(self, root: str) -> None:
+        user_dir = triage.data_dir() if self.options.learning else None
+        self.config = load_config(root, user_dir)
+        for error in self.config.errors:
+            self.bus.log(f"Configuration: {error}", "warn")
+        if self.config.source:
+            self.bus.log(f"Project configuration loaded from {os.path.basename(self.config.source)}", "ok")
+        disabled = set(self.config.disable)
+        self.rules = [r for r in PATTERN_RULES if r.id not in disabled] + self.config.custom_rules
+        self.path_rules = [r for r in self.rules if r.path]
+        self._rule_cache.clear()
+        if self.config.custom_rules:
+            self.bus.log(f"{len(self.config.custom_rules)} custom rule(s) active", "ok")
+        if self.config.min_confidence != "low" and self.options.min_confidence == "low":
+            self.options.min_confidence = self.config.min_confidence
+
+    def _apply_quality(self, findings: List[Dict], meta: Dict, workspace_path: str) -> Dict[str, int]:
+        disabled = set(self.config.disable)
+        findings[:] = [f for f in findings if f["rule_id"] not in disabled]
+        for finding in findings:
+            if finding["rule_id"] in self.config.severity:
+                finding["severity"] = self.config.severity[finding["rule_id"]]
+            finding["fingerprint"] = triage.fingerprint(finding)
+            confidence.assess(finding, self.knowledge)
+        counts = {"decisions": 0, "learned_patterns": 0, "allowlisted": 0, "below_min_confidence": 0}
+        if self.knowledge is not None:
+            key, _name = triage.project_key(meta)
+            applied = self.knowledge.apply(findings, key, triage.load_repo_triage(workspace_path))
+            counts.update(applied)
+        for finding in findings:
+            if finding["status"] != "open":
+                continue
+            reason = self.config.allowlisted(finding)
+            if reason:
+                finding["status"] = "false_positive"
+                finding["triage"] = {"reason": reason, "origin": "config"}
+                counts["allowlisted"] += 1
+            elif not confidence.meets(finding, self.options.min_confidence):
+                finding["status"] = "filtered"
+                finding["triage"] = {"reason": f"confidence below '{self.options.min_confidence}'", "origin": "filter"}
+                counts["below_min_confidence"] += 1
+        return counts
+
     # ------------------------------------------------------------------ main
     def run(self, target: Target, interactive: bool = False, write_reports: bool = True) -> Tuple[Dict, Optional[str]]:
         from secure_repo.report.writer import write_reports as write_all  # local import avoids cycles
@@ -466,9 +667,10 @@ class Scanner:
             workspace = prepare_workspace(target, bus, interactive=interactive)
             bus.stage("acquire", "done", f"{workspace.mode} @ {workspace.branch or 'n/a'}")
             self._check_cancel()
+            self._load_configuration(workspace.path)
 
             bus.stage("enumerate", "start")
-            files = enumerate_files(workspace.path, self.options.exclude)
+            files = enumerate_files(workspace.path, self.options.exclude + self.config.exclude)
             tree = StructureTree(workspace.name, files)
             bus.emit("structure", tree=tree.to_dict(), files=len(files))
             directories = sum(1 for node in tree.index.values() if node["type"] == "dir") - 1
@@ -478,14 +680,25 @@ class Scanner:
             bus.stage("analyze", "start")
             stats = {"scanned": 0, "skipped": 0, "lines": 0, "languages": {}}
             self._stage_analyze(files, tree, stats)
-            code_findings = len(self.findings)
-            bus.stage("analyze", "done", f"{stats['scanned']} files analyzed, {code_findings} findings")
+            engines = self.engine_stats
+            bus.log(f"Engines: {engines['python_ast']} Python syntax trees, {engines['js_flow']} JS/TS data-flow passes, "
+                    f"{engines['masked_files']} files lexically masked; {sum(self.noise.values())} noisy matches discarded", "ok")
+            bus.stage("analyze", "done", f"{stats['scanned']} files analyzed, {len(self.findings)} findings")
 
             bus.stage("dependencies", "start")
             inventory, issues, manifests = self._stage_dependencies(files)
-            self._dependency_findings(inventory, issues)
             direct = sum(1 for d in inventory if d.direct)
             bus.stage("dependencies", "done", f"{len(inventory)} libraries ({direct} direct) in {len(manifests)} manifests")
+
+            bus.stage("resolve", "start")
+            resolution = self._stage_resolve(inventory, workspace.path)
+            unresolved = sum(1 for d in inventory if d.direct and not d.version and d.source == "registry")
+            if any(resolution.values()) or unresolved:
+                bus.stage("resolve", "done", f"environment {resolution['environment']} · registry {resolution['registry']}"
+                                             f" · graph +{resolution['graph']} · unresolved {unresolved}")
+            else:
+                bus.stage("resolve", "skip", "every version already pinned" if inventory else "no dependencies")
+            self._dependency_findings(inventory, issues)
 
             online = not self.options.offline
             queried = 0
@@ -502,6 +715,7 @@ class Scanner:
                     if self.options.enrich:
                         intel.depsdev_enrich(inventory, bus)
                     self._vulnerability_findings(inventory)
+                    self._range_findings(inventory)
                     bus.stage("intel", "done", f"{queried} versions checked, {vulnerable} vulnerable")
                 except (urllib.error.URLError, OSError, ValueError) as exc:
                     intel_error = str(getattr(exc, "reason", exc))
@@ -513,72 +727,52 @@ class Scanner:
             hygiene = self._stage_hygiene(files, workspace.path, bool(inventory))
             bus.stage("hygiene", "done", f"{sum(hygiene.values())}/{len(hygiene)} practices present")
 
-            # Finalize findings -------------------------------------------------
-            self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f.severity, 9), f.file, f.line, f.rule_id))
-            for number, finding in enumerate(self.findings, 1):
-                finding.id = f"SR-{number:04d}"
-                tree.add_finding(finding.file, finding.severity)
+            meta = {
+                "name": workspace.name, "target": target.location, "target_kind": target.kind,
+                "branch": workspace.branch, "commit": workspace.commit, "mode": workspace.mode,
+                "remote": checks.redact_text(workspace.remote), "started_at": started_iso,
+                "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
+                "python": platform.python_version(), "git": gitops.git_version(),
+                "auditor": self.options.auditor or "not specified",
+                "options": {"offline": self.options.offline, "compliance": self.options.compliance,
+                            "frameworks": compliance.resolve_frameworks(self.options.frameworks)
+                            if self.options.compliance else [],
+                            "include_tests": self.options.include_tests, "min_confidence": self.options.min_confidence,
+                            "learning": self.options.learning, "max_file_size": self.options.max_file_size,
+                            "exclude": self.options.exclude + self.config.exclude},
+                "notes": workspace.notes + ([f"Vulnerability intelligence unavailable: {intel_error}"] if intel_error else []),
+            }
+
+            # Quality pipeline: fingerprints, confidence, triage knowledge, configuration --------------
             findings = [f.to_dict() for f in self.findings]
+            quality = self._apply_quality(findings, meta, workspace.path)
+            if quality["decisions"] or quality["learned_patterns"]:
+                bus.log(f"Triage knowledge applied: {quality['decisions']} decision(s), "
+                        f"{quality['learned_patterns']} learned false-positive pattern match(es)", "ok")
+            findings.sort(key=lambda f: (f["status"] in SUPPRESSED_STATUSES, SEVERITY_RANK.get(f["severity"], 9),
+                                         f["file"], f["line"], f["rule_id"]))
+            for number, finding in enumerate(findings, 1):
+                finding["id"] = f"SR-{number:04d}"
 
             bus.stage("compliance", "start")
-            compliance_result: Dict = {"enabled": False, "frameworks": []}
-            if self.options.compliance:
-                compliance_result = compliance.evaluate(findings, hygiene, self.options.frameworks)
-                names = ", ".join(f"{fw['name']} {fw['score']}%" for fw in compliance_result["frameworks"])
-                bus.stage("compliance", "done", names)
-            else:
-                bus.stage("compliance", "skip", "disabled")
-
             bus.stage("scoring", "start")
-            score = compute_score(findings)
-            by_severity = {s: 0 for s in SEVERITIES}
-            by_category: Dict[str, int] = {}
-            by_owasp: Dict[str, int] = {}
-            per_file: Dict[str, Dict] = {}
-            for finding in findings:
-                by_severity[finding["severity"]] += 1
-                by_category[finding["category"]] = by_category.get(finding["category"], 0) + 1
-                by_owasp[finding["owasp"]] = by_owasp.get(finding["owasp"], 0) + 1
-                entry = per_file.setdefault(finding["file"], {"file": finding["file"], "count": 0, "risk": finding["severity"]})
-                entry["count"] += 1
-            top_files = sorted(per_file.values(), key=lambda e: (SEVERITY_RANK[e["risk"]], -e["count"]))[:15]
-            bus.stage("scoring", "done", f"score {score['score']}/100 grade {score['grade']}")
-
             finished = time.time()
+            meta["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            meta["duration_seconds"] = round(finished - started, 2)
             vulnerable_deps = [d for d in inventory if d.vulnerabilities]
             ecosystems: Dict[str, int] = {}
             for dep in inventory:
                 ecosystems[dep.ecosystem] = ecosystems.get(dep.ecosystem, 0) + 1
-            used_rules = sorted({f["rule_id"] for f in findings})
+            direct = sum(1 for d in inventory if d.direct)
             inventory.sort(key=lambda d: (not d.vulnerabilities, not d.direct, d.ecosystem, d.name.lower()))
             report = {
                 "schema": "secure-repo/report@1",
                 "tool": {"name": "Secure Repo", "version": __version__, "author": __author__, "rules": len(RULES)},
-                "meta": {
-                    "name": workspace.name, "target": target.location, "target_kind": target.kind,
-                    "branch": workspace.branch, "commit": workspace.commit, "mode": workspace.mode,
-                    "remote": checks.redact_text(workspace.remote), "started_at": started_iso,
-                    "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "duration_seconds": round(finished - started, 2),
-                    "platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
-                    "python": platform.python_version(), "git": gitops.git_version(),
-                    "auditor": self.options.auditor or "not specified",
-                    "options": {"offline": self.options.offline, "compliance": self.options.compliance,
-                                "frameworks": compliance.resolve_frameworks(self.options.frameworks)
-                                if self.options.compliance else [],
-                                "include_tests": self.options.include_tests,
-                                "max_file_size": self.options.max_file_size, "exclude": self.options.exclude},
-                    "notes": workspace.notes + ([f"Vulnerability intelligence unavailable: {intel_error}"] if intel_error else []),
-                },
-                "summary": {
-                    "files_total": len(files), "files_scanned": stats["scanned"], "files_skipped": stats["skipped"],
-                    "lines": stats["lines"], "findings": len(findings), "by_severity": by_severity,
-                    "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
-                    "by_owasp": {k: by_owasp[k] for k in OWASP_TOP10 if k in by_owasp},
-                    "score": score["score"], "grade": score["grade"], "top_files": top_files,
-                },
+                "meta": meta,
+                "summary": {"files_total": len(files), "files_scanned": stats["scanned"],
+                            "files_skipped": stats["skipped"], "lines": stats["lines"]},
                 "findings": findings,
-                "rules": {rid: RULES_BY_ID[rid].to_dict() for rid in used_rules},
+                "rules": {},
                 "owasp": OWASP_TOP10,
                 "dependencies": [d.to_dict() for d in inventory],
                 "dependency_summary": {
@@ -586,12 +780,28 @@ class Scanner:
                     "ecosystems": ecosystems, "manifests": manifests, "vulnerable": len(vulnerable_deps),
                     "vulnerabilities": len({v["id"] for d in vulnerable_deps for v in d.vulnerabilities}),
                     "queried": queried, "online": online and not intel_error,
+                    "resolution": resolver.summarize(inventory),
+                },
+                "lockfile": resolver.virtual_lockfile(inventory),
+                "analysis": {
+                    "engines": dict(self.engine_stats), "noise_filtered": dict(sorted(self.noise.items())),
+                    "noise_total": sum(self.noise.values()), "knowledge": quality,
+                    "learning": self.options.learning, "config": os.path.basename(self.config.source) if self.config.source else None,
+                    "custom_rules": [r.id for r in self.config.custom_rules], "min_confidence": self.options.min_confidence,
                 },
                 "structure": tree.to_dict(),
                 "languages": stats["languages"],
                 "hygiene": hygiene,
-                "compliance": compliance_result,
+                "compliance": {"enabled": False, "frameworks": []},
             }
+            summarymod.finalize(report, {r.id: r.to_dict() for r in self.config.custom_rules})
+            if report["compliance"].get("enabled"):
+                names = ", ".join(f"{fw['name']} {fw['score']}%" for fw in report["compliance"]["frameworks"])
+                bus.stage("compliance", "done", names)
+            else:
+                bus.stage("compliance", "skip", "disabled")
+            bus.stage("scoring", "done", f"score {report['summary']['score']}/100 grade {report['summary']['grade']}"
+                                         + (f" · {report['summary']['suppressed']} suppressed" if report['summary']['suppressed'] else ""))
 
             report_dir = None
             if write_reports:
@@ -613,4 +823,3 @@ class Scanner:
         finally:
             if workspace is not None:
                 workspace.cleanup()
-

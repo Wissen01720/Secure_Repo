@@ -110,6 +110,14 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-tests" checked><span class="slider"></span>
             <span><b>Include test files</b><small>Findings in tests are flagged and weigh 50% in the score.</small></span></label>
+          <label class="toggle"><input type="checkbox" id="opt-learning" checked><span class="slider"></span>
+            <span><b>Learn from triage</b><small>Apply your false-positive decisions, learned patterns and rule statistics.</small></span></label>
+          <div class="two">
+            <div class="field"><label for="opt-confidence">Minimum confidence</label>
+              <select id="opt-confidence"><option value="low" selected>Low (show all)</option><option value="medium">Medium</option><option value="high">High only</option></select></div>
+            <div class="field"><label for="opt-engine">Analysis engine</label>
+              <select id="opt-engine"><option value="layered" selected>Layered (AST + data flow)</option><option value="patterns">Patterns (legacy)</option></select></div>
+          </div>
           <div class="two">
             <div class="field"><label for="opt-size">Max file size</label>
               <select id="opt-size"><option value="512">512 KB</option><option value="2048" selected>2 MB</option><option value="8192">8 MB</option><option value="32768">32 MB</option></select></div>
@@ -223,6 +231,8 @@
         <select id="f-cat"><option value="">All categories</option></select>
         <input type="search" id="f-q" placeholder="Search title, file, rule, CWE...">
         <label class="chip" id="f-tests-chip"><input type="checkbox" id="f-tests" hidden>Hide test code</label>
+        <label class="chip" id="f-flow-chip">Data flow only</label>
+        <label class="chip" id="f-supp-chip">Show suppressed <span id="f-supp-n">0</span></label>
       </div>
       <div id="findings-list"></div>
       <div class="show-more"><button class="btn" id="f-more" type="button" hidden>Show more</button></div>

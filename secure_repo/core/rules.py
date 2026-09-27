@@ -56,6 +56,7 @@ class Rule:
     source: str = "code"
     references: Tuple[str, ...] = ()
     flags: int = 0
+    needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
     _regex: Optional[Pattern] = field(default=None, repr=False, compare=False)
     _path_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
     _exclude_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
@@ -71,6 +72,13 @@ class Rule:
         if self.exclude and self._exclude_re is None:
             self._exclude_re = re.compile(self.exclude)
         return self._exclude_re
+
+    @property
+    def view(self) -> str:
+        """Which lexical view the pattern runs on: raw text, comments masked, or comments+strings masked."""
+        if self.source == "secret" or self.scan_comments:
+            return "raw"
+        return "strings" if self.needs_strings else "code"
 
     def applies_to(self, language: str, rel_path: str) -> bool:
         if self.path:
@@ -1024,6 +1032,36 @@ RULES: List[Rule] = [
          pattern=r"^\s*(?:debug|app_debug|flask_debug|django_debug)\s*[:=]\s*['\"]?(?:true|1|on|yes)['\"]?\s*$",
          description="Debug settings in configuration files tend to reach production, exposing internals.",
          recommendation="Keep debug off by default and enable it only in local overrides."),
+    # ---------------------------------------------------------------- Data-flow rules (semantic engines)
+    Rule(id="SR-PY-022", title="Server-side template injection", severity="critical", category="Injection",
+         cwe="CWE-1336", owasp="A03", languages=PY, tags=("injection",), source="code",
+         description="User-controlled text is compiled as a Jinja/Flask template. Template expressions can read "
+                     "configuration and secrets and usually escalate to remote code execution.",
+         recommendation="Never build templates from user input: render a fixed template and pass the data as "
+                        "context variables (render_template('page.html', value=value))."),
+    Rule(id="SR-PY-023", title="Open redirect", severity="medium", category="Access Control", cwe="CWE-601",
+         owasp="A01", languages=PY, tags=("access-control",), source="code",
+         description="The redirect destination comes from the request, so attackers can craft links on your "
+                     "domain that forward victims to phishing pages.",
+         recommendation="Redirect only to relative paths or to an allow-list of trusted hosts (e.g. validate with "
+                        "url_has_allowed_host_and_scheme)."),
+    Rule(id="SR-PY-024", title="Reflected cross-site scripting", severity="high", category="Cross-Site Scripting",
+         cwe="CWE-79", owasp="A03", languages=PY, tags=("xss", "injection"), source="code",
+         description="A route returns a string built from request data. Flask/Django send it as HTML without "
+                     "escaping, so injected markup executes in the victim's browser.",
+         recommendation="Render through an auto-escaping template, return JSON, or escape the value with "
+                        "markupsafe.escape()."),
+    Rule(id="SR-JS-023", title="Reflected cross-site scripting (response)", severity="medium",
+         category="Cross-Site Scripting", cwe="CWE-79", owasp="A03", languages=JS, tags=("xss", "injection"),
+         description="Request data is written straight into an HTTP response body, where browsers interpret it as "
+                     "HTML.",
+         recommendation="Use res.json() for data or render through an escaping template engine; escape any value "
+                        "that must be embedded in HTML."),
+    Rule(id="SR-JS-024", title="Regular expression built from user input", severity="medium", category="Injection",
+         cwe="CWE-1333", owasp="A03", languages=JS, tags=("injection",),
+         description="new RegExp() compiles attacker-controlled patterns, enabling regular-expression denial of "
+                     "service (catastrophic backtracking) and logic bypasses.",
+         recommendation="Escape user input before embedding it in a pattern, or use plain string matching."),
     # ---------------------------------------------------------------- Dependencies (generated)
     Rule(id="SR-DEP-001", title="Library with known vulnerabilities", severity="high",
          category="Vulnerable Dependency", cwe="CWE-1395", owasp="A06", source="dependency",
@@ -1074,6 +1112,13 @@ RULES: List[Rule] = [
                      "(source disclosure, attribution, network use) may conflict with how the software is "
                      "distributed.",
          recommendation="Have the license reviewed and record the decision in your third-party inventory."),
+    Rule(id="SR-DEP-009", title="Version range admits vulnerable releases", severity="low",
+         category="Vulnerable Dependency", cwe="CWE-1395", owasp="A06", source="dependency",
+         tags=("vulnerable-dependency", "supply-chain"),
+         description="The version that resolves today is not vulnerable, but the declared range also accepts older "
+                     "releases with known advisories. Environments with stale caches, mirrors or lockfile-less "
+                     "installs may still receive a vulnerable version.",
+         recommendation="Raise the lower bound of the range to a fixed version and commit a lockfile."),
     # ---------------------------------------------------------------- Repository hygiene (generated)
     Rule(id="SR-HYG-001", title="No security policy (SECURITY.md)", severity="low", category="Repository Hygiene",
          cwe="CWE-1059", owasp="A04", source="hygiene", tags=("hygiene",),
@@ -1104,6 +1149,16 @@ RULES: List[Rule] = [
          description="Without CODEOWNERS there is no enforced reviewer for sensitive paths.",
          recommendation="Add a CODEOWNERS file and require code-owner review on protected branches."),
 ]
+
+# Patterns that must read inside string literals (algorithm names, URLs, wildcards, keys...).
+NEEDS_STRINGS = {
+    "SR-PY-008", "SR-PY-013", "SR-PY-017", "SR-JS-010", "SR-JS-012", "SR-JS-013", "SR-JS-014", "SR-JS-015",
+    "SR-JS-019", "SR-JS-020", "SR-JS-021", "SR-JS-022", "SR-JAVA-004", "SR-JAVA-005", "SR-PHP-009", "SR-GO-002",
+    "SR-GO-004", "SR-GO-005", "SR-C-005", "SR-GEN-001", "SR-GEN-002", "SR-GEN-003", "SR-GEN-004", "SR-GEN-006",
+}
+for _rule in RULES:
+    if _rule.id in NEEDS_STRINGS:
+        _rule.needs_strings = True
 
 RULES_BY_ID: Dict[str, Rule] = {rule.id: rule for rule in RULES}
 PATTERN_RULES: List[Rule] = [rule for rule in RULES if rule.pattern]

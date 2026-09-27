@@ -14,6 +14,7 @@ STAGES = [
     ("enumerate", "Mapping repository structure"),
     ("analyze", "Static code, secret & config analysis"),
     ("dependencies", "Discovering libraries & dependencies"),
+    ("resolve", "Resolving versions (virtual lockfile)"),
     ("intel", "Vulnerability intelligence lookup"),
     ("hygiene", "Repository security hygiene"),
     ("compliance", "Compliance audit"),

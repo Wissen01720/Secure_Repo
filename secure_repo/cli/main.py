@@ -31,8 +31,12 @@ EPILOG = """examples:
   secure-repo scan ../project -b develop        audit branch 'develop' without touching your working tree
   secure-repo scan . --compliance pci-dss,gdpr  add the compliance audit for selected frameworks
   secure-repo scan . --offline --fail-on high   CI mode: no network, exit code 3 on high+ findings
+  secure-repo scan . --min-confidence medium   hide low-confidence findings (kept in the audit trail)
   secure-repo branches https://github.com/o/r   list remote branches
   secure-repo gui                               open the graphical interface in your browser
+  secure-repo triage stats                      precision of every rule according to your triage decisions
+  secure-repo benchmark                         measure precision/recall of the engines on the labeled corpus
+  secure-repo init-config                       create a .securerepo.toml to tune the analysis for a project
 
 Only audit repositories you own or are explicitly authorized to assess."""
 
@@ -66,6 +70,14 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--no-anim", action="store_true", help="disable animations")
     scan.add_argument("--no-menu", action="store_true", help="do not show the post-scan menu")
     scan.add_argument("--open", action="store_true", help="open the HTML report when finished")
+    scan.add_argument("--min-confidence", choices=("low", "medium", "high"), default="low",
+                      help="filter findings below this confidence (they stay in the report as 'filtered')")
+    scan.add_argument("--no-learning", action="store_true",
+                      help="ignore the triage knowledge base (decisions, learned patterns, rule statistics)")
+    scan.add_argument("--no-resolve", action="store_true",
+                      help="do not resolve versions of unpinned dependencies (virtual lockfile)")
+    scan.add_argument("--engine", choices=("layered", "patterns"), default="layered",
+                      help="'layered' (default): masking + syntax tree + data flow; 'patterns': legacy regex only")
 
     branches = sub.add_parser("branches", help="list the branches of a local repository or Git URL")
     branches.add_argument("target", nargs="?", default=".")
@@ -80,6 +92,38 @@ def build_parser() -> argparse.ArgumentParser:
     rules.add_argument("--search", default="", help="filter by text (id, title, language, CWE)")
 
     sub.add_parser("frameworks", help="list compliance frameworks")
+
+    tri = sub.add_parser("triage", help="manage the triage knowledge base (false positives, learned patterns)")
+    tri_sub = tri.add_subparsers(dest="triage_command", metavar="<action>")
+    tri_list = tri_sub.add_parser("list", help="list recorded decisions and learned patterns")
+    tri_list.add_argument("--status", choices=("confirmed", "accepted_risk", "false_positive"))
+    tri_sub.add_parser("stats", help="per-rule precision computed from your decisions")
+    tri_mark = tri_sub.add_parser("mark", help="triage findings of a report.json from the command line")
+    tri_mark.add_argument("report", help="path to a report folder or its report.json")
+    tri_mark.add_argument("ids", nargs="+", help="finding IDs, e.g. SR-0004 SR-0007")
+    tri_mark.add_argument("--status", required=True, choices=("open", "confirmed", "accepted_risk", "false_positive"))
+    tri_mark.add_argument("--reason", default="", help="justification (required for false positives)")
+    tri_mark.add_argument("--scope", default="finding", choices=("finding", "project-pattern", "global-pattern"))
+    tri_forget = tri_sub.add_parser("forget", help="delete a decision (fingerprint) or a learned pattern (id)")
+    tri_forget.add_argument("identifier")
+    tri_export = tri_sub.add_parser("export", help="export the knowledge base (or --to-repo to share with a team)")
+    tri_export.add_argument("file", nargs="?", default="securerepo-knowledge.json")
+    tri_export.add_argument("--to-repo", metavar="REPO_PATH",
+                            help="write the decisions of that repository to <repo>/.securerepo/triage.json")
+    tri_import = tri_sub.add_parser("import", help="import a knowledge base export")
+    tri_import.add_argument("file")
+    tri_cases = tri_sub.add_parser("export-cases", help="turn false positives into benchmark regression cases")
+    tri_cases.add_argument("directory", nargs="?", default=None)
+    tri_reset = tri_sub.add_parser("reset", help="erase every decision and learned pattern")
+    tri_reset.add_argument("--yes", action="store_true")
+
+    bench = sub.add_parser("benchmark", help="measure precision/recall of the detection engines")
+    bench.add_argument("--cases", action="append", default=[], metavar="DIR", help="additional labeled case folders")
+    bench.add_argument("--rule", default="", help="only show rules containing this text")
+    bench.add_argument("--compare", action="store_true", help="also run the legacy pattern-only engine")
+
+    init = sub.add_parser("init-config", help="create a .securerepo.toml template in a repository")
+    init.add_argument("path", nargs="?", default=".")
     return parser
 
 
@@ -108,7 +152,9 @@ def _state_from_args(args) -> SessionState:
             offline=args.offline, compliance=args.compliance is not None,
             frameworks=[p.strip() for p in (args.compliance or "all").split(",") if p.strip()],
             max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
-            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output)
+            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output,
+            min_confidence=args.min_confidence, learning=not args.no_learning, resolve_versions=not args.no_resolve,
+            semantic=args.engine == "layered")
     elif getattr(args, "command", None) == "gui":
         options = ScanOptions(offline=args.offline, output_dir=args.output)
     interactive = console.is_terminal and sys.stdin is not None and sys.stdin.isatty()
@@ -225,6 +271,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         if args.command == "frameworks":
             return cmd_frameworks()
+        if args.command == "triage":
+            from secure_repo.cli.learning import cmd_triage
+
+            return cmd_triage(args, parser)
+        if args.command == "benchmark":
+            from secure_repo.cli.learning import cmd_benchmark
+
+            return cmd_benchmark(args)
+        if args.command == "init-config":
+            from secure_repo.cli.learning import cmd_init_config
+
+            return cmd_init_config(args)
     except KeyboardInterrupt:
         console.print()
         say("Aborted by user.", "warn")

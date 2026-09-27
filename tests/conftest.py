@@ -8,6 +8,14 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+@pytest.fixture(autouse=True)
+def isolated_knowledge(tmp_path, monkeypatch):
+    """Every test gets its own empty triage knowledge base (never the user's real one)."""
+    home = tmp_path / "secure-repo-home"
+    monkeypatch.setenv("SECURE_REPO_HOME", str(home))
+    return str(home)
+
+
 def write(root, rel, content):
     path = os.path.join(root, *rel.split("/"))
     os.makedirs(os.path.dirname(path), exist_ok=True)

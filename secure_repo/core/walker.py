@@ -172,21 +172,26 @@ class StructureTree:
         return _sort(self.root)
 
     def render_text(self, max_depth: int = 6) -> str:
-        lines = [f"{self.root['name']}/  ({self.root['files']} files)"]
+        return render_structure_text(self.to_dict(), max_depth)
 
-        def _walk(node: Dict, prefix: str, depth: int) -> None:
-            children = node.get("children", [])
-            for index, child in enumerate(children):
-                last = index == len(children) - 1
-                branch = "└── " if last else "├── "
-                marker = ""
-                if child["findings"]:
-                    counts = ", ".join(f"{child['severity'][s]} {s}" for s in SEVERITIES if child["severity"].get(s))
-                    marker = f"  [!] {counts}"
-                suffix = "/" if child["type"] == "dir" else ""
-                lines.append(f"{prefix}{branch}{child['name']}{suffix}{marker}")
-                if child["type"] == "dir" and depth < max_depth:
-                    _walk(child, prefix + ("    " if last else "│   "), depth + 1)
 
-        _walk(self.to_dict(), "", 1)
-        return "\n".join(lines)
+def render_structure_text(root: Dict, max_depth: int = 6) -> str:
+    """Plain-text tree of a structure dictionary annotated with finding counts."""
+    lines = [f"{root['name']}/  ({root['files']} files)"]
+
+    def _walk(node: Dict, prefix: str, depth: int) -> None:
+        children = node.get("children", [])
+        for index, child in enumerate(children):
+            last = index == len(children) - 1
+            branch = "└── " if last else "├── "
+            marker = ""
+            if child["findings"]:
+                counts = ", ".join(f"{child['severity'][s]} {s}" for s in SEVERITIES if child["severity"].get(s))
+                marker = f"  [!] {counts}"
+            suffix = "/" if child["type"] == "dir" else ""
+            lines.append(f"{prefix}{branch}{child['name']}{suffix}{marker}")
+            if child["type"] == "dir" and depth < max_depth:
+                _walk(child, prefix + ("    " if last else "│   "), depth + 1)
+
+    _walk(root, "", 1)
+    return "\n".join(lines)

@@ -205,6 +205,21 @@ def osv_lookup(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Tuple
     return len(keys), vulnerable
 
 
+def osv_vulnerability_ids(keys: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], List[str]]:
+    """Advisory IDs affecting each (ecosystem, name, version) - no details downloaded."""
+    found: Dict[Tuple[str, str, str], List[str]] = {}
+    keys = [k for k in keys if k[0] in OSV_ECOSYSTEMS]
+    for start in range(0, len(keys), 500):
+        chunk = keys[start:start + 500]
+        payload = {"queries": [{"package": {"name": n, "ecosystem": e}, "version": v} for e, n, v in chunk]}
+        response = _http_json(OSV_BATCH_URL, payload, timeout=60)
+        for key, result in zip(chunk, response.get("results", [])):
+            ids = [v["id"] for v in (result or {}).get("vulns", []) or []]
+            if ids:
+                found[key] = ids
+    return found
+
+
 def depsdev_enrich(deps: List[Dependency], bus: EventBus, limit: int = 250, workers: int = 12) -> int:
     """Fetch license and latest-version metadata for direct dependencies."""
     targets = [d for d in deps if d.direct and d.source == "registry" and d.ecosystem in DEPSDEV_SYSTEMS][:limit]

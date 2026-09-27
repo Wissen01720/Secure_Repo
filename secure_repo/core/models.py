@@ -108,9 +108,22 @@ class Finding:
     in_test: bool = False
     id: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
+    # Analysis quality metadata ------------------------------------------------
+    engine: str = "pattern"          # pattern | lexical | ast | taint | dependency | hygiene | custom
+    flow: List[Dict[str, Any]] = field(default_factory=list)   # data-flow trace: source -> ... -> sink
+    confidence_score: int = 0        # 0-100, computed by the confidence model
+    fingerprint: str = ""            # stable identity used by triage (survives line shifts)
+    status: str = "open"             # open | confirmed | accepted_risk | false_positive | filtered
+    triage: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+# Statuses that still represent risk (counted in the score and the compliance audit).
+ACTIVE_STATUSES = ("open", "confirmed", "accepted_risk")
+SUPPRESSED_STATUSES = ("false_positive", "filtered")
+TRIAGE_STATUSES = ("open", "confirmed", "accepted_risk", "false_positive")
 
 
 @dataclass
@@ -130,6 +143,10 @@ class Dependency:
     licenses: List[str] = field(default_factory=list)
     latest: Optional[str] = None
     issues: List[str] = field(default_factory=list)
+    # How the concrete version was obtained: manifest | lockfile | environment | registry | registry-graph
+    resolved_by: Optional[str] = None
+    range_lowest: Optional[str] = None   # lowest version admitted by the declared range (registry resolution)
+    parent: Optional[str] = None         # direct dependency that pulls this one in (virtual graph)
 
     @property
     def key(self) -> str:

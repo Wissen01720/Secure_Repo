@@ -9,7 +9,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-00e5ff?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
-![Rules](https://img.shields.io/badge/detection%20rules-163-ff2e97?style=flat-square)
+![Rules](https://img.shields.io/badge/detection%20rules-169-ff2e97?style=flat-square)
 ![License](https://img.shields.io/badge/license-Ethical%20Source--Available-9d7bff?style=flat-square)
 
 <img src="docs/images/cli-banner.svg" alt="Secure Repo CLI banner and boot sequence" width="900">
@@ -44,7 +44,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 |---|---|
 | **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
 | **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
-| **Static analysis** | 163 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Static analysis** | 169 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
 | **Every library** | Parses 25+ manifest and lock formats across PyPI, npm/yarn/pnpm, Go, crates.io, RubyGems, Packagist, Maven/Gradle, NuGet and Pub. Every library is inventoried and checked against **OSV.dev** (CVE/GHSA/malware advisories) and **deps.dev** (license, latest version), plus built-in lists of compromised and deprecated packages. |
 | **Structure map** | Repository structure rendered as **boxes** - live in the terminal while scanning, as an interactive treemap in the GUI. |
@@ -164,7 +164,7 @@ repository.
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
   [5]  Settings  [compliance: OFF · intel: ON · output: secure-repo-reports]
-  [6]  List detection rules (163)
+  [6]  List detection rules (169)
   [7]  Usage guide
   [0]  Exit
 
@@ -285,6 +285,36 @@ Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/abo
 
 ---
 
+## Analysis engine & false-positive reduction
+
+Findings go through several layers:
+
+1. **Lexical masking.** Comments, docstrings and string contents are blanked before code patterns run, including multi-line ones.
+2. **Python syntax tree and taint tracking.** Imports and aliases are resolved and arguments are inspected. Constant commands and queries, `Loader=SafeLoader`, `usedforsecurity=False` and randomness outside a security context are ignored. Untrusted data (`request.*`, route parameters, `input()`, `sys.argv`) is followed through variables until it reaches a sink.
+3. **JavaScript/TypeScript data flow.** The flow is tracked per function scope. Constant sinks such as `el.innerHTML = ''` are discarded, flows from `req.*`, `location.*` and `event.data` are escalated, and `RegExp.exec` is not confused with `child_process.exec`.
+4. **Confidence model.** Each finding gets a 0-100 score that combines the engine, the location (tests, examples, generated code) and your triage history. Use `--min-confidence medium|high` to filter.
+
+Findings confirmed by data flow show the full **source → sink trace** in the CLI, the GUI, the Markdown reports and SARIF `codeFlows`.
+
+### Teach Secure Repo (learning loop)
+
+- **Triage.** Mark findings as *confirmed*, *accepted risk* or *false positive* from the post-scan menu, from the GUI finding panel, or with `secure-repo triage mark <report-folder> SR-0004 --status false_positive --reason "..." --scope project-pattern`. A reason is required.
+- **Stable fingerprints.** Decisions are re-applied automatically on every scan, even after lines move.
+- **Learned patterns.** With scope `project-pattern` or `global-pattern`, the same code shape is suppressed everywhere.
+- **Rule statistics.** Rules you often mark as false positives lose confidence automatically: `secure-repo triage stats`.
+- **Team sharing.** Share decisions with `secure-repo triage export --to-repo .`, which writes `.securerepo/triage.json`. Other commands: `export`, `import`, `forget`, `reset`.
+- **Audit trail.** Suppressed findings never affect the score or the compliance audit, but they stay in `findings/suppressed.md` with their reason, author and date.
+- **Project tuning.** `secure-repo init-config` creates `.securerepo.toml`, where you can disable rules, override severities, allow-list paths or values, set a minimum confidence and write **custom rules**.
+- **Benchmark.** `secure-repo benchmark --compare` measures precision and recall against a labeled corpus. On the bundled corpus the layered engine scores 100 % / 100 %, versus 55 % / 67 % for the legacy pattern-only engine (`--engine patterns`). `secure-repo triage export-cases` turns your false positives into regression cases.
+
+### Virtual lockfile
+
+When a project has no lockfile, versions are resolved in this order: **lockfile → installed environment** (`node_modules`, virtualenvs, `vendor/`; works offline) **→ registry** (the version the declared range installs today; semver, PEP 440, Cargo, RubyGems, Composer, Pub and Maven/NuGet ranges) **→ dependency graph** (transitive packages from deps.dev).
+
+All resolved versions are checked against OSV. `SR-DEP-009` warns when a range still admits vulnerable releases. The report adds `dependencies/virtual-lock.json` and `dependencies/lockfile-guide.md`, which contains the commands to create the real lockfile and the proposed pins.
+
+---
+
 ## CLI command reference
 
 | Command | Description |
@@ -295,6 +325,9 @@ Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/abo
 | `secure-repo gui` | Launch the graphical interface. |
 | `secure-repo rules [--search TEXT]` | List the detection rules (filter by id, language, CWE...). |
 | `secure-repo frameworks` | List the compliance frameworks. |
+| `secure-repo triage <list\|stats\|mark\|forget\|export\|import\|export-cases\|reset>` | Manage the triage knowledge base. |
+| `secure-repo benchmark [--compare]` | Precision/recall of the detection engines. |
+| `secure-repo init-config [PATH]` | Create a `.securerepo.toml` for a project. |
 | `secure-repo --version` | Show the version. |
 
 `scan` options:
@@ -316,6 +349,10 @@ Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/abo
 | `--no-anim` | off | Disable animations. |
 | `--no-menu` | off | Do not show the post-scan menu. |
 | `--open` | off | Open the HTML report when finished. |
+| `--min-confidence LEVEL` | `low` | Filter findings below `medium`/`high` (kept as *filtered* in the audit trail). |
+| `--no-learning` | off | Ignore the triage knowledge base. |
+| `--no-resolve` | off | Do not resolve versions of unpinned dependencies. |
+| `--engine layered\|patterns` | `layered` | Choose the analysis engine. |
 
 `gui` options: `--port N` (default: random free port), `--no-browser`, `-o/--output DIR`, `--offline`.
 
@@ -497,7 +534,7 @@ their libraries are still analyzed through the manifests and lockfiles.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, 163 rules, custom detectors, Git operations, dependency parsers,
+│   ├── core/         scanner, 169 rules, custom detectors, Git operations, dependency parsers,
 │   │                 vulnerability intelligence, compliance frameworks, scoring
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
 │   └── gui/          local server + static web app (neural map, box map, UI)

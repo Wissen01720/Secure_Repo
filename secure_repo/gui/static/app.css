@@ -510,3 +510,44 @@ body.report-mode #btn-new, body.report-mode #load-label { display: none; }
   #tab-neural, #tab-structure { display: none !important; }
   .finding { border: 1px solid #ccc; background: #fff; }
 }
+
+/* ------------------------------------------------------------------ analysis quality & triage */
+.flow { list-style: none; margin: 10px 0 0; padding: 0; position: relative; }
+.flow li { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 2px 10px; padding: 8px 10px 8px 28px; border-radius: 10px; }
+.flow li::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: linear-gradient(var(--neon), var(--magenta)); opacity: .5; }
+.flow li:first-child::before { top: 50%; } .flow li:last-child::before { bottom: 50%; }
+.flow li::after { content: ""; position: absolute; left: 5px; top: calc(50% - 6px); width: 12px; height: 12px; border-radius: 50%; background: var(--panel-solid); border: 2px solid var(--cyan); }
+.flow li.src::after { border-color: var(--neon); box-shadow: 0 0 10px var(--neon); }
+.flow li.sink::after { border-color: var(--critical); box-shadow: 0 0 10px var(--critical); background: var(--critical); }
+.flow li.sink { background: rgba(255, 46, 99, .07); }
+.flow li.src { background: rgba(0, 255, 156, .06); }
+.flow .fl-line { font: 700 11px var(--mono); color: var(--muted); grid-row: span 2; align-self: center; }
+.flow b { font-size: 12px; color: var(--text); }
+.flow code { font: 11.5px var(--mono); color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
+.triage-panel { margin-top: 22px; padding: 14px; border-radius: 12px; border: 1px dashed rgba(0, 255, 156, .35); background: rgba(0, 255, 156, .04); }
+.triage-panel h5 { margin-top: 0 !important; }
+.triage-panel textarea { width: 100%; resize: vertical; font: 13px var(--font); color: var(--text); padding: 10px 12px; border-radius: 10px; background: rgba(3,6,14,.7); border: 1px solid var(--line-2); outline: none; }
+.triage-panel textarea:focus { border-color: rgba(0,229,255,.6); }
+.triage-panel select { width: auto; padding: 6px 30px 6px 10px; font-size: 12px; }
+.triage-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.btn.good { border-color: rgba(0,255,156,.5); } .btn.good:hover { background: rgba(0,255,156,.12); }
+.btn.warn { border-color: rgba(255,210,63,.5); } .btn.warn:hover { background: rgba(255,210,63,.12); }
+.btn.bad { border-color: rgba(255,46,99,.5); } .btn.bad:hover { background: rgba(255,46,99,.12); }
+.triage-note { margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; border-left: 3px solid var(--neon); background: rgba(0,255,156,.06); }
+.triage-note.status-accepted_risk { border-left-color: var(--medium); background: rgba(255,210,63,.06); }
+.triage-note.status-confirmed { border-left-color: var(--magenta); background: rgba(255,46,151,.06); }
+.tag.flow-tag { color: var(--magenta); border-color: rgba(255,46,151,.5); }
+.tag.status-false_positive, .tag.status-filtered { color: var(--neon); border-color: rgba(0,255,156,.5); }
+.tag.status-accepted_risk { color: var(--medium); border-color: rgba(255,210,63,.5); }
+.tag.status-confirmed { color: var(--magenta); border-color: rgba(255,46,151,.5); }
+.finding.suppressed { opacity: .55; }
+.conf { font: 700 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; }
+.conf-high { color: var(--neon); background: rgba(0,255,156,.1); }
+.conf-medium { color: var(--medium); background: rgba(255,210,63,.1); }
+.conf-low { color: var(--muted); background: rgba(255,255,255,.05); }
+.res { font: 700 10px var(--mono); padding: 2px 7px; border-radius: 6px; white-space: nowrap; background: rgba(255,255,255,.05); color: var(--text-2); }
+.res-lockfile, .res-manifest { color: var(--neon); background: rgba(0,255,156,.1); }
+.res-environment { color: var(--cyan); background: rgba(0,229,255,.1); }
+.res-registry { color: var(--violet); background: rgba(157,123,255,.12); }
+.res-registry-graph { color: var(--magenta); background: rgba(255,46,151,.1); }
+.res-unresolved { color: var(--high); background: rgba(255,138,0,.12); }

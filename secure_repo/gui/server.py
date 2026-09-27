@@ -36,6 +36,8 @@ from secure_repo.core import compliance, gitops
 from secure_repo.core.events import STAGES, EventBus
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import ScanCancelled, Scanner, ScanOptions
+from secure_repo.core import review
+from secure_repo.core.triage import KnowledgeBase
 from secure_repo.core.workspace import Target, discover_branches
 from secure_repo.report.writer import ensure_output_root, zip_folder
 
@@ -52,6 +54,9 @@ DOWNLOADS = {
     "sbom": ("dependencies/sbom.cdx.json", "application/vnd.cyclonedx+json"),
     "csv": ("findings/findings.csv", "text/csv; charset=utf-8"),
     "deps": ("dependencies/inventory.csv", "text/csv; charset=utf-8"),
+    "lock": ("dependencies/lockfile-guide.md", "text/markdown; charset=utf-8"),
+    "vlock": ("dependencies/virtual-lock.json", "application/json"),
+    "quality": ("quality.md", "text/markdown; charset=utf-8"),
 }
 MAX_BODY = 1024 * 1024
 
@@ -233,6 +238,11 @@ def make_handler(state: AppState):
                 return self._branches(self._body())
             if method == "POST" and parts == ["scan"]:
                 return self._start_scan(self._body())
+            if method == "GET" and parts == ["knowledge"]:
+                knowledge = KnowledgeBase()
+                return self._json({"stats": knowledge.stats(), "path": knowledge.path,
+                                   "patterns": len(knowledge.data["patterns"]),
+                                   "decisions": sum(len(p["decisions"]) for p in knowledge.data["projects"].values())})
             if len(parts) >= 3 and parts[0] == "scans":
                 job = self._job(parts[1])
                 if job is None:
@@ -250,6 +260,8 @@ def make_handler(state: AppState):
                     if job.scanner:
                         job.scanner.cancelled = True
                     return self._json({"ok": True})
+                if method == "POST" and action == "triage":
+                    return self._triage(job, self._body())
                 if method == "POST" and action == "open-folder":
                     return self._open_folder(job)
             return self._error(404, "Unknown endpoint")
@@ -266,6 +278,8 @@ def make_handler(state: AppState):
                 "frameworks": compliance.list_frameworks(), "rules": len(RULES),
                 "stages": [{"id": sid, "title": title} for sid, title in STAGES],
                 "defaults": {"offline": state.options.offline, "compliance": state.options.compliance,
+                             "min_confidence": state.options.min_confidence, "learning": state.options.learning,
+                             "semantic": state.options.semantic,
                              "include_tests": state.options.include_tests,
                              "max_file_size_kb": state.options.max_file_size // 1024},
                 "output_dir": os.path.abspath(state.options.output_dir), "preload": state.preload,
@@ -309,6 +323,9 @@ def make_handler(state: AppState):
                 state.options, offline=bool(raw.get("offline", state.options.offline)),
                 compliance=bool(raw.get("compliance", False)), frameworks=frameworks or ["all"],
                 include_tests=bool(raw.get("include_tests", True)), enrich=bool(raw.get("enrich", True)),
+                min_confidence=raw.get("min_confidence") if raw.get("min_confidence") in ("low", "medium", "high") else "low",
+                learning=bool(raw.get("learning", True)), semantic=bool(raw.get("semantic", True)),
+                resolve_versions=bool(raw.get("resolve_versions", True)),
                 max_file_size=max(16, min(max_kb, 102400)) * 1024, auditor=str(raw.get("auditor") or "")[:120],
                 exclude=[str(p)[:200] for p in (raw.get("exclude") or [])][:50])
             with state.lock:
@@ -369,6 +386,23 @@ def make_handler(state: AppState):
                 body = handle.read()
             filename = f"{base}_{os.path.basename(rel)}"
             return self._send(200, body, mime, {"Content-Disposition": f'attachment; filename="{filename}"'})
+
+        def _triage(self, job: ScanJob, data: Dict) -> None:
+            if not job.report:
+                return self._error(409, "Report not ready")
+            ids = [str(i) for i in (data.get("finding_ids") or [])][:500]
+            if not ids:
+                return self._error(400, "No findings selected")
+            with state.lock:
+                try:
+                    result = review.triage(job.report, ids, str(data.get("status", "")), str(data.get("reason", ""))[:1000],
+                                           str(data.get("scope", "finding")), author=str(data.get("author", ""))[:120],
+                                           report_dir=job.report_dir)
+                except ValueError as exc:
+                    return self._error(400, str(exc))
+            console.print(Text.assemble(("[+] ", f"bold {NEON}"), ("GUI triage: ", "white"),
+                                        (f"{', '.join(result['changed'])} -> {data.get('status')}", CYAN)))
+            return self._json({"report": job.report, "result": result})
 
         def _open_folder(self, job: ScanJob) -> None:
             if not job.report_dir:
