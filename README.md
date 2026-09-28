@@ -25,16 +25,17 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 3. [Requirements](#requirements)
 4. [Installation (Windows, macOS, Linux)](#installation)
 5. [CLI field guide - step by step](#cli-field-guide)
-6. [CLI command reference](#cli-command-reference)
-7. [The report folder](#the-report-folder)
-8. [Graphical interface (GUI)](#graphical-interface-gui)
-9. [What is analyzed](#what-is-analyzed)
-10. [Compliance audit](#compliance-audit)
-11. [Privacy & data handling](#privacy--data-handling)
-12. [Suppressing findings](#suppressing-findings)
-13. [Troubleshooting](#troubleshooting)
-14. [Project layout](#project-layout)
-15. [License](#license)
+6. [Analysis engine & false-positive reduction](#analysis-engine--false-positive-reduction)
+7. [CLI command reference](#cli-command-reference)
+8. [The report folder](#the-report-folder)
+9. [Graphical interface (GUI)](#graphical-interface-gui)
+10. [What is analyzed](#what-is-analyzed)
+11. [Compliance audit](#compliance-audit)
+12. [Privacy & data handling](#privacy--data-handling)
+13. [Suppressing findings](#suppressing-findings)
+14. [Troubleshooting](#troubleshooting)
+15. [Project layout](#project-layout)
+16. [License](#license)
 
 ---
 
@@ -45,8 +46,11 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 | **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
 | **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
 | **Static analysis** | 169 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Layered engine** | Comments and strings are masked, Python is analyzed on its syntax tree with taint tracking, JavaScript/TypeScript get a data-flow pass. Findings confirmed by data flow show the **source → sink** trace. |
+| **Learns from you** | Mark false positives, accepted risks or confirmed findings; decisions, learned code patterns and per-rule statistics are re-applied on every scan. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
 | **Every library** | Parses 25+ manifest and lock formats across PyPI, npm/yarn/pnpm, Go, crates.io, RubyGems, Packagist, Maven/Gradle, NuGet and Pub. Every library is inventoried and checked against **OSV.dev** (CVE/GHSA/malware advisories) and **deps.dev** (license, latest version), plus built-in lists of compromised and deprecated packages. |
+| **Virtual lockfile** | Projects without a lockfile get their versions resolved from the installed environment or the registries (plus transitive dependencies), so they can still be checked precisely. |
 | **Structure map** | Repository structure rendered as **boxes** - live in the terminal while scanning, as an interactive treemap in the GUI. |
 | **Neural map (GUI)** | Insecure points shown as a connected neural network: *files → weaknesses → OWASP categories → severity*. Click any node for a plain-English explanation of **why it is insecure** and **how to fix it**. |
 | **Live process view** | Every stage, file and finding is streamed as it happens (terminal dashboard / GUI pipeline + log). |
@@ -177,7 +181,7 @@ repository.
 | **2** | Audit a repository you have not cloned: paste `https://github.com/owner/repo.git` or `git@github.com:owner/repo.git`. |
 | **3** | Audit another folder on disk (Git or not). |
 | **4** | Open the GUI in your browser. |
-| **5** | Enable the compliance audit, offline mode, test-file handling, max file size, output folder, exclusions, auditor name and animations. |
+| **5** | Enable the compliance audit, offline mode, test-file handling, max file size, output folder, exclusions, auditor name, animations, minimum confidence, learning from triage, the analysis engine and virtual lockfile resolution. |
 
 ### Step 3 - Confirm your authorization
 
@@ -222,7 +226,7 @@ While the scan runs, the terminal shows a live dashboard:
 | Panel | What it tells you |
 |---|---|
 | **LIVE OPERATION** | Target, branch, elapsed time and the file being analyzed right now. |
-| **ATTACK SURFACE PIPELINE** | The 9 stages: acquire source → map structure → code/secret/config analysis → libraries → vulnerability intelligence → hygiene → compliance → scoring → reports. `[+]` done, spinner = running, `[-]` skipped. |
+| **ATTACK SURFACE PIPELINE** | The 10 stages: acquire source → map structure → code/secret/config analysis → libraries → version resolution (virtual lockfile) → vulnerability intelligence → hygiene → compliance → scoring → reports. `[+]` done, spinner = running, `[-]` skipped. |
 | **STRUCTURE MAP** | One box per top-level directory with its progress bar and the number of findings (`▲`). The border takes the color of the worst severity inside. |
 | **ACTIVITY FEED** | Every step and every critical/high/medium finding, as it happens. |
 | **Footer** | Live counters per severity and files processed. |
@@ -237,7 +241,8 @@ When the scan ends you get the full picture:
 
 - **Security posture**: score 0-100, grade A-F and severity histogram.
 - **OWASP Top 10 (2021)** distribution.
-- **Top findings** with ID, severity, location and CWE.
+- **Analysis quality**: findings per engine, noise discarded automatically and suppressed findings.
+- **Top findings** with ID, severity, location, confidence and CWE (`→ data flow` marks taint-confirmed findings).
 - **Libraries & supply chain**: vulnerable, compromised, deprecated or unpinned libraries with advisories and
   the latest available version.
 - **Compliance audit** scores (when enabled).
@@ -249,22 +254,29 @@ When the scan ends you get the full picture:
 ```
 ──────────────────────────── ⟦ POST-SCAN ACTIONS ⟧ ────────────────────────────
   [1]  Browse findings & explanations
-  [2]  Repository structure (boxes + tree)
-  [3]  Full library inventory
-  [4]  Compliance details
-  [5]  Open interactive HTML report in the browser
-  [6]  Open the report folder
-  [7]  Explore these results in the GUI
+  [2]  Triage findings - mark false positives / accepted risk (the engine learns)
+  [3]  Repository structure (boxes + tree)
+  [4]  Full library inventory + virtual lockfile
+  [5]  Compliance details
+  [6]  Analysis quality (engines, noise discarded, suppressed findings)
+  [7]  Open interactive HTML report in the browser
+  [8]  Open the report folder
+  [9]  Explore these results in the GUI
   [0]  Back to main menu
 ```
 
-In **Browse findings** you can filter by severity (`critical`, `high`, ...), search by text, or type a finding
-ID such as `SR-0004` to read:
+In **Browse findings** you can filter by severity (`critical`, `high`, ...), type `suppressed`, search by text,
+or type a finding ID such as `SR-0004` to read:
 
-- the evidence (secrets redacted),
+- the evidence (secrets redacted) and the confidence score with its reasons,
+- **DATA FLOW** - for taint-confirmed findings, every step from the untrusted source to the sink,
 - **WHY IS THIS INSECURE?** - a plain-English explanation of the risk,
 - **HOW TO FIX** - the recommended remediation,
 - CWE and OWASP references, and for libraries the advisories with the fixed versions.
+
+In **Triage findings** type one or more IDs, choose *false positive*, *accept risk*, *confirmed* or *open again*,
+give a reason and - for false positives - a scope (this finding, this code pattern in the project, or everywhere).
+The score and every report file in the folder are regenerated immediately.
 
 ### Step 9 - Non-interactive mode (scripts & CI/CD)
 
@@ -371,14 +383,18 @@ secure-repo-reports/
     ├── report.json                  ← complete machine-readable results
     ├── report.sarif                 ← SARIF 2.1.0 (GitHub code scanning, Azure DevOps, IDEs)
     ├── summary.md                   ← executive summary
+    ├── quality.md                   ← engines used, noise discarded, confidence, suppressed findings
     ├── findings/
-    │   ├── critical.md  high.md  medium.md  low.md  info.md
+    │   ├── critical.md  high.md  medium.md  low.md  info.md   (with data-flow traces)
     │   ├── by-category/<category>.md
+    │   ├── suppressed.md            ← false positives / filtered findings with reason, author, date
     │   └── findings.csv
     ├── dependencies/
-    │   ├── inventory.csv            ← every library, direct and transitive
+    │   ├── inventory.csv            ← every library, direct and transitive, and how its version was resolved
     │   ├── inventory.json
     │   ├── vulnerabilities.md       ← advisories, CVSS, fixed versions
+    │   ├── virtual-lock.json        ← versions resolved for dependencies without lockfile
+    │   ├── lockfile-guide.md        ← commands to create the real lockfile + proposed pins
     │   └── sbom.cdx.json            ← CycloneDX 1.5 SBOM
     ├── structure/
     │   ├── tree.txt                 ← repository tree annotated with findings
@@ -387,7 +403,7 @@ secure-repo-reports/
     ├── compliance/                  ← only when the compliance audit is enabled
     │   ├── compliance.json
     │   └── <framework>.md
-    ├── logs/scan.log                ← chronological log of every step
+    ├── logs/scan.log                ← chronological log of every step and every triage decision
     └── MANIFEST.sha256              ← SHA-256 of every file (integrity / chain of custody)
 ```
 
@@ -406,11 +422,14 @@ browser. Close it with `Ctrl+C` in the terminal.
 
 1. **Select target** - *This repository* (auto-detected), *Remote Git URL* or *Local folder*.
 2. **Discover branches** - the same branch recon as the CLI; pick one from the list.
-3. **Engagement options** - online intelligence, optional compliance audit (choose frameworks), test files, max
-   file size, auditor name, and the authorization confirmation.
+3. **Engagement options** - online intelligence, optional compliance audit (choose frameworks), test files, learning
+   from triage, minimum confidence, analysis engine, max file size, auditor name, and the authorization
+   confirmation.
 4. **Initiate scan** - watch the pipeline, the live log and the **live structure map**: boxes light up as files are
    analyzed and turn orange/red when findings appear.
 5. **Results** - overview, neural map, structure boxes, findings, libraries, compliance and export.
+6. **Triage** - open any finding and mark it as false positive, accepted risk or confirmed; the score, the lists
+   and the report folder are updated instantly and the decision is remembered for the next scans.
 
 | | |
 |---|---|
@@ -420,12 +439,16 @@ browser. Close it with `Ctrl+C` in the terminal.
 | **Activation paths** - search or click a node to light up everything connected to it. | **Explanations** - why it is insecure, how to fix it, evidence and references. |
 | <img src="docs/images/gui-structure-boxes.png" alt="Structure boxes" width="440"> | <img src="docs/images/gui-compliance.png" alt="Compliance" width="440"> |
 | **Structure** - nested boxes sized by bytes or lines and colored by risk. Click a folder to zoom in. | **Compliance** - per-framework score and every control with its evidence. |
+| <img src="docs/images/gui-data-flow.png" alt="Data-flow trace" width="440"> | <img src="docs/images/gui-triage.png" alt="Triage panel" width="440"> |
+| **Data flow** - the path of untrusted data from its source to the dangerous sink, with confidence reasons. | **Triage** - teach Secure Repo: false positive, accepted risk or confirmed, with reason and scope. |
+| <img src="docs/images/gui-libraries.png" alt="Libraries" width="440"> | |
+| **Libraries** - every library, how its version was resolved (lockfile, manifest, environment, registry, graph) and its advisories. | |
 
 Neural map controls: click a node for its explanation · scroll to zoom · drag to pan · double-click to fit ·
 switch between *Neural layers* and *Organic* (force-directed) layouts · filter by severity · toggle pulses.
 
-**Downloads**: HTML report, full evidence ZIP, JSON, SARIF, Markdown summary, CycloneDX SBOM and CSV files, plus
-*Print / Save as PDF*. You can also re-open any `report.json` with **Load report**.
+**Downloads**: HTML report, full evidence ZIP, JSON, SARIF, Markdown summary, CycloneDX SBOM, CSV files, lockfile
+guide, virtual lockfile and analysis-quality report, plus *Print / Save as PDF*. You can also re-open any `report.json` with **Load report**.
 
 **GUI security model**: listens on `127.0.0.1` only · random per-session token (sent in the URL fragment, never
 logged) · `Host` header validation against DNS rebinding · strict Content-Security-Policy with zero third-party
@@ -492,8 +515,12 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
 ## Privacy & data handling
 
 - Source code **never leaves your machine**.
-- In online mode only **package names and versions** are sent to `api.osv.dev` and `api.deps.dev` over HTTPS.
-  `--offline` disables every network request.
+- In online mode only **package names and versions** are sent over HTTPS to `api.osv.dev` and `api.deps.dev`
+  (and to `repo.packagist.org` / `pub.dev` to resolve PHP and Dart version ranges). `--offline` disables every
+  network request; versions can still be resolved from the installed environment.
+- Triage decisions are stored locally in your user data folder (`%APPDATA%\SecureRepo` on Windows,
+  `~/Library/Application Support/SecureRepo` on macOS, `~/.local/share/secure-repo` on Linux, or
+  `SECURE_REPO_HOME`). They are written into a repository only when you run `secure-repo triage export --to-repo`.
 - Secrets are **masked** (`AKIA****************`) in every output; card numbers are truncated.
 - Remote repositories are cloned to a temporary folder that is **deleted** after the scan.
 - Reports are written only to the folder you choose, protected by a `.gitignore` that ignores everything.
@@ -508,6 +535,9 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
 | `securerepo:ignore-file` in the first lines of a file | Skip pattern analysis for the whole file (e.g. test fixtures). |
 | `--exclude "path/*"` | Do not scan matching paths. |
 | `--no-tests` | Skip files that look like tests or fixtures. |
+| Triage (CLI menu, GUI or `secure-repo triage mark`) | Mark a finding as false positive / accepted risk, optionally for the whole code pattern. Kept in the audit trail. |
+| `.securerepo.toml` (`secure-repo init-config`) | Disable rules, override severities, allow-list paths or values, set a minimum confidence, add custom rules. |
+| `--min-confidence medium` | Hide low-confidence findings (they stay in `findings/suppressed.md` as *filtered*). |
 
 Dependency folders (`node_modules`, `vendor`, virtual environments, build output) are skipped automatically;
 their libraries are still analyzed through the manifests and lockfiles.
@@ -525,6 +555,8 @@ their libraries are still analyzed through the manifests and lockfiles.
 | `secure-repo` command not found | Use `python -m secure_repo`, the launchers, or add Python's `Scripts`/`bin` folder to `PATH`. |
 | GUI says "Invalid or missing session token" | Open the exact URL printed in the terminal (it contains `#token=...`). |
 | Scan is slow on huge repositories | Use `--exclude` for generated folders and a lower `--max-file-size`. |
+| A finding is a false positive | Triage it (post-scan menu option 2, the GUI panel or `secure-repo triage mark`) with scope *project-pattern* so similar code is suppressed too. |
+| I want the old behaviour | `--engine patterns` runs the legacy regular-expression engine; `--no-learning` ignores your triage history. |
 
 ---
 
@@ -534,8 +566,10 @@ their libraries are still analyzed through the manifests and lockfiles.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, 169 rules, custom detectors, Git operations, dependency parsers,
-│   │                 vulnerability intelligence, compliance frameworks, scoring
+│   ├── core/         scanner, 169 rules, lexical masking, Python AST/taint and JS data-flow engines,
+│   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
+│   │                 triage knowledge base, confidence model, compliance frameworks, scoring
+│   ├── benchmark/    labeled corpus used by `secure-repo benchmark`
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
 │   └── gui/          local server + static web app (neural map, box map, UI)
 ├── tests/            pytest suite

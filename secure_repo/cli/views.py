@@ -128,7 +128,8 @@ def render_findings_table(findings: List[Dict], limit: Optional[int] = None, tit
         conf = finding.get("confidence", "medium")
         conf_style = {"high": NEON, "medium": "#ffd23f", "low": "grey50"}.get(conf, "white")
         table.add_row(finding["id"], sev_badge(finding["severity"]), title, escape(_where(finding)),
-                      Text(f"{conf[:3]} {finding.get('confidence_score', '')}", style=conf_style),
+                      Text(f"{ {'high': 'HIGH', 'medium': 'MED', 'low': 'LOW'}.get(conf, conf)} "
+                           f"{finding.get('confidence_score', '')}", style=conf_style),
                       finding.get("cwe") or "-")
     console.print(table)
     if limit and len(findings) > limit:
