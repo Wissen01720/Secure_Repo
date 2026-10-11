@@ -105,7 +105,62 @@
     }
     return data;
   };
-  SR.withToken = (url) => url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(SR.token);
+  /* Server-sent events over fetch(): the token travels in a header, never in the URL (EventSource cannot set headers). */
+  SR.stream = function (path, onData, onEnd) {
+    const controller = new AbortController();
+    let lastId = '0';
+    let closed = false;
+    let attempts = 0;
+    async function run() {
+      while (!closed && attempts < 6) {
+        try {
+          const response = await fetch(path, { headers: { 'X-SR-Token': SR.token, 'Last-Event-ID': lastId }, signal: controller.signal, cache: 'no-store' });
+          if (!response.ok || !response.body) throw new Error('stream ' + response.status);
+          attempts = 0;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          for (;;) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            let cut;
+            while ((cut = buffer.indexOf('\n\n')) >= 0) {
+              const block = buffer.slice(0, cut);
+              buffer = buffer.slice(cut + 2);
+              let event = 'message', data = '';
+              block.split('\n').forEach((line) => {
+                if (line.indexOf('id:') === 0) lastId = line.slice(3).trim();
+                else if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+                else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+              });
+              if (event === 'end') { closed = true; if (onEnd) onEnd(); return; }
+              if (data) onData(data);
+            }
+          }
+        } catch (err) {
+          if (closed) return;
+        }
+        attempts += 1;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    run();
+    return { close: function () { closed = true; controller.abort(); } };
+  };
+
+  /* Authenticated download: fetch with the token header, then save the blob (no token in links). */
+  SR.downloadFile = async function (path) {
+    const response = await fetch(path, { headers: { 'X-SR-Token': SR.token }, cache: 'no-store' });
+    if (!response.ok) {
+      let message = 'Download failed (' + response.status + ')';
+      try { message = (await response.json()).error || message; } catch (e) { /* keep default */ }
+      throw new Error(message);
+    }
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^";]+)"?/.exec(disposition);
+    SR.download(match ? match[1] : 'secure-repo-download', await response.blob());
+  };
 
   /* ---------------------------------------------------------------- UI helpers */
   SR.toast = function (message, kind) {

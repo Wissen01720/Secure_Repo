@@ -583,3 +583,6 @@ input[type="password"]:focus { border-color: rgba(0, 229, 255, 0.6); box-shadow:
 .ub-changes li { margin: 4px 0; }
 .ub-changes code { font: 11px var(--mono); color: var(--cyan); }
 @media (max-width: 900px) { .update-banner { padding: 10px 16px; top: 54px; } }
+
+.meta-chip.cap-chip { border-color: rgba(255,138,0,.6); color: var(--high); background: rgba(255,138,0,.08); }
+.meta-chip.cap-chip b { color: var(--high); }

@@ -109,7 +109,8 @@ def test_scoring_is_monotonic():
     bad = compute_score([{"rule_id": "X", "severity": "critical"}])
     worse = compute_score([{"rule_id": "X", "severity": "critical"}, {"rule_id": "Y", "severity": "high"}])
     assert clean["score"] == 100 and clean["grade"] == "A"
-    assert clean["score"] > bad["score"] > worse["score"]
+    assert clean["penalty"] < bad["penalty"] < worse["penalty"]  # the penalty keeps growing...
+    assert bad["score"] <= 59 and worse["score"] <= 59           # ...while an open critical caps the grade at D
 
 
 def test_compliance_statuses():

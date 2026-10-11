@@ -149,7 +149,8 @@ def write_reports(report: Dict, output_dir: str, bus: Optional[EventBus] = None,
                   log_lines: Optional[List[str]] = None) -> str:
     base = ensure_output_root(output_dir)
     meta = report["meta"]
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    now = datetime.now()
+    stamp = now.strftime("%Y%m%d-%H%M%S") + f"-{now.microsecond // 1000:03d}"  # milliseconds: names sort by time
     base_folder = os.path.join(base, f"{_slug(meta['name'])}_{_slug(meta.get('branch') or 'no-branch')}_{stamp}")
     folder, suffix = base_folder, 1
     while os.path.exists(folder):
@@ -161,6 +162,7 @@ def write_reports(report: Dict, output_dir: str, bus: Optional[EventBus] = None,
             bus.log(f"Wrote {name}", "ok")
 
     _write_contents(report, folder, tree_text, log_lines or [], emit)
+    _write(os.path.join(base, "latest.txt"), os.path.basename(folder) + "\n")  # the newest report, no sorting needed
     return folder
 
 

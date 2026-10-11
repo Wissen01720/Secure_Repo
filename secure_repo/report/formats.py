@@ -42,6 +42,7 @@ def markdown_summary(report: Dict) -> str:
         "",
         f"## Security score: **{summary['score']}/100 (grade {summary['grade']})**",
         "",
+    ] + ([f"> **{summary['grade_cap']['message']}**", ""] if summary.get("grade_cap") else []) + [
         "| Severity | Findings | Meaning |", "|---|---:|---|",
     ]
     for sev in SEVERITIES:
@@ -183,7 +184,32 @@ def markdown_quality(report: Dict) -> str:
               f"- Custom rules: {', '.join(analysis.get('custom_rules') or []) or 'none'}", "",
               "## Status of findings", "", "| Status | Findings |", "|---|---:|"]
     lines += [f"| {status} | {count} |" for status, count in (summary.get("by_status") or {}).items()]
-    return "\n".join(lines) + "\n" + markdown_repo_influence(report)
+    return "\n".join(lines) + "\n" + markdown_not_analyzed(report) + markdown_repo_influence(report)
+
+
+def markdown_not_analyzed(report: Dict) -> str:
+    skipped = (report.get("analysis") or {}).get("not_analyzed")
+    if not skipped:
+        return ""
+    lines = ["", "## What was NOT analyzed", "",
+             "These are the blind spots of this scan. Review them before trusting a clean result.", ""]
+    directories = skipped.get("directories") or []
+    if directories:
+        lines += ["### Folders that were not entered", "", "| Folder | Why | Files |", "|---|---|---:|"]
+        for entry in directories[:200]:
+            count = entry["files"]
+            lines.append(f"| `{_md_escape(entry['path'])}` | {_md_escape(entry['reason'])} | "
+                         f"{'-' if count is None else (str(count) + ('+' if count >= 5000 else ''))} |")
+        lines.append("")
+    if skipped.get("minified"):
+        lines += ["### Minified bundles (reduced analysis: secrets and critical findings only)", ""]
+        lines += [f"- `{_md_escape(path)}`" for path in skipped["minified"][:100]] + [""]
+    if skipped.get("too_large"):
+        lines += ["### Files over the size limit (not read; raise it with --max-file-size)", ""]
+        lines += [f"- `{_md_escape(item['path'])}` ({item['bytes']:,} bytes)" for item in skipped["too_large"][:100]] + [""]
+    lines += [f"- Binary files skipped: {skipped.get('binary', 0)}",
+              f"- Files skipped by type (lockfiles, .min.js, maps, images...): {skipped.get('by_type', 0)}"]
+    return "\n".join(lines) + "\n"
 
 
 def markdown_repo_influence(report: Dict) -> str:
@@ -294,14 +320,32 @@ def markdown_compliance(report: Dict, framework: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe(value):
+    """Neutralize spreadsheet formulas: cells starting with = + - @ (or tab/CR) are prefixed with a quote.
+
+    File names, code snippets and package names come from the audited repository, which is not trusted: a file
+    called ``=HYPERLINK(...)`` must not become a formula when the analyst opens the CSV in Excel or LibreOffice.
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _csv_row(writer, row) -> None:
+    writer.writerow([csv_safe(cell) for cell in row])
+
+
 def findings_csv(report: Dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["id", "severity", "title", "rule_id", "category", "cwe", "owasp", "file", "line", "confidence",
-                     "confidence_score", "engine", "status", "triage_reason", "in_test", "fingerprint", "detail",
-                     "snippet"])
+    _csv_row(writer, ["id", "severity", "title", "rule_id", "category", "cwe", "owasp", "file", "line", "confidence",
+                      "confidence_score", "engine", "status", "triage_reason", "in_test", "fingerprint", "detail",
+                      "snippet"])
     for f in report["findings"]:
-        writer.writerow([f["id"], f["severity"], f["title"], f["rule_id"], f["category"], f["cwe"], f["owasp"],
+        _csv_row(writer, [f["id"], f["severity"], f["title"], f["rule_id"], f["category"], f["cwe"], f["owasp"],
                          f["file"], f["line"], f["confidence"], f.get("confidence_score", ""), f.get("engine", ""),
                          f.get("status", "open"), (f.get("triage") or {}).get("reason", ""), f["in_test"],
                          f.get("fingerprint", ""), f["detail"], f["snippet"]])
@@ -311,11 +355,11 @@ def findings_csv(report: Dict) -> str:
 def dependencies_csv(report: Dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["name", "version", "spec", "ecosystem", "direct", "scope", "source", "locked", "manifests",
+    _csv_row(writer, ["name", "version", "spec", "ecosystem", "direct", "scope", "source", "locked", "manifests",
                      "vulnerabilities", "max_severity", "advisories", "licenses", "latest", "resolved_by", "parent",
                      "issues"])
     for d in report["dependencies"]:
-        writer.writerow([d["name"], d["version"] or "", d["spec"], d["ecosystem"], d["direct"], d["scope"], d["source"],
+        _csv_row(writer, [d["name"], d["version"] or "", d["spec"], d["ecosystem"], d["direct"], d["scope"], d["source"],
                          d["locked"], ";".join(d["manifests"]), len(d["vulnerabilities"]), d["max_severity"] or "",
                          ";".join(v["id"] for v in d["vulnerabilities"]), ";".join(d["licenses"]), d["latest"] or "",
                          d.get("resolved_by") or "", d.get("parent") or "", ";".join(d["issues"])])

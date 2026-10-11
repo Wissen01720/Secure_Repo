@@ -18,6 +18,7 @@ import re
 import secrets
 import sys
 import threading
+import traceback
 import time
 import uuid
 import webbrowser
@@ -177,7 +178,8 @@ def make_handler(state: AppState):
             return host in {f"127.0.0.1:{state.port}", f"localhost:{state.port}"}
 
         def _token_ok(self, query: Dict) -> bool:
-            supplied = self.headers.get("X-SR-Token") or (query.get("token") or [""])[0]
+            # Header only: a token in the URL would end up in browser history, extensions and proxy logs.
+            supplied = self.headers.get("X-SR-Token") or ""
             return bool(supplied) and hmac.compare_digest(supplied, state.token)
 
         def _body(self) -> Dict:
@@ -226,8 +228,10 @@ def make_handler(state: AppState):
                 return
             except ValueError as exc:
                 return self._error(400, str(exc))
-            except Exception as exc:  # pragma: no cover
-                return self._error(500, f"Internal error: {exc}")
+            except Exception:  # pragma: no cover
+                # Never send exception text to the client (it can contain local paths or user names).
+                sys.stderr.write("[secure-repo] internal error while handling " + self.path + "\n" + traceback.format_exc())
+                return self._error(500, "Internal error. The details were written to the Secure Repo terminal.")
 
         def _static(self, name: str) -> None:
             if not re.fullmatch(r"[\w.-]+", name):

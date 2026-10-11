@@ -457,7 +457,8 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 
 ## The report folder
 
-Every scan creates an organized, timestamped folder:
+Every scan creates an organized, timestamped folder (names sort chronologically, to the millisecond;
+`latest.txt` in the output folder names the newest one):
 
 ```
 secure-repo-reports/
@@ -610,6 +611,22 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
 - Secrets are **masked** (`AKIA****************`) in every output; card numbers are truncated.
 - Remote repositories are cloned to a temporary folder that is **deleted** after the scan.
 - Reports are written only to the folder you choose, protected by a `.gitignore` that ignores everything.
+- The GUI session token travels only in the `X-SR-Token` header (never in a URL), and internal errors never send
+  exception text to the browser.
+
+### Honest scoring and blind spots
+
+- **Grade cap.** An open critical finding in production code caps the grade at **D (max 59)**, and an open high
+  one at **C (max 74)**, however clean the rest of the repository is. Findings in tests, suppressed or accepted
+  findings never trigger the cap. The report shows the score you would have had without it.
+- **What was NOT analyzed.** `quality.md`, the CLI and the GUI list every skipped folder (with the reason), minified
+  bundles (analyzed in a reduced mode: secrets and critical findings only), files over the size limit and binaries.
+- **Folders named `build`, `dist`, `target`, `vendor`...** are skipped only with evidence (listed in `.gitignore`,
+  `vendor/` at the root or next to `go.mod`/`composer.json`/`Gemfile`, or full of build artifacts). A source folder
+  that merely has one of those names is analyzed. `node_modules`, `.git` and similar are always skipped.
+- **Regex safety.** Custom rule patterns and allowlist values that could cause catastrophic backtracking (ReDoS)
+  are rejected with an error instead of hanging the scan.
+- **CSV safety.** Cells starting with `=`, `+`, `-` or `@` are prefixed with `'` so spreadsheets never run them.
 
 ---
 

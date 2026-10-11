@@ -97,7 +97,8 @@ def build_summary(report: Dict) -> None:
         "by_owasp": {k: by_owasp[k] for k in OWASP_TOP10 if k in by_owasp},
         "by_status": by_status, "by_engine": by_engine,
         "suppressed": sum(1 for f in findings if not reportable(f)),
-        "score": score["score"], "grade": score["grade"],
+        "score": score["score"], "grade": score["grade"], "grade_cap": score["cap"],
+        "uncapped_score": score["uncapped_score"],
         "top_files": sorted(per_file.values(), key=lambda e: (SEVERITY_RANK[e["risk"]], -e["count"]))[:15],
     })
 

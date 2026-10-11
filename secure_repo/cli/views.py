@@ -55,6 +55,10 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
     score.append(f"  {summary['score']:>3}/100  ", style=f"bold {grade_color}")
     score.append(f" GRADE {summary['grade']} ", style=f"bold black on {grade_color}")
 
+    cap_note = None
+    if summary.get("grade_cap"):
+        cap_note = Text("  ▲ " + summary["grade_cap"]["message"], style="bold #ff8a00")
+
     histogram = Table.grid(padding=(0, 2))
     histogram.add_column(no_wrap=True)
     histogram.add_column(no_wrap=True)
@@ -78,7 +82,7 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
                                f"{deps['vulnerable']} vulnerable · {deps['vulnerabilities']} advisories")
     facts.add_row("Intelligence", "online (OSV.dev + deps.dev)" if deps["online"] else "offline / unavailable")
     facts.add_row("Duration", f"{meta['duration_seconds']} s")
-    console.print(Panel(Group(score, Text(""), histogram, Text(""), facts),
+    console.print(Panel(Group(*([score] + ([cap_note] if cap_note else [])), Text(""), histogram, Text(""), facts),
                         title=Text(" SECURITY POSTURE ", style=f"bold {NEON}"), border_style=grade_color,
                         box=box.HEAVY, padding=(1, 2)))
 
@@ -401,6 +405,18 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
                                     f"{knowledge.get('below_min_confidence', 0)} below min confidence", style="white"))
     grid.add_row("Learning", Text("ON (secure-repo triage stats)" if analysis.get("learning") else "OFF", style=VIOLET))
     grid.add_row("Configuration", Text(analysis.get("config") or "none - run 'secure-repo init-config'", style="white"))
+    skipped = analysis.get("not_analyzed") or {}
+    if skipped:
+        parts = []
+        if skipped.get("directories"):
+            parts.append(f"{len(skipped['directories'])} folder(s)")
+        if skipped.get("minified"):
+            parts.append(f"{len(skipped['minified'])} minified bundle(s) in reduced mode")
+        if skipped.get("too_large"):
+            parts.append(f"{len(skipped['too_large'])} file(s) over the size limit")
+        if skipped.get("binary"):
+            parts.append(f"{skipped['binary']} binary file(s)")
+        grid.add_row("Not analyzed", Text(", ".join(parts) + " - see quality.md" if parts else "nothing", style="white"))
     influence = analysis.get("repo_influence")
     if influence:
         grid.add_row("Audited repo", Text(("TRUSTED" if influence["trusted"] else "NOT trusted") + f" - {influence['trust_reason']}",

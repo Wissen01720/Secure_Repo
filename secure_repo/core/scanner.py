@@ -40,6 +40,9 @@ DIRECTIVE_RE = re.compile(r"(?i)\bnosec\b|securerepo:ignore\b(?!-file)|noqa:\s*s
 RULE_ID_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{1,4}\b")
 COMMENT_START_RE = re.compile(r"#|//|--|<!--|/\*|\brem\b|::", re.IGNORECASE)
 IGNORE_FILE_MARKER = "securerepo:ignore-file"
+# Only these languages are ever minified in practice. A one-line .py/.php/.go file is NOT minified code: it is
+# either hostile or generated, and must be analyzed in full.
+MINIFIABLE_LANGUAGES = {"JavaScript", "TypeScript", "CSS"}
 COMMENT_PREFIXES = ("#", "//", "/*", "* ", "*/", "--", "<!--", ";", "rem ", "REM ", "::")
 MAX_PER_RULE_PER_FILE = 50
 
@@ -87,6 +90,8 @@ class Scanner:
         self.inline_ignored = 0                 # inline suppression comments NOT honoured (untrusted target)
         self.ignore_markers: List[str] = []     # files carrying a legacy "ignore-file" marker (never honoured)
         self._min_conf_from_repo = False
+        # What was NOT (fully) analyzed - shown in every report so the analyst knows the blind spots.
+        self.not_analyzed: Dict = {"directories": [], "minified": [], "too_large": [], "binary": 0, "by_type": 0}
         self.engine_stats: Dict[str, int] = {"python_ast": 0, "python_fallback": 0, "js_flow": 0, "masked_files": 0}
         self._rule_cache: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
         self.log_lines: List[str] = []
@@ -169,8 +174,12 @@ class Scanner:
         return checks.redact_text(stripped)
 
     # ------------------------------------------------------------------ analysis
-    def analyze_text(self, info: FileInfo, text: str) -> List[Finding]:
-        """Analyze one file with every applicable engine; returns (and registers) its findings."""
+    def analyze_text(self, info: FileInfo, text: str, minified: bool = False) -> List[Finding]:
+        """Analyze one file with every applicable engine; returns (and registers) its findings.
+
+        ``minified`` (JS/CSS bundles only) runs a reduced analysis: no syntax-aware engines, and only secrets and
+        critical findings are kept, with low confidence.
+        """
         newlines = [m.start() for m in re.finditer("\n", text)]
         lines = text.split("\n")
 
@@ -219,7 +228,7 @@ class Scanner:
 
         in_test = info.in_test
         is_doc = info.language in DOCUMENTATION
-        views = None if is_doc or not self.options.semantic else lexer.mask(text, info.language)
+        views = None if is_doc or minified or not self.options.semantic else lexer.mask(text, info.language)
         if views is not None:
             self.engine_stats["masked_files"] += 1
         lower = text.lower()
@@ -358,6 +367,17 @@ class Scanner:
                 file_findings.append(self._finding_from_rule(RULES_BY_ID[rule_id], info.rel, line_no, snippet,
                                                              detail=detail, in_test=in_test, engine="ast"))
 
+        if minified:
+            kept_findings = []
+            for finding in file_findings:
+                if finding.source == "secret" or finding.severity == "critical":
+                    finding.confidence = "low"
+                    finding.extra["minified"] = True
+                    kept_findings.append(finding)
+                else:
+                    self._count_noise("minified bundle: non-critical pattern match")
+            file_findings = kept_findings
+
         for finding in file_findings:
             hit = inline_suppression(finding.line, finding.rule_id)
             if hit:
@@ -388,6 +408,13 @@ class Scanner:
                                                       in_test=info.in_test))
             if text is None:
                 stats["skipped"] += 1
+                if info.is_symlink:
+                    pass
+                elif info.size > self.options.max_file_size:
+                    if len(self.not_analyzed["too_large"]) < 200:
+                        self.not_analyzed["too_large"].append({"path": info.rel, "bytes": info.size})
+                else:
+                    self.not_analyzed["binary"] += 1
             else:
                 line_count = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
                 tree.set_lines(info.rel, line_count)
@@ -396,14 +423,19 @@ class Scanner:
                 lang["lines"] += line_count
                 lang["bytes"] += info.size
                 stats["lines"] += line_count
-                minified = len(text) > 20000 and line_count < len(text) / 1500
+                minified = (len(text) > 20000 and line_count < len(text) / 1500
+                            and info.language in MINIFIABLE_LANGUAGES)
                 if IGNORE_FILE_MARKER in text[:2000] and len(self.ignore_markers) < 200:
                     self.ignore_markers.append(info.rel)  # reported, never honoured: use an explicit exclude instead
-                if info.scannable and not minified and (self.options.include_tests or not info.in_test):
-                    self.analyze_text(info, text)
+                if info.scannable and (self.options.include_tests or not info.in_test):
+                    if minified and len(self.not_analyzed["minified"]) < 200:
+                        self.not_analyzed["minified"].append(info.rel)
+                    self.analyze_text(info, text, minified=minified)
                     stats["scanned"] += 1
                 else:
                     stats["skipped"] += 1
+                    if not info.scannable:
+                        self.not_analyzed["by_type"] += 1
             batch.append(info.rel)
             now = time.time()
             if now - last_emit > 0.12 or index == total:
@@ -803,7 +835,8 @@ class Scanner:
             self._load_configuration(workspace)
 
             bus.stage("enumerate", "start")
-            files = enumerate_files(workspace.path, self.options.exclude + self.config.exclude)
+            files = enumerate_files(workspace.path, self.options.exclude + self.config.exclude,
+                                    skipped=self.not_analyzed["directories"])
             excluded_by_config: List[str] = []
             if self.config.exclude:  # which files did the configuration take out of the analysis?
                 kept = {f.rel for f in files}
@@ -931,6 +964,7 @@ class Scanner:
                     "learning": self.options.learning, "config": os.path.basename(self.config.source) if self.config.source else None,
                     "custom_rules": [r.id for r in self.config.custom_rules], "min_confidence": self.options.min_confidence,
                     "repo_influence": influence,
+                    "not_analyzed": self.not_analyzed,
                 },
                 "structure": tree.to_dict(),
                 "languages": stats["languages"],

@@ -2,6 +2,25 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.2.1] - 2026-10-11
+
+### Security
+- **Grade cap:** an open critical finding in production code caps the grade at D (59), an open high one at C (74).
+  The uncapped score is reported alongside.
+- **ReDoS protection:** custom rule patterns and allowlist values prone to catastrophic backtracking are rejected.
+- **GUI:** the session token is accepted only in the `X-SR-Token` header; the event stream and downloads now use
+  authenticated `fetch`. Internal errors no longer leak exception text.
+- **CSV exports** neutralize formula injection in every cell.
+
+### Fixed
+- One-line source files (Python, etc.) are no longer skipped as "minified"; minified JS/TS/CSS gets a reduced
+  analysis (secrets and critical findings) instead of none.
+- Folders called `build`, `dist`, `target`, `vendor`... are skipped only with evidence, not by name alone.
+
+### Added
+- "What was NOT analyzed" section in `quality.md`, the CLI and the GUI.
+- Report folders carry millisecond timestamps and `latest.txt` points to the newest.
+
 ## [1.2.0] - 2026-10-11
 
 ### Security

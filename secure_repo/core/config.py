@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from secure_repo.core import redos
 from secure_repo.core.models import SEVERITIES
 from secure_repo.core.rules import RULES_BY_ID, Rule
 
@@ -120,6 +121,12 @@ def _custom_rule(raw: Dict, errors: List[str], origin: str) -> Optional[Rule]:
     if severity not in SEVERITIES:
         errors.append(f"{origin}: {rule_id} has an invalid severity '{severity}'")
         return None
+    for field_name in ("pattern", "exclude", "path"):
+        if raw.get(field_name):
+            risk = redos.check_pattern(str(raw[field_name]))
+            if risk:
+                errors.append(f"{origin}: custom rule {rule_id} rejected - '{field_name}' has {risk}")
+                return None
     try:
         re.compile(raw["pattern"])
     except re.error as exc:
@@ -195,6 +202,10 @@ def load_config(root: str, user_dir: Optional[str] = None, trust_repo: bool = Tr
             config.repo_severity.update(overrides)
             config.repo_allow_paths += allowed_paths
         for value in allow.get("values", []):
+            risk = redos.check_pattern(str(value))
+            if risk:
+                config.errors.append(f"{path}: allowlist regex {str(value)[:60]!r} rejected - {risk}")
+                continue
             try:
                 compiled = re.compile(str(value))
             except re.error as exc:

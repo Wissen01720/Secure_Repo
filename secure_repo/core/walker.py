@@ -13,13 +13,21 @@ from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
 
 REPORTS_DIR_NAME = "secure-repo-reports"
 
-EXCLUDED_DIRS = {
-    ".git", ".hg", ".svn", "node_modules", "bower_components", "jspm_packages", "vendor", "__pycache__",
-    ".venv", "venv", ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".idea", "dist", "build",
-    "target", ".next", ".nuxt", ".svelte-kit", ".gradle", ".terraform", "coverage", ".cache", "Pods",
-    "DerivedData", ".dart_tool", "site-packages", ".parcel-cache", ".turbo", ".angular", "obj",
-    REPORTS_DIR_NAME,
+# Folders that are never source code of the project, whatever their location.
+ALWAYS_EXCLUDED_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "bower_components", "jspm_packages", "__pycache__",
+    ".venv", "venv", ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".idea",
+    ".next", ".nuxt", ".svelte-kit", ".gradle", ".terraform", "DerivedData", ".dart_tool", "site-packages",
+    ".parcel-cache", ".turbo", ".angular", REPORTS_DIR_NAME,
 }
+# Folders whose names are common in real source trees (a "build" or "target" package, a "vendor" module...).
+# They are skipped only when there is evidence that they hold generated or third-party content.
+CONTEXTUAL_DIRS = {"build", "dist", "target", "vendor", "obj", "coverage", ".cache", "Pods"}
+EXCLUDED_DIRS = ALWAYS_EXCLUDED_DIRS | CONTEXTUAL_DIRS
+ARTIFACT_EXT = {".class", ".o", ".obj", ".a", ".so", ".dylib", ".dll", ".pyc", ".pyo", ".whl", ".jar", ".war", ".ear",
+                ".egg", ".exe", ".map", ".tsbuildinfo", ".gcda", ".gcno", ".pdb"}
+VENDOR_SIBLINGS = ("go.mod", "composer.json", "Gemfile")
+COUNT_CAP = 5000
 SKIP_CONTENT_NAMES = {
     "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "cargo.lock",
     "composer.lock", "gemfile.lock", "go.sum", "pipfile.lock", "uv.lock", "pubspec.lock", "packages.lock.json",
@@ -51,10 +59,95 @@ class FileInfo:
         return not any(name.endswith(ext) for ext in SKIP_CONTENT_EXT)
 
 
-def enumerate_files(root: str, exclude_globs: Optional[Iterable[str]] = None) -> List[FileInfo]:
+def _gitignored_names(directory: str, cache: Dict[str, set]) -> set:
+    """Plain directory names (``build/``, ``/dist``, ``**/target``) listed in the .gitignore of ``directory``."""
+    if directory in cache:
+        return cache[directory]
+    names = set()
+    try:
+        with open(os.path.join(directory, ".gitignore"), "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith(("#", "!")):
+                    continue
+                line = line.lstrip("/")
+                if line.startswith("**/"):
+                    line = line[3:]
+                line = line.rstrip("/")
+                if line and not any(ch in line for ch in "*?[/"):
+                    names.add(line)
+    except OSError:
+        pass
+    cache[directory] = names
+    return names
+
+
+def _has_artifacts(directory: str) -> bool:
+    """True when the folder (or one of its first sub-folders) holds compiled/build output."""
+    try:
+        with os.scandir(directory) as entries:
+            subdirs = []
+            for index, entry in enumerate(entries):
+                if index > 300:
+                    break
+                if entry.is_dir(follow_symlinks=False):
+                    subdirs.append(entry.path)
+                elif os.path.splitext(entry.name)[1].lower() in ARTIFACT_EXT:
+                    return True
+        for sub in subdirs[:12]:
+            with os.scandir(sub) as entries:
+                for index, entry in enumerate(entries):
+                    if index > 60:
+                        break
+                    if entry.is_file(follow_symlinks=False) and os.path.splitext(entry.name)[1].lower() in ARTIFACT_EXT:
+                        return True
+    except OSError:
+        return False
+    return False
+
+
+def contextual_exclusion(name: str, full: str, rel: str, root: str, cache: Dict[str, set]) -> Optional[str]:
+    """Why a CONTEXTUAL_DIRS folder is skipped (None = it looks like real source, analyze it)."""
+    parent = os.path.dirname(full)
+    if name in _gitignored_names(root, cache) or name in _gitignored_names(parent, cache):
+        return "listed in .gitignore"
+    if name == "vendor":
+        if "/" not in rel:
+            return "vendor/ at the repository root"
+        if any(os.path.isfile(os.path.join(parent, sibling)) for sibling in VENDOR_SIBLINGS):
+            return "vendored dependencies (next to go.mod / composer.json / Gemfile)"
+    if name == "Pods" and os.path.isfile(os.path.join(parent, "Podfile")):
+        return "CocoaPods dependencies (next to Podfile)"
+    if _has_artifacts(full):
+        return "contains build artifacts"
+    return None
+
+
+def _count_files(directory: str) -> int:
+    total = 0
+    for _current, _dirs, names in os.walk(directory, followlinks=False):
+        total += len(names)
+        if total >= COUNT_CAP:
+            return COUNT_CAP
+    return total
+
+
+def enumerate_files(root: str, exclude_globs: Optional[Iterable[str]] = None,
+                    skipped: Optional[List[Dict]] = None) -> List[FileInfo]:
+    """List the files to analyze. ``skipped`` (optional) receives every folder that was NOT entered, with the reason."""
     exclude_globs = list(exclude_globs or [])
     files: List[FileInfo] = []
     root = os.path.abspath(root)
+    gitignore_cache: Dict[str, set] = {}
+
+    def note(rel: str, reason: str, kind: str, full: Optional[str] = None) -> None:
+        if skipped is None:
+            return
+        entry = {"path": rel, "reason": reason, "kind": kind, "files": None}
+        if kind == "contextual" and full:
+            entry["files"] = _count_files(full)
+        skipped.append(entry)
+
     for current, dirs, names in os.walk(root, topdown=True, followlinks=False):
         rel_dir = os.path.relpath(current, root).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir
@@ -62,10 +155,20 @@ def enumerate_files(root: str, exclude_globs: Optional[Iterable[str]] = None) ->
         for directory in dirs:
             full = os.path.join(current, directory)
             rel = f"{rel_dir}/{directory}" if rel_dir else directory
-            if directory in EXCLUDED_DIRS or os.path.islink(full):
+            if os.path.islink(full):
+                note(rel, "symbolic link (never followed)", "always")
+                continue
+            if directory in ALWAYS_EXCLUDED_DIRS:
+                note(rel, "dependency, cache or tooling folder", "always")
                 continue
             if os.path.isfile(os.path.join(full, "pyvenv.cfg")):
+                note(rel, "Python virtual environment", "always")
                 continue
+            if directory in CONTEXTUAL_DIRS:
+                reason = contextual_exclusion(directory, full, rel, root, gitignore_cache)
+                if reason:
+                    note(rel, reason, "contextual", full)
+                    continue
             if any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(directory, g) for g in exclude_globs):
                 continue
             kept.append(directory)
