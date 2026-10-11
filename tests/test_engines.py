@@ -1,4 +1,3 @@
-# securerepo:ignore-file - engine unit tests contain vulnerable-looking samples on purpose (never executed).
 import json
 import os
 

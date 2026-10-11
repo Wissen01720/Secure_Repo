@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from secure_repo.core import compliance
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
+from secure_repo.core.models import OWASP_TOP10, REPO_CONTROLLED_ORIGINS, SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES_BY_ID
 from secure_repo.core.scoring import compute_score
 
@@ -68,6 +68,28 @@ def build_summary(report: Dict) -> None:
         if SEVERITY_RANK[finding["severity"]] < SEVERITY_RANK[entry["risk"]]:
             entry["risk"] = finding["severity"]
     score = compute_score(findings)
+    influence = (report.get("analysis") or {}).get("repo_influence")
+    if influence is not None:
+        shadow = []
+        touched = 0
+        for finding in findings:
+            copy = dict(finding)
+            if (finding.get("triage") or {}).get("origin") in REPO_CONTROLLED_ORIGINS:
+                copy["status"] = "open"
+                touched += 1
+            extra = finding.get("extra") or {}
+            if extra.get("severity_override_origin") == "repo":
+                copy["severity"] = extra["original_severity"]
+                touched += 1
+            shadow.append(copy)
+        alternative = compute_score(shadow)
+        influence.update({
+            "score_with_repo_content": score["score"], "grade_with_repo_content": score["grade"],
+            "score_without_repo_content": alternative["score"], "grade_without_repo_content": alternative["grade"],
+            "findings_affected": touched,
+            "material": alternative["grade"] != score["grade"] or alternative["score"] - score["score"] >= 10,
+            "active": bool(touched or influence["excluded_by_config"]["files"] or influence["ignored"]),
+        })
     summary = report.setdefault("summary", {})
     summary.update({
         "findings": len(active), "by_severity": by_severity,

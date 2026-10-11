@@ -11,6 +11,7 @@ from tests.conftest import FAKE_AWS_KEY, FAKE_GH_TOKEN
 
 
 def run(path, **kwargs):
+    kwargs.setdefault("trust_repo_config", True)
     options = ScanOptions(offline=True, **kwargs)
     report, _ = Scanner(options, EventBus()).run(Target.parse(path), write_reports=False)
     return report
@@ -42,8 +43,10 @@ def test_secrets_are_redacted_everywhere(vulnerable_repo):
 
 def test_nosec_comments_strings_and_docs_are_ignored(vulnerable_repo):
     report = run(vulnerable_repo)
-    eval_lines = [f["line"] for f in report["findings"] if f["rule_id"] == "SR-PY-001"]
-    assert eval_lines == [9]  # line 10 is a string literal, line 11 has "# nosec"
+    open_lines = [f["line"] for f in report["findings"] if f["rule_id"] == "SR-PY-001" and f["status"] == "open"]
+    assert open_lines == [9]  # line 10 is a string literal, line 11 has "# nosec"
+    inline = [f for f in report["findings"] if f["status"] == "suppressed_inline"]
+    assert [f["line"] for f in inline] == [11] and inline[0]["triage"]["origin"] == "inline"  # kept in the audit trail
     assert not [f for f in report["findings"] if f["file"] == "docs/guide.md" and f["source"] == "code"]
 
 
@@ -51,7 +54,9 @@ def test_report_structure_and_score(vulnerable_repo):
     report = run(vulnerable_repo, compliance=True)
     assert report["schema"] == "secure-repo/report@1"
     assert 0 <= report["summary"]["score"] <= 100
-    assert report["summary"]["findings"] == len(report["findings"])
+    active = [f for f in report["findings"] if f["status"] not in ("false_positive", "filtered", "disabled_by_config",
+                                                                   "suppressed_inline")]
+    assert report["summary"]["findings"] == len(active)
     assert report["structure"]["files"] >= 7
     ids = [f["id"] for f in report["findings"]]
     assert len(ids) == len(set(ids))

@@ -1,7 +1,7 @@
 """Secure Repo - repository security auditing toolkit (CLI + GUI)."""
 
 __app_name__ = "Secure Repo"
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "Wissen01720"
 
 __all__ = ["__app_name__", "__version__", "__author__"]

@@ -122,7 +122,10 @@ class Finding:
 
 # Statuses that still represent risk (counted in the score and the compliance audit).
 ACTIVE_STATUSES = ("open", "confirmed", "accepted_risk")
-SUPPRESSED_STATUSES = ("false_positive", "filtered")
+# Findings in these statuses are kept in the report (audit trail) but never affect the score or compliance.
+SUPPRESSED_STATUSES = ("false_positive", "filtered", "disabled_by_config", "suppressed_inline")
+# Triage origins that come from content controlled by the audited repository (not by the analyst).
+REPO_CONTROLLED_ORIGINS = ("config", "repo-decision", "repo-pattern", "inline")
 TRIAGE_STATUSES = ("open", "confirmed", "accepted_risk", "false_positive")
 
 

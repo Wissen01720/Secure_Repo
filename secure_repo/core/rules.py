@@ -1,4 +1,3 @@
-# securerepo:ignore-file  (this file only contains detection signatures and their documentation)
 """Detection signatures used by the static analyzer.
 
 Every rule documents *why* the pattern is dangerous and *how* to fix it; that

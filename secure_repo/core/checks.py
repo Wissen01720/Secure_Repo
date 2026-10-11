@@ -1,4 +1,3 @@
-# securerepo:ignore-file  (detector implementations; contains patterns, not secrets)
 """Detectors that need more logic than a single regular expression."""
 
 from __future__ import annotations

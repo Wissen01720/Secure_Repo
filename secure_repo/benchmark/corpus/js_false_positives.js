@@ -1,4 +1,3 @@
-// securerepo:ignore-file - benchmark corpus: looks dangerous to a regex but is safe.
 // expect-none: SR-JS-001, SR-JS-002, SR-JS-007, SR-JS-008, SR-JS-009, SR-JS-011
 const { exec } = require('child_process');
 

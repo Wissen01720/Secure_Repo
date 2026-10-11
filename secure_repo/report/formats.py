@@ -7,7 +7,7 @@ import io
 import uuid
 from typing import Dict, List
 
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS
+from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES
 
 SEVERITY_ICON = {"critical": "🟥", "high": "🟧", "medium": "🟨", "low": "🟦", "info": "⬜"}
 SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
@@ -72,7 +72,7 @@ def markdown_summary(report: Dict) -> str:
                   f"{(analysis.get('knowledge') or {}).get('decisions', 0)} triage decisions and "
                   f"{(analysis.get('knowledge') or {}).get('learned_patterns', 0)} learned patterns applied"]
     lines += ["", "## Top findings", ""]
-    for finding in [f for f in report["findings"] if f.get("status", "open") not in ("false_positive", "filtered")][:25]:
+    for finding in [f for f in report["findings"] if f.get("status", "open") not in SUPPRESSED_STATUSES][:25]:
         lines.append(f"- {SEVERITY_ICON[finding['severity']]} **{finding['id']} {_md_escape(finding['title'])}** "
                      f"- `{_md_escape(_where(finding))}`")
     if report["compliance"].get("enabled"):
@@ -183,18 +183,59 @@ def markdown_quality(report: Dict) -> str:
               f"- Custom rules: {', '.join(analysis.get('custom_rules') or []) or 'none'}", "",
               "## Status of findings", "", "| Status | Findings |", "|---|---:|"]
     lines += [f"| {status} | {count} |" for status, count in (summary.get("by_status") or {}).items()]
+    return "\n".join(lines) + "\n" + markdown_repo_influence(report)
+
+
+def markdown_repo_influence(report: Dict) -> str:
+    influence = (report.get("analysis") or {}).get("repo_influence")
+    if not influence:
+        return ""
+    lines = ["", "## Influence of the audited repository on this result", "",
+             f"- **Trust:** the audited repository is {'TRUSTED' if influence['trusted'] else 'NOT trusted'} "
+             f"({influence['trust_reason']}).",
+             f"- **Score with the repository's own content:** {influence.get('score_with_repo_content', '-')} "
+             f"({influence.get('grade_with_repo_content', '-')})",
+             f"- **Score without it:** {influence.get('score_without_repo_content', '-')} "
+             f"({influence.get('grade_without_repo_content', '-')})"]
+    if influence.get("material"):
+        lines.append("- **WARNING:** the repository's own configuration, triage decisions or inline comments "
+                     "change the grade or the score by 10 points or more. Review them before trusting this result.")
+    if influence["ignored"]:
+        lines += ["", "Ignored (the target is not trusted):"] + [f"- {_md_escape(item)}" for item in influence["ignored"]]
+    if influence["disabled_rules"]:
+        lines += ["", "Rules disabled by configuration:", "", "| Rule | Findings hidden | Set by |", "|---|---:|---|"]
+        lines += [f"| {r['rule_id']} {_md_escape(r['title'])} | {r['hidden']} | {r['from']} |" for r in influence["disabled_rules"]]
+    if influence["severity_overrides"]:
+        lines += ["", "Severity overrides:", "", "| Rule | From | To | Findings | Set by |", "|---|---|---|---:|---|"]
+        lines += [f"| {r['rule_id']} | {r['from_severity']} | {r['to_severity']} | {r['count']} | {r['from']} |"
+                  for r in influence["severity_overrides"]]
+    excluded = influence["excluded_by_config"]
+    if excluded["files"]:
+        lines += ["", f"Files excluded from the analysis by configuration: **{excluded['files']}**",
+                  ""] + [f"- `{_md_escape(item['pattern'])}` ({item['from']})" for item in excluded["patterns"]]
+        lines += [f"  - {_md_escape(path)}" for path in excluded["sample"][:30]]
+    counters = [("Allow-listed by configuration", influence["allowlisted"]),
+                ("Decisions taken from the repository's shared triage", influence["repo_decisions"]),
+                ("Patterns taken from the repository's shared triage", influence["repo_patterns"]),
+                ("Inline suppression comments honoured", influence["inline"]),
+                ("...of which without a rule ID (silence every rule on the line)", influence["inline_without_rule_id"])]
+    lines += [""] + [f"- {label}: {value}" for label, value in counters if value]
+    if influence["ignore_file_markers"]:
+        lines += ["", "Files carrying a legacy `ignore-file` marker (never honoured, analyzed normally): "
+                  + ", ".join(f"`{_md_escape(p)}`" for p in influence["ignore_file_markers"][:20])]
     return "\n".join(lines) + "\n"
 
 
 def markdown_suppressed(report: Dict) -> str:
-    suppressed = [f for f in report["findings"] if f.get("status") in ("false_positive", "filtered")]
+    suppressed = [f for f in report["findings"] if f.get("status") in SUPPRESSED_STATUSES]
     lines = ["# Suppressed findings (audit trail)", "",
              f"{len(suppressed)} finding(s) are excluded from the score and the compliance audit.", "",
-             "| ID | Rule | Location | Status | Reason | Author | Date |", "|---|---|---|---|---|---|---|"]
+             "| ID | Rule | Location | Status | Origin | Reason | Author | Date |", "|---|---|---|---|---|---|---|---|"]
     for f in suppressed:
         t = f.get("triage") or {}
         lines.append(f"| {f['id']} | {f['rule_id']} | `{_md_escape(_where(f))}` | {f['status']} | "
-                     f"{_md_escape(t.get('reason', ''))} | {_md_escape(t.get('author', ''))} | {t.get('date', '')} |")
+                     f"{_md_escape(t.get('origin', ''))} | {_md_escape(t.get('reason', ''))} | "
+                     f"{_md_escape(t.get('author', ''))} | {t.get('date', '')} |")
     return "\n".join(lines) + "\n"
 
 
@@ -311,7 +352,7 @@ def sarif(report: Dict) -> Dict:
                 {"location": {"physicalLocation": {"artifactLocation": {"uri": f["file"]},
                                                    "region": {"startLine": max(1, step["line"])}},
                               "message": {"text": step["label"]}}} for step in f["flow"]]}]}]
-        if f.get("status") in ("false_positive", "filtered", "accepted_risk"):
+        if f.get("status") in SUPPRESSED_STATUSES + ("accepted_risk",):
             result["suppressions"] = [{"kind": "external", "status": "accepted",
                                        "justification": f"{f['status']}: {(f.get('triage') or {}).get('reason', '')}"}]
         results.append(result)

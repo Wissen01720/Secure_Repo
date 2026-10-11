@@ -24,18 +24,20 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 2. [Rules of engagement](#rules-of-engagement)
 3. [Requirements](#requirements)
 4. [Installation (Windows, macOS, Linux)](#installation)
-5. [CLI field guide - step by step](#cli-field-guide)
-6. [Analysis engine & false-positive reduction](#analysis-engine--false-positive-reduction)
-7. [CLI command reference](#cli-command-reference)
-8. [The report folder](#the-report-folder)
-9. [Graphical interface (GUI)](#graphical-interface-gui)
-10. [What is analyzed](#what-is-analyzed)
-11. [Compliance audit](#compliance-audit)
-12. [Privacy & data handling](#privacy--data-handling)
-13. [Suppressing findings](#suppressing-findings)
-14. [Troubleshooting](#troubleshooting)
-15. [Project layout](#project-layout)
-16. [License](#license)
+5. [Updating Secure Repo](#updating-secure-repo)
+6. [CLI field guide - step by step](#cli-field-guide)
+7. [Private and organization repositories](#private-and-organization-repositories)
+8. [Analysis engine & false-positive reduction](#analysis-engine--false-positive-reduction)
+9. [CLI command reference](#cli-command-reference)
+10. [The report folder](#the-report-folder)
+11. [Graphical interface (GUI)](#graphical-interface-gui)
+12. [What is analyzed](#what-is-analyzed)
+13. [Compliance audit](#compliance-audit)
+14. [Privacy & data handling](#privacy--data-handling)
+15. [Suppressing findings](#suppressing-findings)
+16. [Troubleshooting](#troubleshooting)
+17. [Project layout](#project-layout)
+18. [License](#license)
 
 ---
 
@@ -56,6 +58,8 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 | **Live process view** | Every stage, file and finding is streamed as it happens (terminal dashboard / GUI pipeline + log). |
 | **Organized evidence** | Each CLI run creates a timestamped folder with HTML, JSON, SARIF, Markdown, CSV, CycloneDX SBOM, compliance evidence, logs and a SHA-256 integrity manifest. |
 | **Optional compliance audit** | Toggle it on/off in the CLI or GUI. Maps technical evidence to 7 frameworks to help you **meet** your obligations. |
+| **Private repositories** | Organization and private repositories are supported. The tool asks for an access token when the remote requires it; the token stays in memory only and is never written to disk, logs or reports. |
+| **Always up to date** | Every new release is announced at start-up. Install it from the menu (`[U]`), with `secure-repo update` or from the GUI, without re-cloning. |
 | **Cross-platform** | Pure Python + Git. Windows, macOS and every mainstream Linux distribution. |
 
 ---
@@ -140,6 +144,34 @@ python -m secure_repo
 
 ---
 
+## Updating Secure Repo
+
+Every time a new version is published, Secure Repo announces it:
+
+- **CLI**: the boot sequence shows `[ WARN ] Updates ... NEW VERSION x.y.z AVAILABLE`, an **UPDATE** panel lists
+  what's new, and the main console shows a highlighted `[U] INSTALL UPDATE` option.
+- **GUI**: a banner below the top bar offers *What's new* and *Install update*.
+- **After installing**, the next start shows a one-time **UPDATE INSTALLED** notice with the changes it included.
+
+Install the update **without re-cloning** in any of these ways:
+
+```bash
+secure-repo            # then choose [U] in the main console
+secure-repo update     # shows what's new and asks for confirmation (-y to skip it)
+secure-repo update --check   # only check (exit code 10 = update available)
+```
+
+| Installation type | How the update is installed |
+|---|---|
+| Cloned repository (`run.sh` / `run.bat` / `pip install -e .`) | Fast-forward of the tracked branch. Dependencies are reinstalled only when `pyproject.toml` or `requirements.txt` changed. Local edits are never overwritten: the update stops and asks you to commit or stash them. |
+| `pip install` | `pip install --upgrade` of the exact upstream commit from GitHub. On Windows, if the running executable is locked, the upgrade finishes automatically when you close Secure Repo. |
+
+Restart Secure Repo after updating to load the new version. Checks are cached for 6 hours, take a few seconds at
+most and never block the tool. They are skipped in CI, and you can disable them with `--no-update-check` or
+`SECURE_REPO_NO_UPDATE_CHECK=1`. The list of changes of every release is in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## CLI field guide
 
 The CLI is the heart of Secure Repo. This section walks you through a full engagement.
@@ -170,6 +202,7 @@ repository.
   [5]  Settings  [compliance: OFF · intel: ON · output: secure-repo-reports]
   [6]  List detection rules (169)
   [7]  Usage guide
+  [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
   [0]  Exit
 
 [?] root@secure-repo:~# (1):
@@ -181,6 +214,7 @@ repository.
 | **2** | Audit a repository you have not cloned: paste `https://github.com/owner/repo.git` or `git@github.com:owner/repo.git`. |
 | **3** | Audit another folder on disk (Git or not). |
 | **4** | Open the GUI in your browser. |
+| **U** | Install the newest version of Secure Repo. It is highlighted when an update is available; otherwise it checks for updates. |
 | **5** | Enable the compliance audit, offline mode, test-file handling, max file size, output folder, exclusions, auditor name, animations, minimum confidence, learning from triage, the analysis engine and virtual lockfile resolution. |
 
 ### Step 3 - Confirm your authorization
@@ -200,6 +234,8 @@ downloaded yet); for local repositories it lists local and remote-tracking branc
 
 <img src="docs/images/cli-menu-branches.svg" alt="Main console and branch recon" width="900">
 
+- **Private or organization repository?** If the remote asks for authentication, Secure Repo explains which
+  token to create and asks for it (hidden input). See [Private and organization repositories](#private-and-organization-repositories).
 - Press **Enter** to accept the highlighted default (the branch you are on, or the remote default branch).
 - Or type the **number** or the **name** of a branch.
 - Local repository, current branch → the working tree is scanned (uncommitted changes included).
@@ -297,6 +333,47 @@ Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/abo
 
 ---
 
+## Private and organization repositories
+
+Private repositories, and repositories of organizations that require authentication, need an **access token**
+with read access.
+
+| Host | Token to create | Username used |
+|---|---|---|
+| GitHub | Fine-grained token with *Contents: Read* on the repository, or a classic token with `repo`. If the organization enforces SAML SSO, also click *Configure SSO → Authorize*. | `x-access-token` |
+| GitLab | Personal, project or group access token with `read_repository` | `oauth2` |
+| Bitbucket | Repository access token with *Repositories: Read* | `x-token-auth` |
+| Azure DevOps | Personal access token with *Code (Read)* | `pat` |
+
+**Interactive (CLI and GUI).** Just paste the `https://` URL. When the remote answers "authentication required",
+Secure Repo shows what to create and asks for the token: hidden input in the terminal, a password field in the
+GUI. A rejected token is reported and you can try again.
+
+**Scripts and CI.** Never write the token on the command line, because it would stay in your shell history. Use:
+
+```bash
+export SECURE_REPO_GIT_TOKEN=...      # any host (or GH_TOKEN / GITHUB_TOKEN, GITLAB_TOKEN, BITBUCKET_TOKEN,
+                                      # AZURE_DEVOPS_PAT for that provider)
+secure-repo scan https://github.com/my-org/private-api.git -b main --yes
+
+secure-repo scan https://github.com/my-org/private-api.git --token-env MY_SECRET_VAR --yes
+secure-repo scan https://github.com/my-org/private-api.git --ask-token
+```
+
+**How the token is protected**
+
+- It is kept **in memory only** for the session and dropped when the scan ends. It is never saved to disk, logs,
+  reports or the cloned repository's configuration.
+- It is handed to Git as an `Authorization` header **scoped to the repository host**, through environment
+  variables. It never appears in the URL or in process arguments.
+- Error messages are scrubbed. A URL with embedded credentials (`https://user:token@host/...`) is cleaned before
+  anything is shown or stored.
+- SSH URLs (`git@github.com:org/repo.git`) use your SSH key or agent instead of a token.
+- A remote repository is always an **untrusted target**: its own configuration, shared triage and `nosec` comments
+  are ignored (see the trust model below).
+
+---
+
 ## Analysis engine & false-positive reduction
 
 Findings go through several layers:
@@ -340,6 +417,8 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `secure-repo triage <list\|stats\|mark\|forget\|export\|import\|export-cases\|reset>` | Manage the triage knowledge base. |
 | `secure-repo benchmark [--compare]` | Precision/recall of the detection engines. |
 | `secure-repo init-config [PATH]` | Create a `.securerepo.toml` for a project. |
+| `secure-repo update [--check] [-y]` | Check for and install a new version of Secure Repo (no re-cloning). |
+| `secure-repo --no-update-check ...` | Skip the start-up update check for this run. |
 | `secure-repo --version` | Show the version. |
 
 `scan` options:
@@ -362,9 +441,15 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `--no-menu` | off | Do not show the post-scan menu. |
 | `--open` | off | Open the HTML report when finished. |
 | `--min-confidence LEVEL` | `low` | Filter findings below `medium`/`high` (kept as *filtered* in the audit trail). |
+| `--trust-repo-config` | auto | Apply the audited repository's own `.securerepo.toml`, shared triage and `nosec` comments even for remote repositories or other branches. |
+| `--ignore-repo-config` | auto | Never apply them, not even for your local working tree. |
+| `--ask-token` | off | Ask for the access token of a private https repository (hidden input). |
+| `--token-env VARIABLE` | - | Read the access token from that environment variable (CI). |
 | `--no-learning` | off | Ignore the triage knowledge base. |
 | `--no-resolve` | off | Do not resolve versions of unpinned dependencies. |
 | `--engine layered\|patterns` | `layered` | Choose the analysis engine. |
+
+`branches` also accepts `--ask-token` and `--token-env VARIABLE`.
 
 `gui` options: `--port N` (default: random free port), `--no-browser`, `-o/--output DIR`, `--offline`.
 
@@ -383,7 +468,8 @@ secure-repo-reports/
     ├── report.json                  ← complete machine-readable results
     ├── report.sarif                 ← SARIF 2.1.0 (GitHub code scanning, Azure DevOps, IDEs)
     ├── summary.md                   ← executive summary
-    ├── quality.md                   ← engines used, noise discarded, confidence, suppressed findings
+    ├── quality.md                   ← engines used, noise discarded, confidence, suppressed findings,
+    │                                      and the influence of the audited repository on the result
     ├── findings/
     │   ├── critical.md  high.md  medium.md  low.md  info.md   (with data-flow traces)
     │   ├── by-category/<category>.md
@@ -531,13 +617,34 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
 
 | Mechanism | Effect |
 |---|---|
-| `# nosec` or `// nosec` (or `securerepo:ignore`) on the line | Ignore findings on that line. Add a short justification. |
-| `securerepo:ignore-file` in the first lines of a file | Skip pattern analysis for the whole file (e.g. test fixtures). |
-| `--exclude "path/*"` | Do not scan matching paths. |
+| `# nosec SR-PY-005 reason` or `// nosec SR-JS-001 reason` in a **comment** | Suppress that rule on that line. Always listed in `findings/suppressed.md`. A bare `# nosec` still works, but it silences every rule on the line and the report flags it. Text inside a string (`"nosec"`) never counts. |
+| `--exclude "path/*"` or `[scan] exclude` in `.securerepo.toml` | Do not scan matching paths. Every excluded file is listed in the report. |
 | `--no-tests` | Skip files that look like tests or fixtures. |
 | Triage (CLI menu, GUI or `secure-repo triage mark`) | Mark a finding as false positive / accepted risk, optionally for the whole code pattern. Kept in the audit trail. |
 | `.securerepo.toml` (`secure-repo init-config`) | Disable rules, override severities, allow-list paths or values, set a minimum confidence, add custom rules. |
 | `--min-confidence medium` | Hide low-confidence findings (they stay in `findings/suppressed.md` as *filtered*). |
+
+The legacy `securerepo:ignore-file` marker was **removed**: a file inside the audited repository can no longer
+exclude itself from the analysis. Files carrying it are analyzed normally and listed in the report.
+
+### Who controls the result? (trust model)
+
+Whatever sits inside the audited repository is **untrusted input**: its own `.securerepo.toml`, its
+`.securerepo/triage.json` and its `nosec` comments could otherwise be used to hide real vulnerabilities and get a
+good grade.
+
+| Audited target | Repository's own config, shared triage and `nosec` comments |
+|---|---|
+| Working tree of a **local Git repository** (your own project) | **Applied**, and always reported |
+| Remote URL, another branch, or a folder that is not a Git repository | **Ignored**, and the report says what was ignored |
+
+Override it with `--trust-repo-config` (always apply) or `--ignore-repo-config` (never apply). Your own user-level
+configuration is always applied.
+
+When repository-controlled content is applied, nothing is hidden: rules turned off keep their findings with status
+`disabled_by_config`, severity overrides are listed (before → after), excluded files are counted and listed, and
+the report shows two grades, **with** and **without** the repository's own content. If they differ by 10 points
+or more, the CLI, the GUI and `quality.md` show a *REPOSITORY INFLUENCE* warning.
 
 Dependency folders (`node_modules`, `vendor`, virtual environments, build output) are skipped automatically;
 their libraries are still analyzed through the manifests and lockfiles.
@@ -554,6 +661,10 @@ their libraries are still analyzed through the manifests and lockfiles.
 | Strange characters on old Windows consoles | Use Windows Terminal, or run with `--plain`. |
 | `secure-repo` command not found | Use `python -m secure_repo`, the launchers, or add Python's `Scripts`/`bin` folder to `PATH`. |
 | GUI says "Invalid or missing session token" | Open the exact URL printed in the terminal (it contains `#token=...`). |
+| Private repository: "Authentication required" | Enter an access token when asked, or set `SECURE_REPO_GIT_TOKEN`. See [Private and organization repositories](#private-and-organization-repositories). |
+| The token is rejected | Check the scope (read access to the repository), the expiry and, for GitHub organizations with SAML SSO, that the token is authorized for the organization. |
+| `Local changes ... prevent a safe update` | You edited files of your Secure Repo clone. Run `git stash` (or commit) in the Secure Repo folder, then update again. |
+| No update notice appears | Checks are cached for 6 hours. Run `secure-repo update --check` to force one; they are skipped in CI and with `--no-update-check`. |
 | Scan is slow on huge repositories | Use `--exclude` for generated folders and a lower `--max-file-size`. |
 | A finding is a false positive | Triage it (post-scan menu option 2, the GUI panel or `secure-repo triage mark`) with scope *project-pattern* so similar code is suppressed too. |
 | I want the old behaviour | `--engine patterns` runs the legacy regular-expression engine; `--no-learning` ignores your triage history. |
@@ -566,7 +677,7 @@ their libraries are still analyzed through the manifests and lockfiles.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, 169 rules, lexical masking, Python AST/taint and JS data-flow engines,
+│   ├── core/         scanner, updater, 169 rules, lexical masking, Python AST/taint and JS data-flow engines,
 │   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
 │   │                 triage knowledge base, confidence model, compliance frameworks, scoring
 │   ├── benchmark/    labeled corpus used by `secure-repo benchmark`
@@ -575,6 +686,7 @@ Secure_Repo/
 ├── tests/            pytest suite
 ├── docs/images/      screenshots used in this README
 ├── run.sh / run.bat  one-step launchers
+├── CHANGELOG.md      release notes
 ├── LICENSE           Secure Repo Ethical Source-Available License
 └── SECURITY.md       how to report a vulnerability in Secure Repo
 ```

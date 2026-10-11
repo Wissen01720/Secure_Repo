@@ -10,7 +10,7 @@ import fnmatch
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core.models import SEVERITIES
 from secure_repo.core.rules import RULES_BY_ID, Rule
@@ -25,6 +25,10 @@ CONFIDENCE_LEVELS = ("low", "medium", "high")
 
 TEMPLATE = '''# Secure Repo project configuration - https://github.com/Wissen01720/Secure_Repo
 # Commit this file so every analyst and CI job applies the same tuning.
+#
+# Trust: this file is applied when you audit the working tree of your own local Git repository. It is IGNORED
+# for remote repositories, other branches and plain folders (an audited repo must not grade itself) unless you
+# pass --trust-repo-config. The report always lists what it changed.
 
 [scan]
 # Paths that are not analyzed at all (glob patterns, relative to the repository root).
@@ -73,17 +77,35 @@ class ProjectConfig:
     allow_values: List[re.Pattern] = field(default_factory=list)
     custom_rules: List[Rule] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    # Provenance: which entries came from the audited repository (as opposed to the analyst's own configuration).
+    ignored_source: Optional[str] = None       # repository config found but NOT applied (untrusted target)
+    repo_exclude: List[str] = field(default_factory=list)
+    repo_disable: List[str] = field(default_factory=list)
+    repo_severity: Dict[str, str] = field(default_factory=dict)
+    repo_allow_paths: List[str] = field(default_factory=list)
+    repo_allow_values: List[re.Pattern] = field(default_factory=list)
+    repo_min_confidence: bool = False
 
-    def allowlisted(self, finding: Dict) -> Optional[str]:
+    def allowlisted(self, finding: Dict) -> Optional[Tuple[str, bool]]:
+        """Return (reason, comes_from_repository_config) when the finding is allow-listed."""
         path = finding.get("file") or ""
+        where = os.path.basename(self.source or ".securerepo.toml")
         for pattern in self.allow_paths:
             if fnmatch.fnmatch(path, pattern):
-                return f"path allow-listed in {os.path.basename(self.source or '.securerepo.toml')} ({pattern})"
+                return f"path allow-listed in the project configuration ({pattern})", pattern in self.repo_allow_paths
         evidence = f"{finding.get('snippet', '')}\n{finding.get('detail', '')}"
         for regex in self.allow_values:
             if regex.search(evidence):
-                return f"value allow-listed in {os.path.basename(self.source or '.securerepo.toml')}"
+                return f"value allow-listed in the project configuration ({where})", regex in self.repo_allow_values
         return None
+
+
+def is_within(path: str, root: str) -> bool:
+    """True when ``path`` is ``root`` or lives inside it (a plain prefix test would also match /app-old for /app)."""
+    try:
+        return os.path.commonpath([os.path.abspath(path), os.path.abspath(root)]) == os.path.abspath(root)
+    except ValueError:  # different drives on Windows
+        return False
 
 
 def _custom_rule(raw: Dict, errors: List[str], origin: str) -> Optional[Rule]:
@@ -127,37 +149,60 @@ def _read(path: str, errors: List[str]) -> Dict:
         return {}
 
 
-def load_config(root: str, user_dir: Optional[str] = None) -> ProjectConfig:
+def load_config(root: str, user_dir: Optional[str] = None, trust_repo: bool = True) -> ProjectConfig:
+    """Load the analyst's configuration and, only when ``trust_repo`` is set, the one stored in the audited repo.
+
+    A repository under audit is untrusted input: its own ``.securerepo.toml`` must not be able to disable rules,
+    lower severities, exclude files or allow-list findings unless the analyst explicitly trusts it.
+    """
     config = ProjectConfig()
     sources = []
     if user_dir:
         sources.append(os.path.join(user_dir, "config.toml"))
-    sources += [os.path.join(root, name) for name in CONFIG_NAMES]
+    repo_sources = [os.path.join(root, name) for name in CONFIG_NAMES]
+    if trust_repo:
+        sources += repo_sources
+    else:
+        config.ignored_source = next((p for p in repo_sources if os.path.isfile(p)), None)
     for path in sources:
         if not os.path.isfile(path):
             continue
         data = _read(path, config.errors)
         if not data:
             continue
-        if path.startswith(root):
+        from_repo = is_within(path, root)
+        if from_repo:
             config.source = path
         scan = data.get("scan", {}) or {}
-        config.exclude += [str(p) for p in scan.get("exclude", [])]
+        excluded = [str(p) for p in scan.get("exclude", [])]
+        config.exclude += excluded
         level = str(scan.get("min_confidence", config.min_confidence)).lower()
         if level in CONFIDENCE_LEVELS:
             config.min_confidence = level
+            config.repo_min_confidence = from_repo and level != "low"
         rules = data.get("rules", {}) or {}
-        config.disable += [str(r) for r in rules.get("disable", [])]
-        for rule_id, severity in (rules.get("severity", {}) or {}).items():
-            if str(severity).lower() in SEVERITIES:
-                config.severity[str(rule_id)] = str(severity).lower()
+        disabled = [str(r) for r in rules.get("disable", [])]
+        config.disable += disabled
+        overrides = {str(k): str(v).lower() for k, v in (rules.get("severity", {}) or {}).items()
+                     if str(v).lower() in SEVERITIES}
+        config.severity.update(overrides)
         allow = data.get("allowlist", {}) or {}
-        config.allow_paths += [str(p) for p in allow.get("paths", [])]
+        allowed_paths = [str(p) for p in allow.get("paths", [])]
+        config.allow_paths += allowed_paths
+        if from_repo:
+            config.repo_exclude += excluded
+            config.repo_disable += disabled
+            config.repo_severity.update(overrides)
+            config.repo_allow_paths += allowed_paths
         for value in allow.get("values", []):
             try:
-                config.allow_values.append(re.compile(str(value)))
+                compiled = re.compile(str(value))
             except re.error as exc:
                 config.errors.append(f"{path}: invalid allowlist regex {value!r} ({exc})")
+                continue
+            config.allow_values.append(compiled)
+            if from_repo:
+                config.repo_allow_values.append(compiled)
         for raw in data.get("custom_rules", []) or []:
             rule = _custom_rule(raw, config.errors, os.path.basename(path))
             if rule:

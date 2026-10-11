@@ -100,6 +100,7 @@
       const message = (data && data.error) || ('Request failed (' + response.status + ')');
       const error = new Error(message);
       error.status = response.status;
+      error.data = data || {};
       throw error;
     }
     return data;

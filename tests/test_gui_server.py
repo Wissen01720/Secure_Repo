@@ -1,4 +1,3 @@
-# securerepo:ignore-file - uses throwaway session tokens for the local test server.
 import json
 import threading
 import urllib.error

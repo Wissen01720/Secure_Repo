@@ -36,7 +36,7 @@ from secure_repo.core import compliance, gitops
 from secure_repo.core.events import STAGES, EventBus
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import ScanCancelled, Scanner, ScanOptions
-from secure_repo.core import review
+from secure_repo.core import review, updater
 from secure_repo.core.triage import KnowledgeBase
 from secure_repo.core.workspace import Target, discover_branches
 from secure_repo.report.writer import ensure_output_root, zip_folder
@@ -95,9 +95,18 @@ class AppState:
         self.cwd = os.getcwd()
         self.preload: Optional[str] = None
         self.lock = threading.Lock()
+        self.update_installed = False
+        self.post_update_notice = updater.pop_post_update_notice()
 
 
 def _run_job(state: AppState, job: ScanJob, target: Target, options: ScanOptions) -> None:
+    try:
+        _execute_job(state, job, target, options)
+    finally:
+        target.credentials = None  # drop the access token as soon as the scan ends
+
+
+def _execute_job(state: AppState, job: ScanJob, target: Target, options: ScanOptions) -> None:
     bus = EventBus()
     bus.subscribe(job.push)
     job.scanner = Scanner(options, bus)
@@ -238,6 +247,24 @@ def make_handler(state: AppState):
                 return self._branches(self._body())
             if method == "POST" and parts == ["scan"]:
                 return self._start_scan(self._body())
+            if method == "GET" and parts == ["update"]:
+                if updater.checks_disabled() and not query.get("force"):
+                    return self._json({"disabled": True})
+                info = updater.check(force=bool(query.get("force")))
+                payload = info.to_dict()
+                payload["summary"] = info.summary
+                payload["installed_this_session"] = state.update_installed
+                payload["post_update"] = state.post_update_notice
+                return self._json(payload)
+            if method == "POST" and parts == ["update", "install"]:
+                with state.lock:
+                    if any(j.status == "running" for j in state.jobs.values()):
+                        return self._error(409, "Wait until the running scans finish before updating.")
+                    result = updater.apply_update()
+                    if result.ok and result.restart_required:
+                        state.update_installed = True
+                console.print(Text.assemble(("[+] " if result.ok else "[x] ", f"bold {NEON}"), (result.message, "white")))
+                return self._json(result.to_dict(), 200 if result.ok else 400)
             if method == "GET" and parts == ["knowledge"]:
                 knowledge = KnowledgeBase()
                 return self._json({"stats": knowledge.stats(), "path": knowledge.path,
@@ -289,7 +316,14 @@ def make_handler(state: AppState):
             kind = data.get("kind")
             location = str(data.get("location") or "").strip()
             if kind == "remote":
-                return Target("remote", gitops.validate_url(location))
+                clean, embedded = gitops.split_credentials(location)
+                target = Target("remote", gitops.validate_url(clean))
+                token = str(data.get("token") or "").strip()[:4096]
+                if token:
+                    target.credentials = gitops.GitCredentials(token, str(data.get("username") or "")[:200])
+                elif embedded:
+                    target.credentials = embedded
+                return target
             if kind in ("local", "current"):
                 location = os.path.abspath(os.path.expanduser(location or state.cwd))
                 if not os.path.isdir(location):
@@ -301,6 +335,11 @@ def make_handler(state: AppState):
             try:
                 target = self._target_from(data)
                 branches = discover_branches(target, interactive=False)
+            except gitops.GitAuthError as exc:
+                return self._json({"error": str(exc), "auth_required": True, "https": gitops.is_https(target.location),
+                                   "provider": gitops.provider_of(target.location),
+                                   "username_hint": gitops.default_username(target.location),
+                                   "rejected": bool(target.credentials)}, 403)
             except gitops.GitError as exc:
                 return self._error(400, f"Branch discovery failed: {exc}")
             return self._json({"target": target.location, "kind": target.kind, "git": bool(branches),
@@ -325,6 +364,8 @@ def make_handler(state: AppState):
                 include_tests=bool(raw.get("include_tests", True)), enrich=bool(raw.get("enrich", True)),
                 min_confidence=raw.get("min_confidence") if raw.get("min_confidence") in ("low", "medium", "high") else "low",
                 learning=bool(raw.get("learning", True)), semantic=bool(raw.get("semantic", True)),
+                trust_repo_config=True if raw.get("trust_repo_config") is True else (
+                    False if raw.get("trust_repo_config") is False else None),
                 resolve_versions=bool(raw.get("resolve_versions", True)),
                 max_file_size=max(16, min(max_kb, 102400)) * 1024, auditor=str(raw.get("auditor") or "")[:120],
                 exclude=[str(p)[:200] for p in (raw.get("exclude") or [])][:50])

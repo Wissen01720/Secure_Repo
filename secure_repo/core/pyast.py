@@ -1,4 +1,3 @@
-# securerepo:ignore-file  (analyzer implementation; contains sink names, not vulnerable code)
 """Semantic analysis of Python code: AST checks + intra-procedural taint tracking.
 
 Compared to regular expressions this engine understands the code:

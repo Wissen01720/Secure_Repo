@@ -34,7 +34,12 @@ from secure_repo.core.rules import PATTERN_RULES, RULES, RULES_BY_ID, Rule
 from secure_repo.core.walker import FileInfo, StructureTree, enumerate_files, read_text
 from secure_repo.core.workspace import Target, Workspace, prepare_workspace
 
-NOSEC_RE = re.compile(r"(?i)\bnosec\b|securerepo:ignore\b|noqa:\s*secure")
+# Inline suppression directives are only honoured inside real comments of trusted targets, and they are always
+# recorded in the report (status "suppressed_inline"). Optionally followed by rule IDs: ``# nosec SR-PY-005 reason``.
+DIRECTIVE_RE = re.compile(r"(?i)\bnosec\b|securerepo:ignore\b(?!-file)|noqa:\s*secure")
+RULE_ID_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{1,4}\b")
+COMMENT_START_RE = re.compile(r"#|//|--|<!--|/\*|\brem\b|::", re.IGNORECASE)
+IGNORE_FILE_MARKER = "securerepo:ignore-file"
 COMMENT_PREFIXES = ("#", "//", "/*", "* ", "*/", "--", "<!--", ";", "rem ", "REM ", "::")
 MAX_PER_RULE_PER_FILE = 50
 
@@ -54,6 +59,9 @@ class ScanOptions:
     learning: bool = True          # apply the triage knowledge base (decisions, learned patterns, rule stats)
     resolve_versions: bool = True  # virtual lockfile resolution for unpinned dependencies
     semantic: bool = True          # lexical masking + syntax tree + data flow (False = legacy pattern-only engine)
+    # Does the audited repository's own configuration (.securerepo.toml, .securerepo/triage.json, nosec comments)
+    # get authority over the result? None = automatic: only for the working tree of a local Git repository.
+    trust_repo_config: Optional[bool] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -74,6 +82,11 @@ class Scanner:
         self.config = ProjectConfig()
         self.knowledge = knowledge if knowledge is not None else (triage.KnowledgeBase() if options.learning else None)
         self.noise: Dict[str, int] = {}
+        self.trusted = False
+        self.trust_reason = ""
+        self.inline_ignored = 0                 # inline suppression comments NOT honoured (untrusted target)
+        self.ignore_markers: List[str] = []     # files carrying a legacy "ignore-file" marker (never honoured)
+        self._min_conf_from_repo = False
         self.engine_stats: Dict[str, int] = {"python_ast": 0, "python_fallback": 0, "js_flow": 0, "masked_files": 0}
         self._rule_cache: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
         self.log_lines: List[str] = []
@@ -99,6 +112,8 @@ class Scanner:
 
     def _add(self, finding: Finding) -> None:
         self.findings.append(finding)
+        if finding.status != "open":
+            return  # suppressed findings are kept for the audit trail but are not announced as live findings
         self.bus.emit("finding", rule_id=finding.rule_id, title=finding.title, severity=finding.severity,
                       file=finding.file, line=finding.line, category=finding.category)
 
@@ -167,6 +182,41 @@ class Scanner:
         def line_text_of(line_no: int) -> str:
             return lines[line_no - 1] if 0 < line_no <= len(lines) else ""
 
+        comment_cache: Dict[int, str] = {}
+        masked_lines: List[str] = []
+
+        def comment_of(line_no: int) -> str:
+            """Text of the real comment on a line (strings and code are excluded)."""
+            if line_no in comment_cache:
+                return comment_cache[line_no]
+            original = line_text_of(line_no)
+            comment = ""
+            if original:
+                if views is not None:
+                    if not masked_lines:
+                        masked_lines.extend(views["no_comments"].split("\n"))
+                    masked = masked_lines[line_no - 1] if line_no - 1 < len(masked_lines) else original
+                    changed = [i for i, (o, m) in enumerate(zip(original, masked)) if o != m]
+                    comment = original[changed[0]:changed[-1] + 1] if changed else ""
+                else:
+                    start = COMMENT_START_RE.search(original)
+                    comment = original[start.start():] if start else ""
+            comment_cache[line_no] = comment
+            return comment
+
+        def inline_suppression(line_no: int, rule_id: str) -> Optional[Dict]:
+            comment = comment_of(line_no)
+            directive = DIRECTIVE_RE.search(comment) if comment else None
+            if not directive:
+                return None
+            rule_ids = RULE_ID_RE.findall(comment[directive.end():])
+            if rule_ids and rule_id not in rule_ids:
+                return None
+            if not self.trusted:
+                self.inline_ignored += 1
+                return None
+            return {"reason": re.sub(r"\s+", " ", comment).strip()[:200], "rule_ids": rule_ids}
+
         in_test = info.in_test
         is_doc = info.language in DOCUMENTATION
         views = None if is_doc or not self.options.semantic else lexer.mask(text, info.language)
@@ -186,8 +236,6 @@ class Scanner:
                 for reason, amount in suppressed.items():
                     self._count_noise(f"python: {reason}", amount)
                 for item in py_findings:
-                    if NOSEC_RE.search(line_text_of(item.line)):
-                        continue
                     rule = RULES_BY_ID[item.rule_id]
                     file_findings.append(self._finding_from_rule(
                         rule, info.rel, item.line, self._snippet(line_text_of(item.line), item.col),
@@ -218,8 +266,6 @@ class Scanner:
                 if line_no in seen:
                     continue
                 if views is None and not rule.scan_comments and line_text.lstrip().startswith(COMMENT_PREFIXES):
-                    continue
-                if NOSEC_RE.search(line_text):
                     continue
                 if rule.exclude_re and rule.exclude_re.search(line_text):
                     continue
@@ -272,8 +318,6 @@ class Scanner:
             for (rule_id, line_no), decision in by_key.items():
                 if decision.kind != "tainted" or (rule_id, line_no) in covered:
                     continue
-                if NOSEC_RE.search(line_text_of(line_no)):
-                    continue
                 rule = RULES_BY_ID[rule_id]
                 kept.append(self._finding_from_rule(rule, info.rel, line_no, self._snippet(line_text_of(line_no), 0),
                                                     detail=decision.detail, severity=decision.severity, in_test=in_test,
@@ -285,7 +329,7 @@ class Scanner:
             generic = RULES_BY_ID["SR-SEC-019"]
             for offset, key, value, entropy in checks.find_generic_credentials(text, info.language):
                 line_no, line_text, column = locate(offset)
-                if line_no in secret_lines or NOSEC_RE.search(line_text):
+                if line_no in secret_lines:
                     continue
                 secret_lines.add(line_no)
                 severity = "high" if entropy >= 3.0 or len(value) >= 12 else "medium"
@@ -300,8 +344,6 @@ class Scanner:
             card_rule = RULES_BY_ID["SR-PII-001"]
             for offset, number, is_test_card in checks.find_card_numbers(text):
                 line_no, line_text, column = locate(offset)
-                if NOSEC_RE.search(line_text):
-                    continue
                 digits = re.sub(r"\D", "", number)
                 detail = f"Card number {digits[:4]}********{digits[-2:]} passes the Luhn check."
                 severity = card_rule.severity
@@ -317,6 +359,12 @@ class Scanner:
                                                              detail=detail, in_test=in_test, engine="ast"))
 
         for finding in file_findings:
+            hit = inline_suppression(finding.line, finding.rule_id)
+            if hit:
+                note = "" if hit["rule_ids"] else " (no rule ID: this comment silences every rule on the line)"
+                finding.status = "suppressed_inline"
+                finding.triage = {"reason": hit["reason"] + note, "origin": "inline", "author": "", "date": "",
+                                  "rule_ids": hit["rule_ids"]}
             self._add(finding)
         return file_findings
 
@@ -349,8 +397,9 @@ class Scanner:
                 lang["bytes"] += info.size
                 stats["lines"] += line_count
                 minified = len(text) > 20000 and line_count < len(text) / 1500
-                ignored = "securerepo:ignore-file" in text[:2000]
-                if info.scannable and not minified and not ignored and (self.options.include_tests or not info.in_test):
+                if IGNORE_FILE_MARKER in text[:2000] and len(self.ignore_markers) < 200:
+                    self.ignore_markers.append(info.rel)  # reported, never honoured: use an explicit exclude instead
+                if info.scannable and not minified and (self.options.include_tests or not info.in_test):
                     self.analyze_text(info, text)
                     stats["scanned"] += 1
                 else:
@@ -610,15 +659,39 @@ class Scanner:
         return facts
 
     # ------------------------------------------------------------------ configuration & learning
-    def _load_configuration(self, root: str) -> None:
+    def _decide_trust(self, workspace: Workspace) -> None:
+        option = self.options.trust_repo_config
+        if option is True:
+            self.trusted, self.trust_reason = True, "explicitly trusted (--trust-repo-config)"
+        elif option is False:
+            self.trusted, self.trust_reason = False, "explicitly not trusted (--ignore-repo-config)"
+        elif workspace.mode == "working-tree":
+            self.trusted, self.trust_reason = True, "working tree of a local Git repository"
+        else:
+            self.trusted = False
+            self.trust_reason = {"clone": "remote repository", "folder": "folder that is not a Git repository",
+                                 "branch-export": "branch exported from a repository"}.get(workspace.mode, workspace.mode)
+        self.bus.log(f"Audited repository is {'TRUSTED' if self.trusted else 'NOT trusted'}: {self.trust_reason}. "
+                     + ("Its own configuration, shared triage and inline suppressions are applied (and reported)."
+                        if self.trusted else
+                        "Its own configuration, shared triage and inline suppressions are ignored."),
+                     "ok" if self.trusted else "warn")
+
+    def _load_configuration(self, workspace: Workspace) -> None:
+        root = workspace.path
+        self._decide_trust(workspace)
         user_dir = triage.data_dir() if self.options.learning else None
-        self.config = load_config(root, user_dir)
+        self.config = load_config(root, user_dir, trust_repo=self.trusted)
         for error in self.config.errors:
             self.bus.log(f"Configuration: {error}", "warn")
         if self.config.source:
             self.bus.log(f"Project configuration loaded from {os.path.basename(self.config.source)}", "ok")
-        disabled = set(self.config.disable)
-        self.rules = [r for r in PATTERN_RULES if r.id not in disabled] + self.config.custom_rules
+        if self.config.ignored_source:
+            self.bus.log(f"{os.path.basename(self.config.ignored_source)} found in the audited repository was IGNORED "
+                         f"(untrusted target; use --trust-repo-config to apply it)", "warn")
+        self._min_conf_from_repo = self.config.repo_min_confidence
+        # Disabled rules still run: their findings are kept with status "disabled_by_config" (audit trail).
+        self.rules = list(PATTERN_RULES) + self.config.custom_rules
         self.path_rules = [r for r in self.rules if r.path]
         self._rule_cache.clear()
         if self.config.custom_rules:
@@ -628,30 +701,90 @@ class Scanner:
 
     def _apply_quality(self, findings: List[Dict], meta: Dict, workspace_path: str) -> Dict[str, int]:
         disabled = set(self.config.disable)
-        findings[:] = [f for f in findings if f["rule_id"] not in disabled]
         for finding in findings:
-            if finding["rule_id"] in self.config.severity:
-                finding["severity"] = self.config.severity[finding["rule_id"]]
+            rule_id = finding["rule_id"]
+            override = self.config.severity.get(rule_id)
+            if override and override != finding["severity"]:
+                finding.setdefault("extra", {}).update({
+                    "original_severity": finding["severity"],
+                    "severity_override_origin": "repo" if rule_id in self.config.repo_severity else "user"})
+                finding["severity"] = override
             finding["fingerprint"] = triage.fingerprint(finding)
             confidence.assess(finding, self.knowledge)
-        counts = {"decisions": 0, "learned_patterns": 0, "allowlisted": 0, "below_min_confidence": 0}
+            if finding["status"] == "open" and rule_id in disabled:
+                finding["status"] = "disabled_by_config"
+                finding["triage"] = {"reason": "Rule disabled in the project configuration",
+                                     "origin": "config" if rule_id in self.config.repo_disable else "user-config"}
+        counts = {"decisions": 0, "learned_patterns": 0, "repo_decisions": 0, "repo_patterns": 0,
+                  "allowlisted": 0, "below_min_confidence": 0}
         if self.knowledge is not None:
             key, _name = triage.project_key(meta)
-            applied = self.knowledge.apply(findings, key, triage.load_repo_triage(workspace_path))
-            counts.update(applied)
+            repo_payload = triage.load_repo_triage(workspace_path) if self.trusted else {}
+            counts.update(self.knowledge.apply(findings, key, repo_payload))
         for finding in findings:
             if finding["status"] != "open":
                 continue
-            reason = self.config.allowlisted(finding)
-            if reason:
+            allowed = self.config.allowlisted(finding)
+            if allowed:
+                reason, from_repo = allowed
                 finding["status"] = "false_positive"
-                finding["triage"] = {"reason": reason, "origin": "config"}
+                finding["triage"] = {"reason": reason, "origin": "config" if from_repo else "user-config"}
                 counts["allowlisted"] += 1
             elif not confidence.meets(finding, self.options.min_confidence):
                 finding["status"] = "filtered"
-                finding["triage"] = {"reason": f"confidence below '{self.options.min_confidence}'", "origin": "filter"}
+                finding["triage"] = {"reason": f"confidence below '{self.options.min_confidence}'",
+                                     "origin": "config" if self._min_conf_from_repo else "filter"}
                 counts["below_min_confidence"] += 1
         return counts
+
+    def _repo_influence(self, findings: List[Dict], workspace: Workspace, excluded: List[str]) -> Dict:
+        """Everything the audited repository itself did to shape the result (so the analyst can judge it)."""
+        ignored: List[str] = []
+        if self.config.ignored_source:
+            ignored.append(f"{os.path.basename(self.config.ignored_source)} (project configuration)")
+        if not self.trusted and os.path.isfile(os.path.join(workspace.path, triage.REPO_TRIAGE_FILE)):
+            ignored.append(".securerepo/triage.json (shared triage decisions)")
+        if not self.trusted and self.inline_ignored:
+            ignored.append(f"{self.inline_ignored} inline suppression comment(s) (nosec / securerepo:ignore)")
+        disabled: Dict[str, Dict] = {}
+        overrides: Dict[Tuple[str, str, str], Dict] = {}
+        counts = {"allowlisted": 0, "repo_decisions": 0, "repo_patterns": 0, "inline": 0, "inline_without_rule_id": 0}
+        for finding in findings:
+            origin = (finding.get("triage") or {}).get("origin")
+            if finding["status"] == "disabled_by_config":
+                entry = disabled.setdefault(finding["rule_id"], {
+                    "rule_id": finding["rule_id"], "title": finding["title"], "hidden": 0,
+                    "from": "repo" if origin == "config" else "user"})
+                entry["hidden"] += 1
+            elif finding["status"] == "false_positive" and origin in ("config", "user-config"):
+                counts["allowlisted"] += 1
+            elif origin == "repo-decision":
+                counts["repo_decisions"] += 1
+            elif origin == "repo-pattern":
+                counts["repo_patterns"] += 1
+            elif origin == "inline":
+                counts["inline"] += 1
+                if not (finding.get("triage") or {}).get("rule_ids"):
+                    counts["inline_without_rule_id"] += 1
+            extra = finding.get("extra") or {}
+            if extra.get("severity_override_origin"):
+                key = (finding["rule_id"], extra["original_severity"], finding["severity"])
+                entry = overrides.setdefault(key, {"rule_id": finding["rule_id"], "from_severity": key[1],
+                                                   "to_severity": key[2], "count": 0,
+                                                   "from": "repo" if extra["severity_override_origin"] == "repo" else "user"})
+                entry["count"] += 1
+        patterns = [{"pattern": p, "from": "repo" if p in self.config.repo_exclude else "user"}
+                    for p in self.config.exclude]
+        return {
+            "trusted": self.trusted, "trust_reason": self.trust_reason,
+            "repo_config_file": os.path.basename(self.config.source) if self.config.source else None,
+            "ignored": ignored,
+            "disabled_rules": sorted(disabled.values(), key=lambda e: -e["hidden"]),
+            "severity_overrides": sorted(overrides.values(), key=lambda e: -e["count"]),
+            "excluded_by_config": {"patterns": patterns, "files": len(excluded), "sample": excluded[:50]},
+            "ignore_file_markers": list(self.ignore_markers[:50]),
+            **counts,
+        }
 
     # ------------------------------------------------------------------ main
     def run(self, target: Target, interactive: bool = False, write_reports: bool = True) -> Tuple[Dict, Optional[str]]:
@@ -667,10 +800,17 @@ class Scanner:
             workspace = prepare_workspace(target, bus, interactive=interactive)
             bus.stage("acquire", "done", f"{workspace.mode} @ {workspace.branch or 'n/a'}")
             self._check_cancel()
-            self._load_configuration(workspace.path)
+            self._load_configuration(workspace)
 
             bus.stage("enumerate", "start")
             files = enumerate_files(workspace.path, self.options.exclude + self.config.exclude)
+            excluded_by_config: List[str] = []
+            if self.config.exclude:  # which files did the configuration take out of the analysis?
+                kept = {f.rel for f in files}
+                excluded_by_config = [f.rel for f in enumerate_files(workspace.path, self.options.exclude)
+                                      if f.rel not in kept]
+                bus.log(f"The configuration excludes {len(excluded_by_config)} file(s) from the analysis "
+                        f"({', '.join(self.config.exclude[:6])}{' ...' if len(self.config.exclude) > 6 else ''})", "warn")
             tree = StructureTree(workspace.name, files)
             bus.emit("structure", tree=tree.to_dict(), files=len(files))
             directories = sum(1 for node in tree.index.values() if node["type"] == "dir") - 1
@@ -739,13 +879,15 @@ class Scanner:
                             if self.options.compliance else [],
                             "include_tests": self.options.include_tests, "min_confidence": self.options.min_confidence,
                             "learning": self.options.learning, "max_file_size": self.options.max_file_size,
-                            "exclude": self.options.exclude + self.config.exclude},
+                            "exclude": self.options.exclude + self.config.exclude,
+                            "trust_repo_config": self.trusted, "trust_reason": self.trust_reason},
                 "notes": workspace.notes + ([f"Vulnerability intelligence unavailable: {intel_error}"] if intel_error else []),
             }
 
             # Quality pipeline: fingerprints, confidence, triage knowledge, configuration --------------
             findings = [f.to_dict() for f in self.findings]
             quality = self._apply_quality(findings, meta, workspace.path)
+            influence = self._repo_influence(findings, workspace, excluded_by_config)
             if quality["decisions"] or quality["learned_patterns"]:
                 bus.log(f"Triage knowledge applied: {quality['decisions']} decision(s), "
                         f"{quality['learned_patterns']} learned false-positive pattern match(es)", "ok")
@@ -788,6 +930,7 @@ class Scanner:
                     "noise_total": sum(self.noise.values()), "knowledge": quality,
                     "learning": self.options.learning, "config": os.path.basename(self.config.source) if self.config.source else None,
                     "custom_rules": [r.id for r in self.config.custom_rules], "min_confidence": self.options.min_confidence,
+                    "repo_influence": influence,
                 },
                 "structure": tree.to_dict(),
                 "languages": stats["languages"],

@@ -34,6 +34,19 @@
   </nav>
 </header>
 
+<div class="update-banner" id="update-banner" hidden>
+  <div class="ub-text">
+    <span class="ub-badge" id="ub-badge">UPDATE</span>
+    <b id="ub-title"></b>
+    <span class="ub-sub" id="ub-sub"></span>
+  </div>
+  <div class="ub-actions">
+    <button class="btn small" id="ub-details" type="button">What's new</button>
+    <button class="btn small primary" id="ub-install" type="button">Install update</button>
+    <button class="close-x" id="ub-close" type="button" aria-label="Dismiss">&times;</button>
+  </div>
+</div>
+
 <main>
   <!-- ============================================================ BOOT -->
   <section class="view active" id="view-boot">
@@ -76,6 +89,13 @@
         </div>
         <div class="target-input" id="input-remote" hidden>
           <input type="text" class="mono" id="in-url" placeholder="https://github.com/owner/repository.git" spellcheck="false" autocomplete="off">
+          <div class="auth-box" id="auth-box" hidden>
+            <div class="auth-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Private repository - access token required</div>
+            <p id="auth-help"></p>
+            <input type="password" class="mono" id="in-token" placeholder="Access token (personal / fine-grained / project token)" autocomplete="off" spellcheck="false">
+            <input type="text" class="mono" id="in-username" placeholder="Username (optional)" autocomplete="off" spellcheck="false">
+            <small>Kept in memory for this session only, sent to Git as an authorization header scoped to the repository host, never stored on disk, in logs or in reports.</small>
+          </div>
         </div>
         <div class="target-input" id="input-local" hidden>
           <input type="text" class="mono" id="in-path" placeholder="/path/to/repository" spellcheck="false" autocomplete="off">
@@ -110,6 +130,8 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-tests" checked><span class="slider"></span>
             <span><b>Include test files</b><small>Findings in tests are flagged and weigh 50% in the score.</small></span></label>
+          <label class="toggle"><input type="checkbox" id="opt-trust"><span class="slider"></span>
+            <span><b>Trust the repository's own configuration</b><small>Apply its .securerepo.toml, shared triage and nosec comments. Off for remote repositories and other branches; the report always lists what they changed.</small></span></label>
           <label class="toggle"><input type="checkbox" id="opt-learning" checked><span class="slider"></span>
             <span><b>Learn from triage</b><small>Apply your false-positive decisions, learned patterns and rule statistics.</small></span></label>
           <div class="two">

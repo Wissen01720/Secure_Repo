@@ -1,4 +1,3 @@
-// securerepo:ignore-file - benchmark corpus: deliberately insecure code, parsed as text and never executed.
 const { exec } = require('child_process');
 const express = require('express');
 const app = express();

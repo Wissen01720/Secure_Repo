@@ -196,20 +196,27 @@ class KnowledgeBase:
 
     def apply(self, findings: List[Dict], key: str, repo_payload: Optional[Dict] = None) -> Dict[str, int]:
         """Apply stored decisions and learned patterns to a list of finding dicts."""
-        counts = {"decisions": 0, "learned_patterns": 0}
+        counts = {"decisions": 0, "learned_patterns": 0, "repo_decisions": 0, "repo_patterns": 0}
         repo_payload = repo_payload or {}
-        decisions = dict(repo_payload.get("decisions") or {})
-        decisions.update(self.data["projects"].get(key, {}).get("decisions", {}))
-        patterns = [p for p in self.data["patterns"] if p.get("project") in (None, key)]
-        patterns += [p for p in repo_payload.get("patterns") or [] if isinstance(p, dict) and p.get("shape")]
+        own = self.data["projects"].get(key, {}).get("decisions", {})
+        repo_decisions = {fp: d for fp, d in (repo_payload.get("decisions") or {}).items() if isinstance(d, dict)}
+        decisions = dict(repo_decisions)
+        decisions.update(own)  # the analyst's own decision always wins over the repository's
+        patterns = [dict(p, _repo=False) for p in self.data["patterns"] if p.get("project") in (None, key)]
+        patterns += [dict(p, _repo=True) for p in repo_payload.get("patterns") or []
+                     if isinstance(p, dict) and p.get("shape") and p.get("rule_id")]
         for finding in findings:
+            if finding.get("status", "open") != "open":
+                continue  # already suppressed (inline comment, disabled rule...): keep the original reason
             fp = finding["fingerprint"]
             decision = decisions.get(fp)
             if decision:
+                from_repo = fp in repo_decisions and fp not in own
                 finding["status"] = decision["status"]
                 finding["triage"] = {"reason": decision.get("reason", ""), "author": decision.get("author", ""),
-                                     "date": decision.get("date", ""), "origin": "decision"}
-                counts["decisions"] += 1
+                                     "date": decision.get("date", ""),
+                                     "origin": "repo-decision" if from_repo else "decision"}
+                counts["repo_decisions" if from_repo else "decisions"] += 1
                 continue
             if finding.get("source") in ("dependency", "hygiene"):
                 continue
@@ -219,8 +226,9 @@ class KnowledgeBase:
                     finding["status"] = "false_positive"
                     finding["triage"] = {"reason": pattern.get("reason") or "Matches a learned false-positive pattern",
                                          "author": pattern.get("author", ""), "date": pattern.get("date", ""),
-                                         "origin": "learned-pattern", "pattern": pattern["id"]}
-                    counts["learned_patterns"] += 1
+                                         "origin": "repo-pattern" if pattern["_repo"] else "learned-pattern",
+                                         "pattern": pattern.get("id", "")}
+                    counts["repo_patterns" if pattern["_repo"] else "learned_patterns"] += 1
                     break
         return counts
 

@@ -21,9 +21,9 @@ from secure_repo.cli import views
 from secure_repo.cli.banner import section
 from secure_repo.cli.dashboard import LiveDashboard
 from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, VIOLET, console, say, sev_badge
-from secure_repo.core import compliance, gitops
+from secure_repo.core import compliance, gitops, updater
 from secure_repo.core.events import EventBus
-from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
+from secure_repo.core.models import SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES, SUPPRESSED_STATUSES, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import Scanner, ScanOptions
 from secure_repo.core.workspace import Target, discover_branches
@@ -36,6 +36,8 @@ class SessionState:
     plain: bool = False
     assume_yes: bool = False
     authorized: Set[str] = field(default_factory=set)
+    # Access tokens per host for private repositories: memory only, never written anywhere.
+    credentials: Dict[str, gitops.GitCredentials] = field(default_factory=dict, repr=False)
 
 
 def ask(prompt: str, **kwargs) -> str:
@@ -84,18 +86,71 @@ def confirm_authorization(target: Target, state: SessionState) -> bool:
     return False
 
 
+def _interactive() -> bool:
+    return console.is_terminal and sys.stdin is not None and sys.stdin.isatty()
+
+
+def request_credentials(target: Target, state: SessionState, error: gitops.GitAuthError) -> bool:
+    """Ask for an access token after the remote rejected the request. Returns True when one was entered."""
+    host = gitops.host_of(target.location)
+    if not gitops.is_https(target.location):
+        say("This is an SSH URL: load an SSH key with access to the repository (ssh-add) or use the https:// URL "
+            "with an access token.", "info")
+        return False
+    if not _interactive():
+        say("Non-interactive mode: export the token in SECURE_REPO_GIT_TOKEN (or GH_TOKEN / GITLAB_TOKEN) or pass "
+            "--token-env VARIABLE_NAME.", "info")
+        return False
+    body = Text()
+    body.append("PRIVATE REPOSITORY - ACCESS TOKEN REQUIRED\n\n", style=f"bold {MAGENTA}")
+    body.append(gitops.auth_help(target.location, error.sso) + "\n\n", style="white")
+    body.append(f"The token is kept in memory for this session only, sent to Git as an authorization header "
+                f"scoped to {host}, and never written to disk, logs or reports.", style=DIM)
+    console.print(Panel(body, border_style=MAGENTA, box=box.ROUNDED, padding=(1, 2)))
+    token = Prompt.ask(Text.assemble(("[?] ", f"bold {VIOLET}"), ("Access token (input hidden, Enter to cancel)",
+                                                                   "bold white")),
+                       console=console, password=True, default="", show_default=False).strip()
+    if not token:
+        say("No token entered - operation cancelled.", "warn")
+        return False
+    username = ask(f"Username (Enter = '{gitops.default_username(target.location)}', the default for "
+                   f"{gitops.provider_of(target.location)})", default="", show_default=False).strip()
+    credentials = gitops.GitCredentials(token, username)
+    target.credentials = credentials
+    state.credentials[host] = credentials
+    return True
+
+
+def discover_with_auth(target: Target, state: SessionState) -> List[gitops.Branch]:
+    """Discover branches; for private remotes ask for an access token and retry (3 attempts)."""
+    if target.kind == "remote" and not target.credentials:
+        target.credentials = state.credentials.get(gitops.host_of(target.location))
+    attempts = 0
+    while True:
+        try:
+            with console.status(Text(" Enumerating branches (git ls-remote / for-each-ref)...", style=DIM),
+                                spinner="dots12", spinner_style=NEON):
+                return discover_branches(target, interactive=False)
+        except gitops.GitAuthError as exc:
+            if target.credentials:
+                state.credentials.pop(gitops.host_of(target.location), None)
+                target.credentials = None
+                say("The access token was rejected (wrong token, missing scope or SSO not authorized).", "warn")
+            attempts += 1
+            if attempts > 3 or not request_credentials(target, state, exc):
+                raise
+
+
 def choose_branch(target: Target, state: SessionState) -> Tuple[bool, Optional[str]]:
     """Return (ok, branch). branch None means working tree / default branch."""
     section("BRANCH RECON", CYAN)
     try:
-        with console.status(Text(" Enumerating branches (git ls-remote / for-each-ref)...", style=DIM),
-                            spinner="dots12", spinner_style=NEON):
-            branches = discover_branches(target, interactive=False)
+        branches = discover_with_auth(target, state)
+    except gitops.GitAuthError as exc:
+        say(f"Access denied: {exc}", "error")
+        return False, None
     except gitops.GitError as exc:
         say(f"Branch discovery failed: {exc}", "error")
-        if target.kind == "remote":
-            say("For private repositories make sure your Git credentials (SSH key or credential manager) "
-                "are configured, or use an SSH URL.", "info")
         return False, None
     if not branches:
         if target.kind == "local":
@@ -149,6 +204,9 @@ def run_scan(target: Target, state: SessionState) -> Tuple[Optional[Dict], Optio
         scanner.cancelled = True
         say("Operation aborted by user. Temporary files were cleaned up.", "warn")
         return None, None
+    except gitops.GitAuthError as exc:
+        say(f"Access denied: {exc}", "error")
+        return None, None
     except gitops.GitError as exc:
         say(f"Git error: {exc}", "error")
         return None, None
@@ -180,13 +238,13 @@ def browse_findings(report: Dict) -> None:
         if match:
             views.render_finding_detail(report, match)
             continue
-        active = [f for f in findings if f.get("status") not in ("false_positive", "filtered")]
+        active = [f for f in findings if f.get("status") not in SUPPRESSED_STATUSES]
         if answer.lower() in SEVERITIES:
             subset = [f for f in active if f["severity"] == answer.lower()]
         elif answer.lower() == "all":
             subset = active
         elif answer.lower() == "suppressed":
-            subset = [f for f in findings if f.get("status") in ("false_positive", "filtered")]
+            subset = [f for f in findings if f.get("status") in SUPPRESSED_STATUSES]
         else:
             subset = [f for f in findings if answer.lower() in (f["title"] + f["file"] + f["rule_id"]).lower()]
         views.render_findings_table(subset, limit=60, title=f"FINDINGS · {answer}")
@@ -262,6 +320,7 @@ def settings_menu(state: SessionState) -> None:
             ("10", f"Learning from triage ........ {'ON' if opts.learning else 'OFF'}"),
             ("11", f"Analysis engine ............. {'LAYERED (masking + AST + data flow)' if opts.semantic else 'PATTERNS (legacy)'}"),
             ("12", f"Virtual lockfile resolution . {'ON' if opts.resolve_versions else 'OFF'}"),
+            ("13", f"Repo config authority ....... {'TRUST ALWAYS' if opts.trust_repo_config else ('NEVER' if opts.trust_repo_config is False else 'AUTO (only local working tree)')}"),
             ("0", "Back"),
         ]
         _print_menu(items)
@@ -295,6 +354,8 @@ def settings_menu(state: SessionState) -> None:
             opts.semantic = not opts.semantic
         elif choice == "12":
             opts.resolve_versions = not opts.resolve_versions
+        elif choice == "13":
+            opts.trust_repo_config = {None: True, True: False, False: None}[opts.trust_repo_config]
         elif choice == "0":
             return
 
@@ -324,11 +385,15 @@ def choose_frameworks(state: SessionState) -> None:
 
 
 # ---------------------------------------------------------------------- main menu
-def _print_menu(items: List[Tuple[str, str]]) -> None:
+def _print_menu(items: List[Tuple[str, str]], highlight: Optional[str] = None) -> None:
     for key, label in items:
         line = Text("  ")
-        line.append(f"[{key}]", style=f"bold {NEON}" if key != "0" else "bold #ff2e63")
-        line.append(f"  {label}", style="white")
+        if key == highlight:
+            line.append(f"[{key}]", style=f"bold black on {NEON}")
+            line.append(f"  {label}", style=f"bold {NEON}")
+        else:
+            line.append(f"[{key}]", style=f"bold {NEON}" if key != "0" else "bold #ff2e63")
+            line.append(f"  {label}", style="white")
         console.print(line)
     console.print()
 
@@ -349,6 +414,10 @@ def help_panel() -> None:
         ("secure-repo gui", "launch the graphical interface in your browser"),
         ("secure-repo rules --search sql", "list detection rules"),
         ("secure-repo frameworks", "list compliance frameworks"),
+        ("secure-repo scan <url> --ask-token", "private repo: prompt for an access token (hidden)"),
+        ("secure-repo scan <url> --token-env VAR", "private repo in CI: token read from an env variable"),
+        ("secure-repo update", "install the latest version without re-cloning"),
+        ("secure-repo update --check", "only check whether a new version exists"),
     ]
     for command, description in rows:
         guide.append(f"  $ {command:<46}", style=f"bold {CYAN}")
@@ -377,11 +446,19 @@ def main_menu(state: SessionState) -> int:
                   f"intel: {'OFF' if state.options.offline else 'ON'} · output: {state.options.output_dir}]"),
             ("6", f"List detection rules ({len(RULES)})"),
             ("7", "Usage guide"),
-            ("0", "Exit"),
         ]
-        _print_menu(items)
+        update_info = updater.background_result(timeout=0)
+        if update_info is not None and update_info.available:
+            items.append(("U", f"INSTALL UPDATE  {update_info.current_version} → "
+                               f"{update_info.latest_version or update_info.latest_commit[:7]}  "
+                               f"({update_info.commits_behind or 'new'} change(s)) - no re-cloning needed"))
+        else:
+            items.append(("U", "Check for updates of Secure Repo"))
+        items.append(("0", "Exit"))
+        _print_menu(items, highlight="U" if update_info is not None and update_info.available else None)
         try:
-            choice = ask("root@secure-repo:~#", choices=[i[0] for i in items], default="1", show_choices=False)
+            choice = ask("root@secure-repo:~#", choices=[i[0] for i in items] + ["u"], default="1",
+                         show_choices=False).strip().upper()
         except (KeyboardInterrupt, EOFError):
             console.print()
             return 0
@@ -423,6 +500,13 @@ def main_menu(state: SessionState) -> int:
                 views.render_rules(RULES)
             elif choice == "7":
                 help_panel()
+            elif choice == "U":
+                from secure_repo.cli import updates as update_views
+
+                result = update_views.install(update_info if update_info and update_info.available else None)
+                if result is not None and result.ok and result.restart_required:
+                    say("Closing Secure Repo so the new version is loaded on the next start.", "ok")
+                    return 0
             elif choice == "0":
                 say("Session closed. Stay safe.", "ok")
                 return 0

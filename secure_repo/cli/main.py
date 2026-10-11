@@ -15,10 +15,11 @@ from rich.text import Text
 from secure_repo import __author__, __version__
 from secure_repo.cli import views
 from secure_repo.cli.banner import boot_sequence, section, show_banner
-from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authorization, main_menu, open_path,
-                                  post_scan_menu, run_scan)
+from secure_repo.cli import updates as update_views
+from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authorization, discover_with_auth, main_menu,
+                                  open_path, post_scan_menu, run_scan)
 from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say
-from secure_repo.core import compliance, gitops
+from secure_repo.core import compliance, gitops, updater
 from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import ScanOptions
@@ -48,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
                     "supply chain and optional compliance audit).")
     parser.add_argument("--version", action="version", version=f"Secure Repo {__version__} by {__author__}")
     parser.add_argument("--no-anim", dest="root_no_anim", action="store_true", help="disable terminal animations")
+    parser.add_argument("--no-update-check", action="store_true",
+                        help="do not check for new versions of Secure Repo (also: SECURE_REPO_NO_UPDATE_CHECK=1)")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     scan = sub.add_parser("scan", help="audit a repository (local path, current directory or Git URL)",
@@ -70,8 +73,20 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--no-anim", action="store_true", help="disable animations")
     scan.add_argument("--no-menu", action="store_true", help="do not show the post-scan menu")
     scan.add_argument("--open", action="store_true", help="open the HTML report when finished")
+    scan.add_argument("--token-env", metavar="VARIABLE",
+                        help="read the access token for a private https repository from this environment variable "
+                             "(never pass the token itself on the command line)")
+    scan.add_argument("--ask-token", action="store_true",
+                        help="prompt for the access token (hidden input) before contacting the repository")
     scan.add_argument("--min-confidence", choices=("low", "medium", "high"), default="low",
                       help="filter findings below this confidence (they stay in the report as 'filtered')")
+    trust = scan.add_mutually_exclusive_group()
+    trust.add_argument("--trust-repo-config", action="store_true",
+                       help="apply the audited repository's own .securerepo.toml, shared triage and inline "
+                            "suppressions even when it is a remote repository or another branch")
+    trust.add_argument("--ignore-repo-config", action="store_true",
+                       help="never apply the audited repository's own configuration, shared triage or inline "
+                            "suppressions, not even for the local working tree")
     scan.add_argument("--no-learning", action="store_true",
                       help="ignore the triage knowledge base (decisions, learned patterns, rule statistics)")
     scan.add_argument("--no-resolve", action="store_true",
@@ -81,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     branches = sub.add_parser("branches", help="list the branches of a local repository or Git URL")
     branches.add_argument("target", nargs="?", default=".")
+    branches.add_argument("--token-env", metavar="VARIABLE",
+                        help="read the access token for a private https repository from this environment variable "
+                             "(never pass the token itself on the command line)")
+    branches.add_argument("--ask-token", action="store_true",
+                        help="prompt for the access token (hidden input) before contacting the repository")
 
     gui = sub.add_parser("gui", help="launch the graphical interface (local web app)")
     gui.add_argument("--port", type=int, default=0, help="port (default: random free port)")
@@ -92,6 +112,10 @@ def build_parser() -> argparse.ArgumentParser:
     rules.add_argument("--search", default="", help="filter by text (id, title, language, CWE)")
 
     sub.add_parser("frameworks", help="list compliance frameworks")
+
+    update = sub.add_parser("update", help="check for and install a new version of Secure Repo (no re-cloning)")
+    update.add_argument("--check", action="store_true", help="only check; exit code 10 when an update is available")
+    update.add_argument("-y", "--yes", action="store_true", help="install without asking for confirmation")
 
     tri = sub.add_parser("triage", help="manage the triage knowledge base (false positives, learned patterns)")
     tri_sub = tri.add_subparsers(dest="triage_command", metavar="<action>")
@@ -142,7 +166,21 @@ def _boot(state: SessionState) -> None:
         ("info", "Working directory", f"Git repo @ {gitops.current_branch(root) or 'detached'}" if root
          else "not a Git repository"),
     ]
+    info = updater.background_result(timeout=3.0)
+    if info is None:
+        checks.append(("info", "Updates", "check disabled"))
+    elif info.error:
+        checks.append(("info", "Updates", "could not check (offline?)"))
+    elif info.available:
+        checks.append(("warn", "Updates", f"NEW VERSION {info.latest_version or info.latest_commit[:7]} AVAILABLE"))
+    else:
+        checks.append(("ok", "Updates", f"up to date ({info.current_version})"))
     boot_sequence(checks, animate=state.animate)
+    notice = updater.pop_post_update_notice()
+    if notice:
+        update_views.render_post_update(notice)
+    if info is not None and info.available:
+        update_views.render_available(info)
 
 
 def _state_from_args(args) -> SessionState:
@@ -154,13 +192,34 @@ def _state_from_args(args) -> SessionState:
             max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
             enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output,
             min_confidence=args.min_confidence, learning=not args.no_learning, resolve_versions=not args.no_resolve,
-            semantic=args.engine == "layered")
+            semantic=args.engine == "layered",
+            trust_repo_config=True if args.trust_repo_config else (False if args.ignore_repo_config else None))
     elif getattr(args, "command", None) == "gui":
         options = ScanOptions(offline=args.offline, output_dir=args.output)
     interactive = console.is_terminal and sys.stdin is not None and sys.stdin.isatty()
     no_anim = getattr(args, "root_no_anim", False) or getattr(args, "no_anim", False) or bool(os.environ.get("CI"))
     return SessionState(options=options, animate=interactive and not no_anim,
                         plain=getattr(args, "plain", False), assume_yes=getattr(args, "yes", False))
+
+
+def _apply_token_options(args, target: Target) -> bool:
+    """--token-env / --ask-token for private https repositories. Returns False on a usage error."""
+    if target.kind != "remote":
+        return True
+    if args.token_env:
+        token = os.environ.get(args.token_env, "")
+        if not token:
+            say(f"Environment variable {args.token_env} is empty or not set.", "error")
+            return False
+        target.credentials = gitops.GitCredentials(token, os.environ.get("SECURE_REPO_GIT_USERNAME", ""))
+    elif args.ask_token:
+        from rich.prompt import Prompt
+
+        token = Prompt.ask(Text("[?] Access token (input hidden)", style="bold white"), console=console,
+                           password=True, default="", show_default=False).strip()
+        if token:
+            target.credentials = gitops.GitCredentials(token)
+    return True
 
 
 def cmd_scan(args, state: SessionState) -> int:
@@ -176,10 +235,17 @@ def cmd_scan(args, state: SessionState) -> int:
         return 1
     if not confirm_authorization(target, state):
         return 1
+    if not _apply_token_options(args, target):
+        return 2
     interactive = console.is_terminal and sys.stdin.isatty()
     if args.branch:
         try:
             gitops.validate_branch(args.branch)
+            if target.kind == "remote":
+                discover_with_auth(target, state)  # validates access (asks for a token if needed) before cloning
+        except gitops.GitAuthError as exc:
+            say(f"Access denied: {exc}", "error")
+            return 1
         except gitops.GitError as exc:
             say(str(exc), "error")
             return 2
@@ -195,6 +261,7 @@ def cmd_scan(args, state: SessionState) -> int:
         open_path(os.path.join(report_dir, "report.html"))
     if interactive and not args.no_menu and not state.plain:
         post_scan_menu(report, report_dir, state)
+    update_views.render_compact(updater.background_result(timeout=0.5))
     if args.fail_on:
         threshold = SEVERITY_RANK[args.fail_on]
         failing = [f for f in report["findings"] if SEVERITY_RANK[f["severity"]] <= threshold]
@@ -206,9 +273,13 @@ def cmd_scan(args, state: SessionState) -> int:
 
 def cmd_branches(args, state: SessionState) -> int:
     target = Target.parse(args.target)
+    if not _apply_token_options(args, target):
+        return 2
     try:
-        with console.status(Text(" Enumerating branches...", style=DIM), spinner="dots12", spinner_style=NEON):
-            branches = discover_branches(target, interactive=False)
+        branches = discover_with_auth(target, state)
+    except gitops.GitAuthError as exc:
+        say(f"Access denied: {exc}", "error")
+        return 1
     except gitops.GitError as exc:
         say(f"Branch discovery failed: {exc}", "error")
         return 1
@@ -247,6 +318,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     state = _state_from_args(args)
+    if args.command in (None, "scan", "gui") and not args.no_update_check:
+        updater.start_background_check()
     try:
         if args.command is None:
             if not (console.is_terminal and sys.stdin.isatty()):
@@ -271,6 +344,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         if args.command == "frameworks":
             return cmd_frameworks()
+        if args.command == "update":
+            return update_views.cmd_update(args)
         if args.command == "triage":
             from secure_repo.cli.learning import cmd_triage
 

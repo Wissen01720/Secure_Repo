@@ -1,4 +1,3 @@
-// securerepo:ignore-file - benchmark corpus: deliberately insecure code, parsed as text and never executed.
 import javax.crypto.Cipher;
 
 class JavaCases {

@@ -1,4 +1,3 @@
-# securerepo:ignore-file  (analyzer implementation; contains sink names, not vulnerable code)
 """Lightweight data-flow analysis for JavaScript / TypeScript.
 
 Works on the lexically masked source (comments and string contents blanked, template

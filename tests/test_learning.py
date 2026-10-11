@@ -1,4 +1,3 @@
-# securerepo:ignore-file - learning-loop tests use insecure-looking samples on purpose (never executed).
 import json
 import os
 
@@ -13,6 +12,7 @@ from tests.conftest import write
 
 
 def scan(path, **options):
+    options.setdefault("trust_repo_config", True)  # these temp folders are the "analyst's own" projects
     return Scanner(ScanOptions(offline=True, **options), EventBus()).run(Target.parse(path), write_reports=False)[0]
 
 
@@ -105,7 +105,7 @@ def test_project_config_custom_rules_allowlist_and_overrides(tmp_path):
     assert not config.errors and config.custom_rules[0].id == "ACME-001"
     report = scan(root)
     assert by_rule(report, "ACME-001") and by_rule(report, "ACME-001")[0]["engine"] == "custom"
-    assert not by_rule(report, "SR-HYG-004")
+    assert [f["status"] for f in by_rule(report, "SR-HYG-004")] == ["disabled_by_config"]  # kept, never deleted
     assert by_rule(report, "SR-HYG-001")[0]["severity"] == "info"
     other = [f for f in by_rule(report, "SR-GEN-006") if f["file"] == "src/other.py"][0]
     assert other["status"] == "false_positive" and other["triage"]["origin"] == "config"

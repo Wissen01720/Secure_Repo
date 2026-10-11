@@ -5,8 +5,8 @@
   const $ = SR.$, $$ = SR.$$, esc = SR.esc, el = SR.el;
 
   const STAGE_WEIGHT = { acquire: 6, enumerate: 4, analyze: 44, dependencies: 5, resolve: 8, intel: 16, hygiene: 3, compliance: 3, scoring: 2, report: 9 };
-  const SUPPRESSED = new Set(['false_positive', 'filtered']);
-  const STATUS_LABEL = { open: 'open', confirmed: 'confirmed', accepted_risk: 'accepted risk', false_positive: 'false positive', filtered: 'filtered' };
+  const SUPPRESSED = new Set(['false_positive', 'filtered', 'disabled_by_config', 'suppressed_inline']);
+  const STATUS_LABEL = { open: 'open', confirmed: 'confirmed', accepted_risk: 'accepted risk', false_positive: 'false positive', filtered: 'filtered', disabled_by_config: 'rule disabled by config', suppressed_inline: 'suppressed inline' };
   const DEFAULT_STAGES = [
     { id: 'acquire', title: 'Acquiring source' }, { id: 'enumerate', title: 'Mapping repository structure' },
     { id: 'analyze', title: 'Static code, secret & config analysis' }, { id: 'dependencies', title: 'Discovering libraries & dependencies' }, { id: 'resolve', title: 'Resolving versions (virtual lockfile)' },
@@ -98,6 +98,7 @@
       $('#stat-rules').textContent = ctx.rules;
       $('#stat-fw').textContent = ctx.frameworks.length;
       initSetup(ctx);
+      checkUpdates();
       if (ctx.preload) {
         const data = await SR.api('/api/scans/' + ctx.preload + '/report');
         showResults(data.report, data.scan_id, data.report_dir);
@@ -135,6 +136,7 @@
     $$('.target-card').forEach((card) => card.addEventListener('click', () => pickTarget(card.dataset.kind)));
     ['#in-url', '#in-path'].forEach((sel) => $(sel).addEventListener('input', () => { S.discovered = false; updateSetup(); }));
     $('#in-url').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') discover(); });
+    $('#in-token').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') discover(); });
     $('#in-path').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') discover(); });
     $('#btn-discover').addEventListener('click', discover);
     $('#branch-filter').addEventListener('input', renderBranches);
@@ -149,6 +151,7 @@
   function pickTarget(kind) {
     S.target.kind = kind;
     S.discovered = false;
+    if (kind !== 'remote') $('#auth-box').hidden = true;
     S.branches = [];
     S.branch = null;
     $$('.target-card').forEach((c) => c.classList.toggle('active', c.dataset.kind === kind));
@@ -184,7 +187,8 @@
     const list = $('#branch-list');
     SR.setHTML(list, '<div class="empty">' + esc(S.target.kind === 'remote' ? 'Running git ls-remote against ' + location + ' ...' : 'Reading local refs...') + '</div>');
     try {
-      const data = await SR.api('/api/branches', { method: 'POST', body: { kind: S.target.kind, location: location } });
+      const data = await SR.api('/api/branches', { method: 'POST', body: Object.assign({ kind: S.target.kind, location: location }, authBody()) });
+      $('#auth-box').hidden = !$('#in-token').value;
       S.target.location = data.target;
       S.branches = data.branches;
       S.isGit = data.git;
@@ -195,12 +199,36 @@
       else SR.toast(S.branches.length + ' branch(es) discovered', 'ok');
     } catch (err) {
       S.discovered = false;
-      SR.toast(err.message, 'error');
+      if (err.data && err.data.auth_required) {
+        showAuth(err.data);
+      } else {
+        SR.toast(err.message, 'error');
+      }
     }
     btn.textContent = original;
     btn.disabled = false;
     renderBranches();
     updateSetup();
+  }
+
+  function authBody() {
+    if (S.target.kind !== 'remote') return {};
+    const token = $('#in-token').value.trim();
+    return token ? { token: token, username: $('#in-username').value.trim() } : {};
+  }
+
+  function showAuth(info) {
+    const box = $('#auth-box');
+    box.hidden = false;
+    if (!info.https) {
+      $('#auth-help').textContent = 'This is an SSH URL: load an SSH key with access to the repository, or use the https:// URL with an access token.';
+      SR.toast('Authentication required (SSH key)', 'warn');
+      return;
+    }
+    $('#auth-help').textContent = (info.rejected ? 'The token was rejected (wrong token, missing scope or SSO not authorized). ' : '') + info.error;
+    $('#in-username').placeholder = 'Username (optional, default: ' + (info.username_hint || 'git') + ')';
+    $('#in-token').focus();
+    SR.toast(info.rejected ? 'Access token rejected' : 'Private repository: enter an access token and discover again', 'warn');
   }
 
   function renderBranches() {
@@ -237,11 +265,13 @@
     const branch = S.isGit && !(branchObj && branchObj.current) ? S.branch : null;
     const body = {
       kind: S.target.kind, location: S.target.location, branch: branch, authorized: $('#opt-authorized').checked,
+      token: authBody().token, username: authBody().username,
       options: {
         offline: !$('#opt-online').checked, compliance: $('#opt-compliance').checked,
         frameworks: Array.from(S.frameworks), include_tests: $('#opt-tests').checked,
         max_file_size_kb: parseInt($('#opt-size').value, 10), auditor: $('#opt-auditor').value.trim(),
         min_confidence: $('#opt-confidence').value, learning: $('#opt-learning').checked,
+        trust_repo_config: $('#opt-trust').checked ? true : null,
         semantic: $('#opt-engine').value === 'layered',
       },
     };
@@ -601,6 +631,19 @@
       ['Triage decisions applied', kn.decisions || 0], ['Learned patterns matched', kn.learned_patterns || 0]].forEach((m) => {
       qualityCard.appendChild(el('div', { class: 'check yes' }, [el('i', { text: String(m[1]) }), el('span', { text: m[0] })]));
     });
+    const infl = analysis.repo_influence;
+    if (infl) {
+      const rows = [['Audited repository', (infl.trusted ? 'TRUSTED' : 'NOT trusted') + ' - ' + infl.trust_reason]];
+      (infl.ignored || []).forEach((i) => rows.push(['Ignored', i]));
+      (infl.disabled_rules || []).forEach((r) => rows.push(['Rule off', r.rule_id + ' - ' + r.hidden + ' hidden (set by ' + r.from + ')']));
+      (infl.severity_overrides || []).forEach((r) => rows.push(['Severity', r.rule_id + ' ' + r.from_severity + ' → ' + r.to_severity + ' (set by ' + r.from + ')']));
+      if (infl.excluded_by_config && infl.excluded_by_config.files) rows.push(['Excluded', infl.excluded_by_config.files + ' file(s) never analyzed']);
+      if (infl.inline) rows.push(['Inline', infl.inline + ' suppression comment(s) honoured']);
+      if (infl.score_without_repo_content !== undefined && infl.active) rows.push(['Score', infl.score_with_repo_content + ' with the repo\'s own content · ' + infl.score_without_repo_content + ' without it']);
+      const box = el('div', { class: 'infl-box' + (infl.material ? ' material' : '') }, [el('b', { text: infl.material ? 'REPOSITORY INFLUENCE - review before trusting this grade' : 'Repository influence' })]);
+      rows.forEach((r) => box.appendChild(el('div', { class: 'infl-row' }, [el('span', { text: r[0] }), el('span', { text: r[1] })])));
+      qualityCard.appendChild(box);
+    }
     qualityCard.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', marginTop: '8px' },
       text: 'Learning ' + (analysis.learning ? 'on' : 'off') + ' · config ' + (analysis.config || 'none') + ' · min confidence ' + (analysis.min_confidence || 'low') }));
     const notes = (r.meta.notes || []).map((n) => el('div', { class: 'muted', style: { fontSize: '12px' }, text: '• ' + n }));
@@ -1177,10 +1220,80 @@
     requestAnimationFrame(frame);
   }
 
+  /* ================================================================== updates */
+  async function checkUpdates() {
+    let info;
+    try { info = await SR.api('/api/update'); } catch (err) { return; }
+    if (!info || info.disabled) return;
+    S.update = info;
+    const banner = $('#update-banner');
+    if (info.post_update) {
+      banner.hidden = false;
+      banner.classList.add('done');
+      $('#ub-badge').textContent = 'UPDATED';
+      $('#ub-title').textContent = 'Secure Repo was updated to ' + (info.post_update.to || info.current_version);
+      $('#ub-sub').textContent = (info.post_update.changes || []).length + ' change(s) included';
+      $('#ub-install').hidden = true;
+      S.updateChanges = info.post_update.changes || [];
+    }
+    if (!info.available) return;
+    banner.hidden = false;
+    banner.classList.remove('done');
+    $('#ub-badge').textContent = 'UPDATE';
+    $('#ub-title').textContent = 'Secure Repo ' + (info.latest_version || info.latest_commit.slice(0, 7)) + ' is available';
+    $('#ub-sub').textContent = 'you have ' + info.current_version + ' · ' + (info.commits_behind ? info.commits_behind + ' new change(s)' : 'new release') + ' · install it without re-cloning';
+    $('#ub-install').hidden = false;
+    S.updateChanges = info.changes || [];
+  }
+
+  function showUpdateDetails() {
+    const info = S.update || {};
+    openDrawer('// update', (body) => {
+      let html = '<span class="tag">' + esc(info.mode === 'git' ? 'git clone install' : 'pip install') + '</span><h2>' +
+        esc(info.available ? 'Secure Repo ' + (info.latest_version || '') + ' is available' : 'Secure Repo is up to date') + '</h2>' +
+        '<dl class="kv"><dt>Installed</dt><dd>' + esc(info.current_version) + (info.current_commit ? ' (' + esc(info.current_commit.slice(0, 7)) + ')' : '') + '</dd>' +
+        '<dt>Latest</dt><dd>' + esc(info.latest_version || '-') + (info.latest_commit ? ' (' + esc(info.latest_commit.slice(0, 7)) + ')' : '') + '</dd>' +
+        '<dt>Source</dt><dd>' + esc(info.source || '') + '</dd></dl>';
+      const changes = S.updateChanges || [];
+      if (changes.length) html += '<h5 class="fix">What\'s new</h5><ul class="ub-changes">' + changes.map((c) => '<li><code>' + esc(c.split(' ')[0]) + '</code> ' + esc(c.split(' ').slice(1).join(' ')) + '</li>').join('') + '</ul>';
+      if (info.notes) html += '<h5 class="where">Release notes</h5><div class="snippet">' + esc(info.notes) + '</div>';
+      SR.setHTML(body, html);
+      if (info.available && !S.updateInstalled) {
+        body.appendChild(el('button', { class: 'btn launch', type: 'button', style: { marginTop: '18px' }, text: 'INSTALL UPDATE', onclick: installUpdate }));
+      }
+    });
+  }
+
+  async function installUpdate() {
+    if (!window.confirm('Install the new version of Secure Repo now? Running scans must be finished.')) return;
+    const button = $('#ub-install');
+    button.disabled = true;
+    button.textContent = 'Installing...';
+    try {
+      const result = await SR.api('/api/update/install', { method: 'POST', body: {} });
+      S.updateInstalled = true;
+      closeDrawer();
+      const banner = $('#update-banner');
+      banner.classList.add('done');
+      $('#ub-badge').textContent = result.deferred ? 'PENDING' : 'INSTALLED';
+      $('#ub-title').textContent = result.message;
+      $('#ub-sub').textContent = result.deferred ? '' : 'Restart Secure Repo (Ctrl+C in the terminal, then run it again) to use the new version.';
+      button.hidden = true;
+      SR.toast(result.message, 'ok');
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = 'Install update';
+      SR.toast(err.message, 'error');
+    }
+  }
+
   /* ================================================================== static bindings */
   function bindStatic() {
     $$('.tab').forEach((t) => t.addEventListener('click', () => openTab(t.dataset.tab)));
     $('#drawer-close').addEventListener('click', closeDrawer);
+    $('#ub-details').addEventListener('click', showUpdateDetails);
+    $('#ub-install').addEventListener('click', installUpdate);
+    $('#ub-close').addEventListener('click', () => { $('#update-banner').hidden = true; });
     $('#backdrop').addEventListener('click', closeDrawer);
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeDrawer(); });
     $('#btn-new').addEventListener('click', () => {

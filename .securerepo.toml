@@ -1,0 +1,21 @@
+# Secure Repo scanning itself (dogfooding).
+#
+# These files are deliberately excluded from the analysis because they CONTAIN detection signatures and
+# intentionally vulnerable samples (never executed). Every report lists these exclusions explicitly, so the
+# trade-off is visible instead of hidden behind an in-file marker.
+
+[scan]
+exclude = [
+  "secure_repo/core/rules.py",
+  "secure_repo/core/checks.py",
+  "secure_repo/core/pyast.py",
+  "secure_repo/core/jsflow.py",
+  "secure_repo/benchmark/corpus/*",
+  "tests/conftest.py",
+  "tests/test_components.py",
+  "tests/test_engines.py",
+  "tests/test_gui_server.py",
+  "tests/test_updates_and_auth.py",
+  "tests/test_learning.py",
+  "tests/test_updates_and_auth.py",
+]

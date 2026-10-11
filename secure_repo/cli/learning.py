@@ -20,7 +20,8 @@ from secure_repo.core.triage import REPO_TRIAGE_FILE, KnowledgeBase, data_dir, p
 
 STATUS_LABEL = {"f": "false_positive", "a": "accepted_risk", "c": "confirmed", "o": "open"}
 STATUS_STYLE = {"open": "white", "confirmed": f"bold {MAGENTA}", "accepted_risk": "bold #ffd23f",
-                "false_positive": f"bold {NEON}", "filtered": "grey50"}
+                "false_positive": f"bold {NEON}", "filtered": "grey50",
+                "disabled_by_config": "grey50", "suppressed_inline": "grey50"}
 
 
 def _load_report(path: str) -> (Dict, str):

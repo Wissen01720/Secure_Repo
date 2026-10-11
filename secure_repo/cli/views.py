@@ -17,7 +17,7 @@ from rich.tree import Tree
 from secure_repo.cli.banner import big_status, section
 from secure_repo.cli.theme import (CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, SEVERITY_TAG, STATUS_STYLE, VIOLET,
                                    bar, console, sev_badge)
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS
+from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES
 
 GRADE_COLOR = {"A": NEON, "B": "#7ee787", "C": "#ffd23f", "D": "#ff8a00", "F": "#ff2e63"}
 
@@ -94,7 +94,7 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
         console.print(owasp)
 
     render_quality(report)
-    active = [f for f in report["findings"] if f.get("status") not in ("false_positive", "filtered")]
+    active = [f for f in report["findings"] if f.get("status") not in SUPPRESSED_STATUSES]
     render_findings_table(active, limit=15, title="TOP FINDINGS")
     render_dependencies(report, only_vulnerable=True, limit=12)
     if report["compliance"].get("enabled"):
@@ -401,7 +401,13 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
                                     f"{knowledge.get('below_min_confidence', 0)} below min confidence", style="white"))
     grid.add_row("Learning", Text("ON (secure-repo triage stats)" if analysis.get("learning") else "OFF", style=VIOLET))
     grid.add_row("Configuration", Text(analysis.get("config") or "none - run 'secure-repo init-config'", style="white"))
+    influence = analysis.get("repo_influence")
+    if influence:
+        grid.add_row("Audited repo", Text(("TRUSTED" if influence["trusted"] else "NOT trusted") + f" - {influence['trust_reason']}",
+                                          style=NEON if influence["trusted"] else "#ffd23f"))
     console.print(grid)
+    if influence and (influence.get("active") or influence["ignored"]):
+        render_repo_influence(influence)
     if detailed:
         noise = analysis.get("noise_filtered") or {}
         if noise:
@@ -411,7 +417,7 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
             for reason, count in noise.items():
                 table.add_row(reason, str(count))
             console.print(table)
-        suppressed = [f for f in report["findings"] if f.get("status") in ("false_positive", "filtered")]
+        suppressed = [f for f in report["findings"] if f.get("status") in SUPPRESSED_STATUSES]
         if suppressed:
             table = Table(box=box.SIMPLE, header_style=f"bold {CYAN}", title=Text("Suppressed findings", style=NEON))
             table.add_column("ID", style="grey62")
@@ -453,3 +459,37 @@ def render_lockfile(report: Dict) -> None:
     for item in lock.get("unresolved", []):
         console.print(Text(f"  [!] unresolved: {item['name']} {item['declared']} ({item['manifest']})", style="#ffd23f"))
     console.print(Text("  full guide: dependencies/lockfile-guide.md", style=DIM))
+
+
+def render_repo_influence(influence: Dict) -> None:
+    """Warn the analyst about everything the audited repository did to shape its own result."""
+    lines = []
+    if influence["ignored"]:
+        lines += [Text.assemble(("IGNORED  ", "bold #ffd23f"), (item, "white")) for item in influence["ignored"]]
+    for rule in influence["disabled_rules"]:
+        lines.append(Text.assemble(("RULE OFF  ", "bold #ff2e63"), (f"{rule['rule_id']} {rule['title']}", "white"),
+                                   (f"  - {rule['hidden']} finding(s) hidden, set by {rule['from']}", DIM)))
+    for item in influence["severity_overrides"]:
+        lines.append(Text.assemble(("SEVERITY  ", "bold #ff2e63"), (item["rule_id"], "white"),
+                                   (f"  {item['from_severity']} -> {item['to_severity']} on {item['count']} finding(s), "
+                                    f"set by {item['from']}", DIM)))
+    excluded = influence["excluded_by_config"]
+    if excluded["files"]:
+        lines.append(Text.assemble(("EXCLUDED  ", "bold #ff2e63"), (f"{excluded['files']} file(s) never analyzed: ", "white"),
+                                   (", ".join(p["pattern"] for p in excluded["patterns"][:5]), DIM)))
+    for label, value in (("allow-listed by configuration", influence["allowlisted"]),
+                         ("decisions from the repository's shared triage", influence["repo_decisions"]),
+                         ("inline suppression comments honoured", influence["inline"])):
+        if value:
+            lines.append(Text.assemble(("SILENCED  ", "bold #ffd23f"), (f"{value} finding(s) {label}", "white")))
+    if influence.get("score_with_repo_content") is not None:
+        lines.append(Text.assemble(
+            ("SCORE     ", f"bold {CYAN}"), (f"{influence['score_with_repo_content']} ({influence['grade_with_repo_content']})"
+                                              f" with the repository's own content, ", "white"),
+            (f"{influence['score_without_repo_content']} ({influence['grade_without_repo_content']}) without it", "bold white")))
+    if not lines:
+        return
+    border = "#ff2e63" if influence.get("material") else "#ffd23f"
+    title = " REPOSITORY INFLUENCE - REVIEW BEFORE TRUSTING THIS GRADE " if influence.get("material") else " REPOSITORY INFLUENCE "
+    console.print(Panel(Group(*lines), title=Text(title, style=f"bold {border}"), border_style=border, box=box.ROUNDED,
+                        padding=(0, 1)))

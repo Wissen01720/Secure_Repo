@@ -1,4 +1,3 @@
-# securerepo:ignore-file - benchmark corpus: deliberately insecure infrastructure definitions.
 resource "aws_s3_bucket_acl" "logs" {
   acl = "public-read" # expect: SR-IAC-002
 }

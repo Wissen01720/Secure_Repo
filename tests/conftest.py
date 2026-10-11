@@ -1,4 +1,3 @@
-# securerepo:ignore-file - deliberately vulnerable fixtures, written as text to temp dirs and never executed.
 import os
 import subprocess
 import sys

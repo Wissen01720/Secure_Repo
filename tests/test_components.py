@@ -1,4 +1,3 @@
-# securerepo:ignore-file - detector unit tests contain sample patterns on purpose.
 import pytest
 
 from secure_repo.core import checks, compliance, deps, gitops, intel

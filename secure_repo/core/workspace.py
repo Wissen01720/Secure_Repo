@@ -16,12 +16,15 @@ class Target:
     kind: str  # "remote" or "local"
     location: str
     branch: Optional[str] = None
+    # Access token for private repositories - memory only, never serialized or printed.
+    credentials: Optional[gitops.GitCredentials] = field(default=None, repr=False, compare=False)
 
     @classmethod
     def parse(cls, value: Optional[str], branch: Optional[str] = None) -> "Target":
         value = (value or ".").strip()
         if gitops.is_git_url(value):
-            return cls("remote", value, branch)
+            clean, credentials = gitops.split_credentials(value)
+            return cls("remote", clean, branch, credentials)
         return cls("local", os.path.abspath(os.path.expanduser(value)), branch)
 
 
@@ -47,7 +50,7 @@ class Workspace:
 def discover_branches(target: Target, interactive: bool = False) -> List[gitops.Branch]:
     """List branches for a target; an empty list means 'not a git repository'."""
     if target.kind == "remote":
-        return gitops.list_remote_branches(target.location, interactive=interactive)
+        return gitops.list_remote_branches(target.location, interactive=interactive, credentials=target.credentials)
     root = gitops.find_repo_root(target.location)
     if not root:
         return []
@@ -61,7 +64,7 @@ def prepare_workspace(target: Target, bus: EventBus, interactive: bool = False) 
         dest = os.path.join(temp_dir, "repo")
         bus.log(f"Cloning {url} (branch: {target.branch or 'default'}, depth 1, hooks disabled)")
         try:
-            commit = gitops.clone(url, target.branch, dest, interactive=interactive)
+            commit = gitops.clone(url, target.branch, dest, interactive=interactive, credentials=target.credentials)
         except Exception:
             gitops.remove_tree(temp_dir)
             raise

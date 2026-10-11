@@ -1,4 +1,3 @@
-# securerepo:ignore-file - benchmark corpus: code that looks dangerous to a regex but is safe.
 # expect-none: SR-PY-001, SR-PY-002, SR-PY-003, SR-PY-004, SR-PY-005, SR-PY-009, SR-PY-011, SR-SEC-019
 import os
 import random
