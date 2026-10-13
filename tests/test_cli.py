@@ -183,3 +183,12 @@ def test_summary_shows_the_grade_cap_and_blind_spots(tmp_path, capsys):
     views.render_quality(report)
     out = ANSI.sub("", capsys.readouterr().out)
     assert "Not analyzed" in out
+
+
+def test_closed_input_ends_with_a_clear_message_not_a_traceback(monkeypatch, clean_repo, capsys):
+    def closed(*_args, **_kwargs):
+        raise EOFError
+
+    monkeypatch.setattr(cli, "cmd_scan", closed)
+    code, out = run(["scan", clean_repo], capsys)
+    assert code == 1 and "Input was closed" in out and "--branch" in out

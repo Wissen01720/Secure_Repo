@@ -32,9 +32,14 @@ THEME = Theme({
 
 
 def _make_console() -> Console:
-    if not sys.stdout.isatty() and hasattr(sys.stdout, "reconfigure"):
+    if hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if sys.stdout.isatty():
+                # A console (or a character device such as NUL, which also reports isatty) keeps its own encoding,
+                # but a symbol it cannot show must never crash the program.
+                sys.stdout.reconfigure(errors="replace")
+            else:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         except (ValueError, OSError):
             pass
     no_color = bool(os.environ.get("NO_COLOR"))

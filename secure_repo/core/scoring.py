@@ -18,7 +18,8 @@ def compute_score(findings: List[Dict]) -> Dict:
         status = finding.get("status", "open")
         if status in SUPPRESSED_STATUSES:
             continue  # false positives and filtered findings never affect the score
-        factor = 0.5 if finding.get("in_test") else 1.0
+        extra = finding.get("extra") or {}
+        factor = 0.5 if (finding.get("in_test") or extra.get("third_party") or extra.get("example_block")) else 1.0
         if status == "accepted_risk":
             factor *= 0.5  # documented, owned risk still counts, at half weight
         bucket = per_rule.setdefault(finding["rule_id"], {"weight": 0.0, "count": 0.0})
@@ -33,7 +34,8 @@ def compute_score(findings: List[Dict]) -> Dict:
     score = raw_score
     # A repository with an open critical finding must never look "acceptable": cap the grade (production code only).
     blocking = [f for f in findings
-                if f.get("status", "open") not in SUPPRESSED_STATUSES + ("accepted_risk",) and not f.get("in_test")]
+                if f.get("status", "open") not in SUPPRESSED_STATUSES + ("accepted_risk",) and not f.get("in_test")
+                and not (f.get("extra") or {}).get("third_party") and not (f.get("extra") or {}).get("example_block")]
     criticals = sum(1 for f in blocking if f["severity"] == "critical")
     highs = sum(1 for f in blocking if f["severity"] == "high")
     cap = None

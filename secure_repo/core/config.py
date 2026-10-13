@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import redos
 from secure_repo.core.models import SEVERITIES
-from secure_repo.core.rules import RULES_BY_ID, Rule
+from secure_repo.core.rules import RULES_BY_ID, Rule, canonical_rule_id
 
 try:  # Python 3.11+
     import tomllib as _toml
@@ -188,9 +188,9 @@ def load_config(root: str, user_dir: Optional[str] = None, trust_repo: bool = Tr
             config.min_confidence = level
             config.repo_min_confidence = from_repo and level != "low"
         rules = data.get("rules", {}) or {}
-        disabled = [str(r) for r in rules.get("disable", [])]
+        disabled = [canonical_rule_id(str(r)) for r in rules.get("disable", [])]
         config.disable += disabled
-        overrides = {str(k): str(v).lower() for k, v in (rules.get("severity", {}) or {}).items()
+        overrides = {canonical_rule_id(str(k)): str(v).lower() for k, v in (rules.get("severity", {}) or {}).items()
                      if str(v).lower() in SEVERITIES}
         config.severity.update(overrides)
         allow = data.get("allowlist", {}) or {}

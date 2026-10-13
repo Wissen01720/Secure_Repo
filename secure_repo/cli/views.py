@@ -410,6 +410,8 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
         parts = []
         if skipped.get("directories"):
             parts.append(f"{len(skipped['directories'])} folder(s)")
+        if skipped.get("unparsed"):
+            parts.append(f"{len(skipped['unparsed'])} manifest(s) that could not be parsed")
         if skipped.get("minified"):
             parts.append(f"{len(skipped['minified'])} minified bundle(s) in reduced mode")
         if skipped.get("too_large"):

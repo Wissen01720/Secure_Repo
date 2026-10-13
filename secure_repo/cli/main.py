@@ -363,6 +363,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         console.print()
         say("Aborted by user.", "warn")
         return 130
+    except EOFError:
+        console.print()
+        say("Input was closed before an answer was given. For unattended runs pass --branch and --yes.", "error")
+        return 1
     parser.print_help()
     return 2
 

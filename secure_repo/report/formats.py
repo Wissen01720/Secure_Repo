@@ -201,6 +201,10 @@ def markdown_not_analyzed(report: Dict) -> str:
             lines.append(f"| `{_md_escape(entry['path'])}` | {_md_escape(entry['reason'])} | "
                          f"{'-' if count is None else (str(count) + ('+' if count >= 5000 else ''))} |")
         lines.append("")
+    if skipped.get("unparsed"):
+        lines += ["### Dependency manifests that could not be parsed",
+                  "", "Their libraries are missing from the inventory, so vulnerabilities in them were not checked.", ""]
+        lines += [f"- `{_md_escape(item['path'])}`: {_md_escape(item['error'])}" for item in skipped["unparsed"][:100]] + [""]
     if skipped.get("minified"):
         lines += ["### Minified bundles (reduced analysis: secrets and critical findings only)", ""]
         lines += [f"- `{_md_escape(path)}`" for path in skipped["minified"][:100]] + [""]

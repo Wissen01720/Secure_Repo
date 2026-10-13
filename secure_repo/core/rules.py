@@ -56,6 +56,7 @@ class Rule:
     references: Tuple[str, ...] = ()
     flags: int = 0
     needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
+    region: str = ""             # only report matches inside this structural region (see core/regions.py)
     _regex: Optional[Pattern] = field(default=None, repr=False, compare=False)
     _path_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
     _exclude_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
@@ -443,7 +444,7 @@ RULES: List[Rule] = [
          pattern=r"\bset(?:Timeout|Interval)\s*\(\s*['\"`]",
          description="Passing a string to setTimeout/setInterval evaluates it like eval().",
          recommendation="Pass a function reference instead of a string."),
-    Rule(id="SR-JS-010", title="TLS certificate validation disabled", severity="high",
+    Rule(id="SR-GEN-008", title="TLS certificate validation disabled", severity="high",
          category="Transport Security", cwe="CWE-295", owasp="A07",
          languages=JS + ("Env", "Shell", "JSON", "YAML", "Dockerfile", "INI"), tags=("transport",),
          keywords=("rejectunauthorized", "node_tls_reject_unauthorized", "strictssl", "strict-ssl"),
@@ -502,20 +503,20 @@ RULES: List[Rule] = [
          description="Redirecting to a URL supplied in the request lets attackers craft trusted-looking links "
                      "that forward victims to phishing sites.",
          recommendation="Redirect only to relative paths or an allow-list of destinations."),
-    Rule(id="SR-JS-019", title="MongoDB $where operator", severity="medium", category="Injection", cwe="CWE-943",
+    Rule(id="SR-GEN-009", title="MongoDB $where operator", severity="medium", category="Injection", cwe="CWE-943",
          owasp="A03", languages=JS + PY + PHP, tags=("injection",), keywords=("$where",),
          pattern=r"['\"]?\$where['\"]?\s*:",
          description="$where executes JavaScript inside the database; combined with user input it enables "
                      "NoSQL injection and denial of service.",
          recommendation="Use standard query operators and validate input types."),
-    Rule(id="SR-JS-020", title="Permissive CORS policy", severity="medium", category="Misconfiguration",
+    Rule(id="SR-GEN-010", title="Permissive CORS policy", severity="medium", category="Misconfiguration",
          cwe="CWE-942", owasp="A05", languages=CODE, tags=("config",),
          keywords=("access-control-allow-origin", "origin", "cors"),
          pattern=r"Access-Control-Allow-Origin['\"]?\s*[,:=]\s*['\"]\*['\"]|\borigin\s*:\s*['\"]\*['\"]|\bcors\s*\(\s*\)|CORS_ORIGIN_ALLOW_ALL\s*=\s*True|CORS_ALLOW_ALL_ORIGINS\s*=\s*True|allow_origins\s*=\s*\[\s*['\"]\*['\"]",
          description="A wildcard CORS policy lets any website read responses from this API. Combined with "
                      "credentials or internal-only endpoints it exposes data cross-origin.",
          recommendation="Allow only the specific trusted origins and avoid combining credentials with '*'."),
-    Rule(id="SR-JS-021", title="JWT signature verification weakened", severity="high", category="Authentication",
+    Rule(id="SR-GEN-011", title="JWT signature verification weakened", severity="high", category="Authentication",
          cwe="CWE-347", owasp="A07", languages=CODE, tags=("auth",),
          keywords=("none", "verify_signature", "verify", "ignoreexpiration"),
          pattern=r"(?i)algorithms?['\"]?\s*[:=]\s*\[?\s*['\"]none['\"]|verify_signature['\"]?\s*:\s*False|\bjwt\.decode\s*\([^)\n]{0,200}verify\s*=\s*False|ignoreExpiration\s*:\s*true",
@@ -549,7 +550,7 @@ RULES: List[Rule] = [
          pattern=r"Runtime\.getRuntime\(\)\.exec\s*\(|new\s+ProcessBuilder\s*\([^)\n]{0,200}\+",
          description="Runtime.exec()/ProcessBuilder with dynamic strings can run attacker-influenced commands.",
          recommendation="Use fixed executables with argument arrays and validate every parameter."),
-    Rule(id="SR-JAVA-002", title="SQL query built with concatenation", severity="high", category="Injection",
+    Rule(id="SR-GEN-012", title="SQL query built with concatenation", severity="high", category="Injection",
          cwe="CWE-89", owasp="A03", languages=JVM + CS, tags=("injection",),
          keywords=("execute", "preparestatement", "createquery", "createnativequery", "addbatch"),
          pattern=r"\b(?:executeQuery|executeUpdate|execute|prepareStatement|createQuery|createNativeQuery|addBatch)\s*\(\s*['\"][^'\"\n]*['\"]\s*\+",
@@ -582,7 +583,7 @@ RULES: List[Rule] = [
          description="Trust-all managers and permissive hostname verifiers accept any certificate, removing "
                      "TLS server authentication.",
          recommendation="Use the platform default TrustManager and HostnameVerifier; pin certificates if needed."),
-    Rule(id="SR-JAVA-007", title="Predictable random generator", severity="low", category="Cryptography",
+    Rule(id="SR-GEN-013", title="Predictable random generator", severity="low", category="Cryptography",
          cwe="CWE-338", owasp="A02", languages=JVM + CS, tags=("crypto",), keywords=("random",),
          confidence="low", pattern=r"new\s+(?:java\.util\.)?Random\s*\(",
          description="java.util.Random / System.Random are predictable and unsuitable for tokens or keys.",
@@ -966,7 +967,7 @@ RULES: List[Rule] = [
                      "running the fork's code in it allows secret theft (\"pwn request\").",
          recommendation="Use pull_request for untrusted code or never check out the PR head in this trigger."),
     Rule(id="SR-CI-002", title="Workflow script injection", severity="high", category="CI/CD", cwe="CWE-94",
-         owasp="A03", path=WORKFLOW_PATH, tags=("injection", "ci"), keywords=("github.",),
+         owasp="A03", path=WORKFLOW_PATH, tags=("injection", "ci"), keywords=("github.",), region="ci-scripts",
          pattern=r"\$\{\{\s*github\.(?:event\.(?:issue\.(?:title|body)|pull_request\.(?:title|body|head\.ref|head\.label)|comment\.body|review\.body|review_comment\.body|pages\.[^}]*page_name|commits\.[^}]*(?:message|author\.(?:email|name))|head_commit\.(?:message|author\.(?:email|name))|workflow_run\.head_branch)|head_ref)\s*\}\}",
          description="Attacker-controlled GitHub context values (issue titles, PR bodies, branch names) are "
                      "expanded directly into the workflow. Inside run: steps they become shell commands.",
@@ -1056,6 +1057,32 @@ RULES: List[Rule] = [
                      "HTML.",
          recommendation="Use res.json() for data or render through an escaping template engine; escape any value "
                         "that must be embedded in HTML."),
+    Rule(id="SR-JS-025", title="Template auto-escaping disabled (JavaScript)", severity="medium",
+         category="Cross-Site Scripting", cwe="CWE-79", owasp="A03", languages=JS, tags=("xss", "injection"),
+         keywords=("autoescape", "noescape", "escapemarkup"),
+         pattern=r"(?i)\bautoescape['\"]?\s*:\s*(?:false|0)\b|\bnoEscape['\"]?\s*:\s*true\b|\bescapeMarkup['\"]?\s*:\s*false\b",
+         description="Template engines such as swig, nunjucks, dust and Handlebars escape HTML by default. Turning "
+                     "auto-escaping off renders every interpolated value as raw HTML, so user-controlled content "
+                     "executes as script in victims' browsers (XSS).",
+         recommendation="Keep auto-escaping enabled (autoescape: true) and mark only constant, reviewed markup as "
+                        "safe in the specific places that need it."),
+    Rule(id="SR-JS-026", title="Hardcoded session or cookie secret", severity="high", category="Authentication",
+         cwe="CWE-798", owasp="A07", languages=JS, tags=("auth", "secrets"), needs_strings=True,
+         keywords=("secret", "keys"),
+         pattern=r"(?i)\b(?:cookie[_-]?secret|session[_-]?secret|secret[_-]?key[_-]?base)['\"]?\s*[:=]\s*['\"][^'\"\n]{4,}['\"]|\b(?:session|cookieSession)\s*\(\s*\{[^}]{0,300}?\b(?:secret|keys)\s*:\s*\[?\s*['\"][^'\"\n]{4,}['\"]",
+         description="The secret that signs or encrypts session cookies is a literal in the source code. Anyone "
+                     "who can read the repository can forge session cookies and impersonate users, and the value "
+                     "cannot be rotated without a deployment.",
+         recommendation="Read the secret from the environment or a secret manager, generate a long random value "
+                        "and rotate the one that was committed."),
+    Rule(id="SR-JS-027", title="Session cookie without Secure/HttpOnly protection", severity="medium",
+         category="Misconfiguration", cwe="CWE-614", owasp="A05", languages=JS, tags=("auth", "session"),
+         source="structural", confidence="medium",
+         description="The cookie that carries the session is created without the Secure flag (so browsers also send "
+                     "it over plain HTTP, where it can be sniffed) or with HttpOnly disabled (so any script on the "
+                     "page can read it). The setting may simply be missing, or commented out.",
+         recommendation="Set cookie: { secure: true, httpOnly: true, sameSite: 'lax' } (behind a proxy also set "
+                        "app.set('trust proxy', 1))."),
     Rule(id="SR-JS-024", title="Regular expression built from user input", severity="medium", category="Injection",
          cwe="CWE-1333", owasp="A03", languages=JS, tags=("injection",),
          description="new RegExp() compiles attacker-controlled patterns, enabling regular-expression denial of "
@@ -1151,13 +1178,28 @@ RULES: List[Rule] = [
 
 # Patterns that must read inside string literals (algorithm names, URLs, wildcards, keys...).
 NEEDS_STRINGS = {
-    "SR-PY-008", "SR-PY-013", "SR-PY-017", "SR-JS-010", "SR-JS-012", "SR-JS-013", "SR-JS-014", "SR-JS-015",
-    "SR-JS-019", "SR-JS-020", "SR-JS-021", "SR-JS-022", "SR-JAVA-004", "SR-JAVA-005", "SR-PHP-009", "SR-GO-002",
+    "SR-PY-008", "SR-PY-013", "SR-PY-017", "SR-GEN-008", "SR-JS-012", "SR-JS-013", "SR-JS-014", "SR-JS-015",
+    "SR-GEN-009", "SR-GEN-010", "SR-GEN-011", "SR-JS-022", "SR-JS-026", "SR-JAVA-004", "SR-JAVA-005", "SR-PHP-009", "SR-GO-002",
     "SR-GO-004", "SR-GO-005", "SR-C-005", "SR-GEN-001", "SR-GEN-002", "SR-GEN-003", "SR-GEN-004", "SR-GEN-006",
 }
 for _rule in RULES:
     if _rule.id in NEEDS_STRINGS:
         _rule.needs_strings = True
+
+# Rules whose ID used to carry a language prefix that did not match where they apply (the JWT rule was "SR-JS-021"
+# but fired on Python too). Old IDs keep working everywhere a user wrote one: .securerepo.toml, nosec comments, the
+# triage knowledge base and shared triage files. Fingerprints keep using the legacy ID, so past decisions still match.
+RULE_ALIASES: Dict[str, str] = {
+    "SR-JS-010": "SR-GEN-008", "SR-JS-019": "SR-GEN-009", "SR-JS-020": "SR-GEN-010", "SR-JS-021": "SR-GEN-011",
+    "SR-JAVA-002": "SR-GEN-012", "SR-JAVA-007": "SR-GEN-013",
+}
+LEGACY_IDS: Dict[str, str] = {new: old for old, new in RULE_ALIASES.items()}
+
+
+def canonical_rule_id(rule_id: str) -> str:
+    rule_id = (rule_id or "").strip()
+    return RULE_ALIASES.get(rule_id, rule_id)
+
 
 RULES_BY_ID: Dict[str, Rule] = {rule.id: rule for rule in RULES}
 PATTERN_RULES: List[Rule] = [rule for rule in RULES if rule.pattern]

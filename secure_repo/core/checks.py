@@ -189,7 +189,15 @@ _CONTENT_REQUIRED = {
 }
 
 
+# "Dockerfile.db" is a Dockerfile for the database service, not a database file: these tool files use the part
+# after the dot as a variant name, never as a file type.
+_NAMED_TOOL_FILES = re.compile(r"(Dockerfile|Containerfile|Makefile|GNUmakefile|Jenkinsfile|Vagrantfile|Procfile|"
+                               r"Gemfile|Rakefile|Brewfile|Podfile)(\.[\w.-]+)?$", re.I)
+
+
 def match_sensitive_file(rel_path: str) -> Optional[Tuple[str, str, Optional[re.Pattern]]]:
+    if _NAMED_TOOL_FILES.fullmatch(rel_path.rsplit("/", 1)[-1]):
+        return None
     for pattern, label, severity, exclude in SENSITIVE_FILE_PATTERNS:
         if pattern.search(rel_path):
             if exclude is not None and exclude.search(rel_path):

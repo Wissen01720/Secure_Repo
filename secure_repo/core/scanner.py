@@ -25,17 +25,22 @@ from typing import Dict, List, Optional, Tuple
 
 from secure_repo import __author__, __version__
 from secure_repo.core import (checks, compliance, confidence, deps as depmod, gitops, intel, jsflow, lexer, pyast,
-                              resolver, summary as summarymod, triage)
+                              regions, resolver, summary as summarymod, thirdparty, triage, webchecks)
 from secure_repo.core.config import ProjectConfig, load_config
 from secure_repo.core.events import EventBus
 from secure_repo.core.languages import DOCUMENTATION
 from secure_repo.core.models import OWASP_TOP10, SEVERITY_RANK, SUPPRESSED_STATUSES, Dependency, Finding, owasp_key
-from secure_repo.core.rules import PATTERN_RULES, RULES, RULES_BY_ID, Rule
+from secure_repo.core.rules import PATTERN_RULES, RULES, RULES_BY_ID, Rule, canonical_rule_id
 from secure_repo.core.walker import FileInfo, StructureTree, enumerate_files, read_text
 from secure_repo.core.workspace import Target, Workspace, prepare_workspace
 
 # Inline suppression directives are only honoured inside real comments of trusted targets, and they are always
 # recorded in the report (status "suppressed_inline"). Optionally followed by rule IDs: ``# nosec SR-PY-005 reason``.
+TEST_SEVERITY_STEP = {"critical": "high", "high": "medium", "medium": "low"}
+MARKUP_EXTENSIONS = (".html", ".htm", ".xhtml", ".ejs", ".hbs", ".handlebars", ".jinja", ".jinja2", ".j2", ".twig",
+                    ".erb", ".cshtml", ".razor", ".vue", ".svelte", ".php", ".jsp", ".mustache", ".njk")
+MAX_EVIDENCE_LINES = 6      # lines of a multi-line call shown as evidence
+EVIDENCE_LIMIT = 320        # characters
 DIRECTIVE_RE = re.compile(r"(?i)\bnosec\b|securerepo:ignore\b(?!-file)|noqa:\s*secure")
 RULE_ID_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{1,4}\b")
 COMMENT_START_RE = re.compile(r"#|//|--|<!--|/\*|\brem\b|::", re.IGNORECASE)
@@ -91,7 +96,8 @@ class Scanner:
         self.ignore_markers: List[str] = []     # files carrying a legacy "ignore-file" marker (never honoured)
         self._min_conf_from_repo = False
         # What was NOT (fully) analyzed - shown in every report so the analyst knows the blind spots.
-        self.not_analyzed: Dict = {"directories": [], "minified": [], "too_large": [], "binary": 0, "by_type": 0}
+        self.not_analyzed: Dict = {"directories": [], "minified": [], "too_large": [], "binary": 0, "by_type": 0,
+                                   "unparsed": []}
         self.engine_stats: Dict[str, int] = {"python_ast": 0, "python_fallback": 0, "js_flow": 0, "masked_files": 0}
         self._rule_cache: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
         self.log_lines: List[str] = []
@@ -164,13 +170,13 @@ class Scanner:
         return quote is not None
 
     @staticmethod
-    def _snippet(line_text: str, column: int) -> str:
+    def _snippet(line_text: str, column: int, limit: int = 220) -> str:
         stripped = line_text.strip()
         offset = len(line_text) - len(line_text.lstrip())
         column = max(0, column - offset)
-        if len(stripped) > 220:
+        if len(stripped) > limit:
             start = max(0, column - 80)
-            stripped = ("…" if start else "") + stripped[start:start + 200] + "…"
+            stripped = ("…" if start else "") + stripped[start:start + limit - 20] + "…"
         return checks.redact_text(stripped)
 
     # ------------------------------------------------------------------ analysis
@@ -218,7 +224,7 @@ class Scanner:
             directive = DIRECTIVE_RE.search(comment) if comment else None
             if not directive:
                 return None
-            rule_ids = RULE_ID_RE.findall(comment[directive.end():])
+            rule_ids = [canonical_rule_id(r) for r in RULE_ID_RE.findall(comment[directive.end():])]
             if rule_ids and rule_id not in rule_ids:
                 return None
             if not self.trusted:
@@ -246,8 +252,19 @@ class Scanner:
                     self._count_noise(f"python: {reason}", amount)
                 for item in py_findings:
                     rule = RULES_BY_ID[item.rule_id]
+                    first = self._snippet(line_text_of(item.line), item.col)
+                    evidence, extra = first, dict(item.extra)
+                    if item.end_line > item.line:
+                        # Multi-line call: show the whole expression, but keep the first line as the stable basis
+                        # of the fingerprint so earlier triage decisions still match.
+                        last = min(item.end_line, item.line + MAX_EVIDENCE_LINES - 1)
+                        joined = " ".join(line_text_of(n).strip() for n in range(item.line, last + 1))
+                        evidence = self._snippet(re.sub(r"\s+", " ", joined), 0, limit=EVIDENCE_LIMIT)
+                        if last < item.end_line:
+                            evidence += " ..."
+                        extra["fp_snippet"] = first
                     file_findings.append(self._finding_from_rule(
-                        rule, info.rel, item.line, self._snippet(line_text_of(item.line), item.col),
+                        rule, info.rel, item.line, evidence, extra=extra,
                         detail=item.detail, severity=item.severity, in_test=in_test, title=item.title,
                         engine=item.engine, flow=item.flow, confidence_label=item.confidence))
             except (SyntaxError, ValueError, RecursionError, MemoryError):
@@ -269,11 +286,18 @@ class Scanner:
             if rule.category == "Custom":
                 engine = "custom"
             seen = set()
+            allowed_lines = None
             for match in regex.finditer(subject):
                 line_no, _masked_line, column = locate(match.start())
                 line_text = line_text_of(line_no)
                 if line_no in seen:
                     continue
+                if rule.region:
+                    if allowed_lines is None:
+                        allowed_lines = regions.REGIONS[rule.region](text)
+                    if line_no not in allowed_lines:
+                        self._count_noise(f"{rule.id}: outside {rule.region} (not an execution context)")
+                        continue
                 if views is None and not rule.scan_comments and line_text.lstrip().startswith(COMMENT_PREFIXES):
                     continue
                 if rule.exclude_re and rule.exclude_re.search(line_text):
@@ -296,6 +320,14 @@ class Scanner:
                                                              severity=severity, in_test=in_test, engine=engine))
                 if len(seen) >= MAX_PER_RULE_PER_FILE:
                     break
+
+        # Layer 2c - absent or weak settings that no single line shows (cookie flags) ----------------
+        if views is not None and info.language in lexer.JS_LIKE and ("session" in lower or "cookie" in lower):
+            for offset, detail in webchecks.cookie_flag_issues(views["no_comments"]):
+                line_no, _masked, column = locate(offset)
+                file_findings.append(self._finding_from_rule(
+                    RULES_BY_ID[webchecks.RULE_COOKIE_FLAGS], info.rel, line_no,
+                    self._snippet(line_text_of(line_no), column), detail=detail, in_test=in_test, engine="lexical"))
 
         # Layer 2b - JavaScript / TypeScript data flow --------------------------------------------
         if views is not None and info.language in lexer.JS_LIKE:
@@ -366,6 +398,19 @@ class Scanner:
             for rule_id, line_no, snippet, detail in checks.analyze_dockerfile(text):
                 file_findings.append(self._finding_from_rule(RULES_BY_ID[rule_id], info.rel, line_no, snippet,
                                                              detail=detail, in_test=in_test, engine="ast"))
+
+        # Context that lowers confidence without hiding anything: bundled libraries and documentation examples.
+        bundled = None if is_doc else thirdparty.detect(info.rel, info.language, text)
+        example_lines = set()
+        if info.rel.lower().endswith(MARKUP_EXTENSIONS) and ("<pre" in lower or "<code" in lower):
+            example_lines = regions.markup_example_lines(text)
+        for finding in file_findings:
+            if finding.source in ("dependency", "hygiene"):
+                continue
+            if bundled:
+                finding.extra["third_party"] = bundled
+            if finding.line in example_lines:
+                finding.extra["example_block"] = True
 
         if minified:
             kept_findings = []
@@ -455,10 +500,17 @@ class Scanner:
             text = read_text(info, 50 * 1024 * 1024)
             if text is None:
                 continue
+            problem = depmod.syntax_error(info.rel, text)
+            if problem:
+                # A damaged manifest must not look like "no dependencies": say so in the report.
+                self.not_analyzed["unparsed"].append({"path": info.rel, "error": problem})
+                self.bus.log(f"{info.rel} is not valid ({problem}); its dependencies may be missing", "warn")
             try:
                 result = parser(text, info.rel, issues)
             except Exception as exc:  # malformed manifest - report and continue
                 self.bus.log(f"Could not parse {info.rel}: {exc}", "warn")
+                if not problem:
+                    self.not_analyzed["unparsed"].append({"path": info.rel, "error": f"parser error: {str(exc)[:120]}"})
                 continue
             for dep in result:
                 if is_lock:
@@ -741,6 +793,12 @@ class Scanner:
                     "original_severity": finding["severity"],
                     "severity_override_origin": "repo" if rule_id in self.config.repo_severity else "user"})
                 finding["severity"] = override
+            extra = finding.setdefault("extra", {})
+            if (finding.get("in_test") and finding.get("source") == "code" and "original_severity" not in extra
+                    and finding["severity"] in TEST_SEVERITY_STEP):
+                # Test code is reported (it can hold real flaws) but one level lower: fixtures are not production.
+                extra.update({"original_severity": finding["severity"], "test_downgrade": True})
+                finding["severity"] = TEST_SEVERITY_STEP[finding["severity"]]
             finding["fingerprint"] = triage.fingerprint(finding)
             confidence.assess(finding, self.knowledge)
             if finding["status"] == "open" and rule_id in disabled:

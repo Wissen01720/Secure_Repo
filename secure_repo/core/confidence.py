@@ -15,6 +15,8 @@ LEVELS = (("high", 70), ("medium", 45), ("low", 0))
 DOC_PATH = re.compile(r"(?i)(^|/)(docs?|examples?|samples?|demos?|tutorials?|fixtures?|mocks?|stubs?|__mocks__|"
                       r"testdata|benchmarks?)(/|$)")
 GENERATED = re.compile(r"(?i)(\.min\.|\.pb\.go$|_pb2\.py$|\.generated\.|(^|/)generated/|(^|/)gen/)")
+# Rules that only deserve high confidence when a data flow from an untrusted source was confirmed.
+NEEDS_TAINT = {"SR-PY-011"}
 ENGINE_BONUS = {"taint": (20, "untrusted data flow confirmed from source to sink"),
                 "ast": (10, "confirmed by syntax-tree analysis"),
                 "lexical": (5, "comments and string literals excluded"),
@@ -34,6 +36,19 @@ def assess(finding: Dict, knowledge=None) -> None:
         score += bonus[0]
         reasons.append(bonus[1])
     path = finding.get("file") or ""
+    signals = finding.get("extra") or {}
+    if finding.get("rule_id") in NEEDS_TAINT and finding.get("engine") != "taint":
+        score = min(score, 69)
+        reasons.append("no untrusted source was confirmed, so confidence is capped at medium")
+    if signals.get("internal_sql"):
+        score -= 30
+        reasons.append("only internal identifiers (self.*, quote_name(), numbers) are interpolated")
+    if signals.get("third_party"):
+        score -= 30
+        reasons.append(f"bundled third-party library ({signals['third_party']}): update it instead of editing it")
+    if signals.get("example_block"):
+        score -= 25
+        reasons.append("inside a <pre>/<code> block: a documentation example, not executed code")
     if finding.get("in_test"):
         score -= 15
         reasons.append("located in test code")

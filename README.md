@@ -9,7 +9,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-00e5ff?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
-![Rules](https://img.shields.io/badge/detection%20rules-169-ff2e97?style=flat-square)
+![Rules](https://img.shields.io/badge/detection%20rules-172-ff2e97?style=flat-square)
 ![License](https://img.shields.io/badge/license-Ethical%20Source--Available-9d7bff?style=flat-square)
 
 <img src="docs/images/cli-banner.svg" alt="Secure Repo CLI banner and boot sequence" width="900">
@@ -47,7 +47,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 |---|---|
 | **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
 | **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
-| **Static analysis** | 169 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Static analysis** | 172 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
 | **Layered engine** | Comments and strings are masked, Python is analyzed on its syntax tree with taint tracking, JavaScript/TypeScript get a data-flow pass. Findings confirmed by data flow show the **source → sink** trace. |
 | **Learns from you** | Mark false positives, accepted risks or confirmed findings; decisions, learned code patterns and per-rule statistics are re-applied on every scan. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
@@ -203,7 +203,7 @@ repository.
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
   [5]  Settings  [compliance: OFF · intel: ON · output: ~/.local/share/secure-repo/reports]
-  [6]  List detection rules (169)
+  [6]  List detection rules (172)
   [7]  Usage guide
   [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
   [0]  Exit
@@ -629,13 +629,39 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
   one at **C (max 74)**, however clean the rest of the repository is. Findings in tests, suppressed or accepted
   findings never trigger the cap. The report shows the score you would have had without it.
 - **What was NOT analyzed.** `quality.md`, the CLI and the GUI list every skipped folder (with the reason), minified
-  bundles (analyzed in a reduced mode: secrets and critical findings only), files over the size limit and binaries.
+  bundles (analyzed in a reduced mode: secrets and critical findings only), files over the size limit, binaries and
+  dependency manifests with a syntax error (their libraries are missing from the inventory).
 - **Folders named `build`, `dist`, `target`, `vendor`...** are skipped only with evidence (listed in `.gitignore`,
   `vendor/` at the root or next to `go.mod`/`composer.json`/`Gemfile`, or full of build artifacts). A source folder
   that merely has one of those names is analyzed. `node_modules`, `.git` and similar are always skipped.
 - **Regex safety.** Custom rule patterns and allowlist values that could cause catastrophic backtracking (ReDoS)
   are rejected with an error instead of hanging the scan.
 - **CSV safety.** Cells starting with `=`, `+`, `-` or `@` are prefixed with `'` so spreadsheets never run them.
+
+### Fewer false positives (how confidence and severity are calibrated)
+
+Nothing is hidden: every adjustment below lowers confidence or severity and says why in the finding's
+*confidence reasons*.
+
+- **Bundled third-party libraries** (a `jquery-3.6.0.js` or a `materialize.js` copied into `static/js/`, recognised by
+  file name, by a `/*! Library vX.Y` banner, or by a `vendor/`-style folder) are reported at low confidence, marked as
+  third-party, weigh half in the score and never trigger the grade cap. Update the library instead of editing it.
+- **Documentation examples:** code inside `<pre>`/`<code>` blocks of HTML templates, and files under `docs/`,
+  `tutorial/`, `examples/`, `samples/`, is reported at low confidence.
+- **Test code** is reported in its own file (`findings/tests.md`), one severity level lower, and weighs half.
+- **SQL built by formatting** (`SR-PY-011`) is capped at medium confidence unless an untrusted source is confirmed,
+  and drops to low when only internal identifiers (`self.*`, `quote_name()`, numbers) are interpolated. The finding
+  names the interpolated value and shows the whole multi-line call as evidence.
+- **GitHub Actions expressions** (`SR-CI-002`) are reported only inside `run:` and `github-script` `script:` bodies,
+  never under `env:` or `with:`, which is the mitigation the rule itself recommends.
+- **File names:** `Dockerfile.db`, `Makefile.dev`... are variants of a tool file, not database or key files.
+
+### Stable rule IDs
+
+A rule's ID reflects the languages it applies to. Rules that used to carry a misleading prefix were renamed to
+language-neutral IDs (`SR-JS-010/019/020/021` -> `SR-GEN-008/009/010/011`, `SR-JAVA-002/007` -> `SR-GEN-012/013`).
+The old IDs keep working in `.securerepo.toml`, in `nosec` comments and in your triage history, and fingerprints of
+existing decisions are unchanged.
 
 ---
 
@@ -703,7 +729,7 @@ their libraries are still analyzed through the manifests and lockfiles.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, updater, 169 rules, lexical masking, Python AST/taint and JS data-flow engines,
+│   ├── core/         scanner, updater, 172 rules, lexical masking, Python AST/taint and JS data-flow engines,
 │   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
 │   │                 triage knowledge base, confidence model, compliance frameworks, scoring
 │   ├── benchmark/    labeled corpus used by `secure-repo benchmark`

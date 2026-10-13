@@ -132,3 +132,52 @@ def test_xml_entity_bombs_are_not_expanded():
 def test_normalize_name_follows_each_ecosystem_rules():
     assert deps.normalize_name("PyPI", "Flask_RESTful.ext") == "flask-restful-ext"
     assert deps.normalize_name("npm", "Express") == "Express" or deps.normalize_name("npm", "Express") == "express"
+
+
+# ---- a damaged manifest must not look like "no dependencies" -------------------------------------------------
+BROKEN = {
+    "package.json": '{"dependencies": {"express": ',
+    "composer.lock": '{"packages": [',
+    "pyproject.toml": "[project\nname=",
+    "Cargo.toml": 'name = = "x"',
+    "pom.xml": "<project><dependencies><dependency>",
+    "App.csproj": "<Project><ItemGroup>",
+}
+
+
+@pytest.mark.parametrize("name", sorted(BROKEN))
+def test_syntax_errors_are_detected_for_strict_formats(name):
+    assert deps.syntax_error(name, BROKEN[name])
+
+
+@pytest.mark.parametrize("name", sorted(n for n in SAMPLES if n in ("package.json", "composer.lock", "pyproject.toml",
+                                                                    "Cargo.toml", "pom.xml", "App.csproj", "Pipfile.lock",
+                                                                    "poetry.lock", "packages.config", "libs.versions.toml")))
+def test_valid_samples_have_no_syntax_error(name):
+    assert deps.syntax_error(name, SAMPLES[name][0]) is None
+
+
+def test_lenient_and_empty_files_are_not_flagged():
+    assert deps.syntax_error("requirements.txt", "this is ((not a requirement") is None
+    assert deps.syntax_error("package.json", "   \n") is None
+    assert deps.syntax_error("README.md", "{") is None
+
+
+def test_the_report_lists_manifests_that_could_not_be_parsed(tmp_path):
+    from secure_repo.core.events import EventBus
+    from secure_repo.core.scanner import Scanner, ScanOptions
+    from secure_repo.core.workspace import Target
+    from secure_repo.report import formats
+    from tests.conftest import write
+
+    root = str(tmp_path / "r")
+    write(root, "package.json", BROKEN["package.json"])
+    write(root, "services/api/pom.xml", BROKEN["pom.xml"])
+    write(root, "requirements.txt", "flask==2.0.1\n")
+    report, _ = Scanner(ScanOptions(offline=True, trust_repo_config=True), EventBus()).run(Target.parse(root),
+                                                                                            write_reports=False)
+    unparsed = {item["path"]: item["error"] for item in report["analysis"]["not_analyzed"]["unparsed"]}
+    assert set(unparsed) == {"package.json", "services/api/pom.xml"} and "JSON" in unparsed["package.json"]
+    assert any(d["name"] == "flask" for d in report["dependencies"])
+    markdown = formats.markdown_quality(report)
+    assert "could not be parsed" in markdown and "services/api/pom.xml" in markdown

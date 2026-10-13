@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core.models import TRIAGE_STATUSES
+from secure_repo.core.rules import LEGACY_IDS, canonical_rule_id
 
 REPO_TRIAGE_FILE = os.path.join(".securerepo", "triage.json")
 _LOCK = threading.Lock()
@@ -70,14 +71,45 @@ def code_shape(snippet: str) -> str:
     return re.sub(r"\s+", " ", text.strip())[:300]
 
 
+def migrate_rule_ids(payload: Dict) -> Dict:
+    """Rewrite legacy rule IDs (see RULE_ALIASES) in a knowledge base or shared triage payload, in place."""
+    for project in (payload.get("projects") or {}).values():
+        for decision in (project.get("decisions") or {}).values():
+            if isinstance(decision, dict) and decision.get("rule_id"):
+                decision["rule_id"] = canonical_rule_id(decision["rule_id"])
+    for decision in (payload.get("decisions") or {}).values():
+        if isinstance(decision, dict) and decision.get("rule_id"):
+            decision["rule_id"] = canonical_rule_id(decision["rule_id"])
+    for pattern in payload.get("patterns") or []:
+        if isinstance(pattern, dict) and pattern.get("rule_id"):
+            pattern["rule_id"] = canonical_rule_id(pattern["rule_id"])
+    stats = payload.get("rule_stats")
+    if isinstance(stats, dict):
+        merged: Dict = {}
+        for rule_id, counters in stats.items():
+            target = merged.setdefault(canonical_rule_id(rule_id), {})
+            for status, value in (counters or {}).items():
+                target[status] = target.get(status, 0) + value if isinstance(value, int) else value
+        payload["rule_stats"] = merged
+    return payload
+
+
+def stable_snippet(finding: Dict) -> str:
+    """The snippet that identifies a finding across versions (multi-line evidence keeps its first line here)."""
+    return (finding.get("extra") or {}).get("fp_snippet") or finding.get("snippet", "")
+
+
 def fingerprint(finding: Dict) -> str:
     extra = finding.get("extra") or {}
+    # Renamed rules keep hashing their legacy ID so decisions recorded before the rename still match.
+    rule_id = LEGACY_IDS.get(finding["rule_id"], finding["rule_id"])
+    finding = dict(finding, rule_id=rule_id)
     if finding.get("source") == "dependency" and extra.get("package"):
         basis = f"{finding['rule_id']}|dep|{extra.get('ecosystem')}|{extra.get('package')}|{extra.get('version', '')}"
     elif finding.get("file") in ("", "."):
         basis = f"{finding['rule_id']}|repo"
     else:
-        basis = f"{finding['rule_id']}|{finding.get('file')}|{normalize_code(finding.get('snippet', ''))}"
+        basis = f"{finding['rule_id']}|{finding.get('file')}|{normalize_code(stable_snippet(finding))}"
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:20]
 
 
@@ -110,6 +142,7 @@ class KnowledgeBase:
                     loaded = json.load(handle)
                 if isinstance(loaded, dict):
                     self.data.update({k: loaded.get(k, v) for k, v in self.data.items()})
+                    migrate_rule_ids(self.data)
             except (OSError, ValueError):
                 pass
 
@@ -150,7 +183,7 @@ class KnowledgeBase:
                              "scope": scope}
             stats[status] = stats.get(status, 0) + 1
         if status == "false_positive" and scope in ("project-pattern", "global-pattern"):
-            shape = code_shape(finding.get("snippet", ""))
+            shape = code_shape(stable_snippet(finding))
             if shape:
                 self.data["patterns"].append({
                     "id": uuid.uuid4().hex[:10], "rule_id": finding["rule_id"], "shape": shape,
@@ -225,7 +258,7 @@ class KnowledgeBase:
                 continue
             if finding.get("source") in ("dependency", "hygiene"):
                 continue
-            shape = code_shape(finding.get("snippet", ""))
+            shape = code_shape(stable_snippet(finding))
             for pattern in patterns:
                 if pattern["rule_id"] == finding["rule_id"] and pattern["shape"] == shape:
                     finding["status"] = "false_positive"
@@ -265,7 +298,7 @@ class KnowledgeBase:
         for project_key_, project in (payload.get("projects") or {}).items():
             self.project(project_key_, project.get("name", ""))["decisions"].update(project.get("decisions", {}))
             imported += len(project.get("decisions", {}))
-        for rule_id, stats in (payload.get("rule_stats") or {}).items():
+        for rule_id, stats in (migrate_rule_ids(payload).get("rule_stats") or {}).items():
             target = self.data["rule_stats"].setdefault(rule_id, {})
             for status, value in stats.items():
                 target[status] = max(target.get(status, 0), value)
@@ -303,6 +336,6 @@ def load_repo_triage(root: str) -> Dict:
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
-        return payload if isinstance(payload, dict) else {}
+        return migrate_rule_ids(payload) if isinstance(payload, dict) else {}
     except (OSError, ValueError):
         return {}

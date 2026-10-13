@@ -2,6 +2,34 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.2.3] - 2026-10-13
+
+### Added
+- **New JavaScript rules** found by auditing NodeGoat: `SR-JS-025` template auto-escaping disabled (swig, nunjucks,
+  dust, Handlebars), `SR-JS-026` hardcoded session/cookie secret, `SR-JS-027` session cookie without `Secure`
+  or with `HttpOnly` disabled (also when the setting is commented out). 172 rules in total.
+- `findings/tests.md`: findings in test code are reported apart.
+- **Damaged manifests are no longer silent:** a `package.json`, `pyproject.toml`, `pom.xml`... with a syntax error is
+  listed under "What was NOT analyzed" (quality.md, CLI and GUI) instead of looking like "no dependencies".
+
+### Changed
+- **Fewer false positives, nothing hidden.** On Django, high-confidence SQL findings went from 52 to 0 and
+  high-severity findings from 308 to 152 (the rest are in test code), with no finding removed except three
+  workflow false positives.
+  - `SR-CI-002` reports only inside `run:` / `script:` bodies, not under `env:` or `with:`.
+  - `SR-PY-011` is capped at medium confidence without a confirmed untrusted source, and low for internal
+    identifiers; the detail names the interpolated value and the evidence shows the whole multi-line call.
+  - Bundled third-party libraries and `<pre>`/`<code>` examples are reported at low confidence and never trigger
+    the grade cap; test-code findings are one severity level lower.
+  - `Dockerfile.db`, `Makefile.dev`... are no longer "sensitive files".
+- **Rule IDs match their languages:** `SR-JS-010/019/020/021` and `SR-JAVA-002/007` became `SR-GEN-008..013`. Old IDs
+  keep working in configuration, `nosec` comments and triage; fingerprints did not change.
+
+### Fixed
+- The CI failed on Linux because two CLI tests depended on the terminal width.
+- Printing to a Windows character device (`> NUL`) crashed on a symbol the console could not encode; it now
+  degrades instead. Closed input (`EOFError`) ends with a clear message instead of a traceback.
+
 ## [1.2.2] - 2026-10-12
 
 ### Security

@@ -36,7 +36,8 @@ report.json                     Complete machine-readable results.
 report.sarif                    SARIF 2.1.0 - import into GitHub code scanning, Azure DevOps, IDEs.
 summary.md                      Executive summary.
 quality.md                      Analysis engines, noise discarded, confidence and suppressed findings.
-findings/<severity>.md          Active findings grouped by severity with explanation, data flow and fix.
+findings/<severity>.md          Active findings in production code, grouped by severity, with explanation, data flow and fix.
+findings/tests.md               Findings located in test code (reported apart, severity lowered one level).
 findings/by-category/*.md       Active findings grouped by weakness category.
 findings/suppressed.md          False positives / filtered findings with the reason (audit trail).
 findings/findings.csv           Spreadsheet-friendly list of every finding and its triage status.
@@ -125,7 +126,9 @@ def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[s
         _write(os.path.join(folder, *rel.split("/")), content)
         emit(rel)
 
-    active = [f for f in report["findings"] if reportable(f)]
+    everything = [f for f in report["findings"] if reportable(f)]
+    active = [f for f in everything if not f.get("in_test")]          # production code
+    in_tests = [f for f in everything if f.get("in_test")]            # reported apart, one severity level lower
     out("report.json", json.dumps(report, indent=2, ensure_ascii=False))
     out("report.html", build_html_report(report))
     out("report.sarif", json.dumps(formats.sarif(report), indent=2, ensure_ascii=False))
@@ -141,6 +144,8 @@ def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[s
     shutil.rmtree(os.path.join(folder, "findings", "by-category"), ignore_errors=True)
     for category, subset in categories.items():
         out(f"findings/by-category/{_slug(category.lower(), 60)}.md", formats.markdown_findings(report, subset, category))
+    out("findings/tests.md", formats.markdown_findings(report, sorted(in_tests, key=lambda f: SEVERITIES.index(f["severity"])),
+                                                       "Findings in test code (severity lowered one level)"))
     out("findings/suppressed.md", formats.markdown_suppressed(report))
     out("findings/findings.csv", formats.findings_csv(report))
 

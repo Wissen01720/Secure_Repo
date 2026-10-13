@@ -95,12 +95,15 @@ class PyFinding:
     engine: str = "ast"
     flow: List[Dict] = field(default_factory=list)
     title: Optional[str] = None
+    end_line: int = 0                                   # last line of the offending expression (multi-line calls)
+    extra: Dict = field(default_factory=dict)           # signals for the confidence model
 
 
 class _Scope:
     def __init__(self, tainted: Optional[Dict[str, Taint]] = None, route: bool = False, name: str = ""):
         self.tainted: Dict[str, Taint] = dict(tainted or {})
         self.dynamic: Set[str] = set()   # names holding dynamically built strings (SQL building)
+        self.dynamic_src: Dict[str, List[ast.AST]] = {}   # ...and the expressions that built them
         self.route = route
         self.name = name
 
@@ -157,7 +160,8 @@ class PythonAnalyzer:
         return self.lines[line - 1].strip() if 0 < line <= len(self.lines) else ""
 
     def _emit(self, rule_id: str, node: ast.AST, severity: Optional[str] = None, confidence: str = "high",
-              detail: str = "", taint: Optional[Taint] = None, sink: str = "", title: Optional[str] = None) -> None:
+              detail: str = "", taint: Optional[Taint] = None, sink: str = "", title: Optional[str] = None,
+              extra: Optional[Dict] = None) -> None:
         line = getattr(node, "lineno", 0)
         key = (rule_id, line)
         if key in self._seen:
@@ -175,7 +179,8 @@ class PythonAnalyzer:
             detail = (detail + " " if detail else "") + (
                 f"Untrusted data from {taint.origin} (line {first}) reaches {sink} (line {line}).")
         self.findings.append(PyFinding(rule_id, line, getattr(node, "col_offset", 0), severity, confidence,
-                                       detail.strip(), engine, flow, title))
+                                       detail.strip(), engine, flow, title,
+                                       end_line=getattr(node, "end_lineno", None) or line, extra=extra or {}))
 
     def _skip(self, reason: str) -> None:
         self.suppressed[reason] = self.suppressed.get(reason, 0) + 1
@@ -289,6 +294,68 @@ class PythonAnalyzer:
             return node.id in scope.dynamic
         return False
 
+    # ---- what is interpolated into a dynamic string (evidence for SQL findings) ------------------------
+    _QUOTERS = {"qn", "quote_name", "quote_ident", "quote_identifier", "escape_identifier", "identifier"}
+    _NUMERIC = {"len", "int", "float", "range", "bool", "abs", "min", "max", "round", "sum", "enumerate"}
+
+    def _leaves(self, node: ast.AST, scope: _Scope, depth: int = 0) -> List[ast.AST]:
+        """The non-constant expressions that end up inside a dynamically built string."""
+        if depth > 6 or isinstance(node, ast.Constant):
+            return []
+        if isinstance(node, ast.JoinedStr):
+            return [leaf for value in node.values if isinstance(value, ast.FormattedValue)
+                    for leaf in self._leaves(value.value, scope, depth + 1)]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and self._stringish(node.left):
+            right = node.right
+            items = list(right.elts) if isinstance(right, (ast.Tuple, ast.List)) else (
+                list(right.values) if isinstance(right, ast.Dict) else [right])
+            return [leaf for item in items for leaf in self._leaves(item, scope, depth + 1)]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self._leaves(node.left, scope, depth + 1) + self._leaves(node.right, scope, depth + 1)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("format", "join") \
+                and isinstance(node.func.value, (ast.Constant, ast.JoinedStr)):
+            values = list(node.args) + [kw.value for kw in node.keywords]
+            return [leaf for value in values for leaf in self._leaves(value, scope, depth + 1)]
+        if isinstance(node, ast.Name) and node.id in scope.dynamic_src:
+            return [leaf for source in scope.dynamic_src[node.id] for leaf in self._leaves(source, scope, depth + 1)]
+        return [node]
+
+    def _internal_fragment(self, node: ast.AST) -> bool:
+        """True for values that cannot carry request data: own attributes, quoted identifiers, numbers, placeholders."""
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, ast.Attribute):
+            root = node
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            return isinstance(root, ast.Name) and root.id in ("self", "cls")
+        if isinstance(node, ast.Name):
+            return node.id.isupper()
+        if isinstance(node, ast.Subscript):
+            return self._internal_fragment(node.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            return self._internal_fragment(node.left) or self._internal_fragment(node.right)
+        if isinstance(node, (ast.List, ast.Tuple)):
+            return all(self._internal_fragment(element) for element in node.elts)
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else (func.id if isinstance(func, ast.Name) else "")
+            lowered = name.lower()
+            if lowered in self._QUOTERS or lowered.startswith("quote") or lowered in self._NUMERIC:
+                return True
+            if lowered in ("join", "strip", "lower", "upper", "str") and isinstance(func, ast.Attribute):
+                return self._internal_fragment(func.value) and all(self._internal_fragment(a) for a in node.args)
+        return False
+
+    @staticmethod
+    def _describe(node: ast.AST) -> str:
+        try:
+            text = ast.unparse(node)
+        except Exception:  # pragma: no cover - unparse can fail on unusual trees
+            text = type(node).__name__
+        text = " ".join(text.split())
+        return text if len(text) <= 48 else text[:45] + "..."
+
     @staticmethod
     def _stringish(node: ast.AST) -> bool:
         return (isinstance(node, ast.Constant) and isinstance(node.value, str)) or isinstance(node, ast.JoinedStr)
@@ -368,8 +435,12 @@ class PythonAnalyzer:
                     scope.tainted.pop(name, None)
                 if dynamic or (isinstance(stmt, ast.AugAssign) and name in scope.dynamic):
                     scope.dynamic.add(name)
+                    sources = scope.dynamic_src.setdefault(name, []) if isinstance(stmt, ast.AugAssign) else []
+                    sources.append(value)
+                    scope.dynamic_src[name] = sources[-6:]
                 elif not isinstance(stmt, ast.AugAssign):
                     scope.dynamic.discard(name)
+                    scope.dynamic_src.pop(name, None)
             return
         if isinstance(stmt, ast.Return):
             self._scan_calls(stmt.value, scope, context=scope.name)
@@ -537,8 +608,24 @@ class PythonAnalyzer:
                 return self._emit("SR-PY-011", call, "critical", taint=found, sink=f".{attr or short}()",
                                   title="SQL injection")
             if self.is_dynamic_string(query, scope):
-                return self._emit("SR-PY-011", call, confidence="medium",
-                                  detail="The SQL text is assembled with string formatting instead of bound parameters.")
+                parts = self._leaves(query, scope)
+                risky = [part for part in parts if not self._internal_fragment(part)]
+                if risky or not parts:
+                    names = ", ".join(f"`{self._describe(part)}`" for part in risky[:4])
+                    detail = "The SQL text is assembled with string formatting instead of bound parameters"
+                    if names:
+                        detail += f"; {names} is interpolated into it."
+                    elif isinstance(query, ast.Name):
+                        detail = f"The SQL text in `{query.id}` is built with string formatting instead of bound parameters."
+                    else:
+                        detail += "."
+                    return self._emit("SR-PY-011", call, confidence="medium", detail=detail)
+                names = ", ".join(f"`{self._describe(part)}`" for part in parts[:4])
+                return self._emit(
+                    "SR-PY-011", call, confidence="low", extra={"internal_sql": True},
+                    detail=f"The SQL text is built by formatting, but only internal identifiers ({names}) are "
+                           f"interpolated and no request data reaches it. Bound parameters remain the safer habit "
+                           f"for values.")
             return
 
         if qualname in ("tempfile.mktemp",):

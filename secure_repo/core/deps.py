@@ -93,6 +93,40 @@ def _safe_xml(text: str) -> Optional[ET.Element]:
     return root
 
 
+_JSON_FILES = {"package.json", "package-lock.json", "npm-shrinkwrap.json", "composer.json", "composer.lock",
+               "pipfile.lock", "packages.lock.json"}
+_TOML_FILES = {"pyproject.toml", "pipfile", "poetry.lock", "uv.lock", "pdm.lock", "cargo.toml", "cargo.lock",
+               "libs.versions.toml"}
+_XML_FILES = {"pom.xml", "packages.config", "directory.packages.props"}
+
+
+def syntax_error(rel_path: str, text: str) -> Optional[str]:
+    """Why a manifest cannot be parsed (broken JSON / TOML / XML), or None.
+
+    The parsers deliberately tolerate bad input and return what they can, so a damaged manifest used to look like
+    "no dependencies". Formats without a strict grammar (requirements.txt, go.mod, yarn.lock...) are not checked.
+    """
+    name = os.path.basename(rel_path).lower()
+    if not text.strip():
+        return None
+    if name in _JSON_FILES:
+        try:
+            json.loads(text)
+        except ValueError as exc:
+            return f"invalid JSON: {str(exc)[:120]}"
+    elif name in _TOML_FILES:
+        if _toml is None:
+            return None
+        try:
+            _toml.loads(text)
+        except Exception as exc:  # tomllib.TOMLDecodeError (3.11+) / tomli.TOMLDecodeError
+            return f"invalid TOML: {str(exc)[:120]}"
+    elif name in _XML_FILES or name.endswith((".csproj", ".fsproj", ".vbproj")):
+        if _safe_xml(text) is None:
+            return "invalid XML"
+    return None
+
+
 _EXACT_VERSION = re.compile(r"^v?\d+(?:\.\d+)*(?:[-+.]?[0-9A-Za-z.\-+]*)?$")
 
 
