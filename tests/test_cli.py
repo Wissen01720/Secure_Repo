@@ -17,6 +17,14 @@ from tests.conftest import write
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
+@pytest.fixture(autouse=True)
+def wide_console(monkeypatch):
+    """Tables fold or truncate at the terminal width; tests must not depend on the width of the machine running them."""
+    from secure_repo.cli.theme import console
+
+    monkeypatch.setattr(console, "_width", 200, raising=False)
+
+
 def run(argv, capsys):
     code = cli.main(["--no-update-check"] + argv)
     captured = capsys.readouterr()
@@ -161,7 +169,8 @@ def test_every_renderer_handles_a_real_report(vulnerable_repo, tmp_path, capsys)
     out = ANSI.sub("", capsys.readouterr().out)
     assert "Security score" in out or "SCORE" in out.upper()
     assert report["findings"][0]["rule_id"] in out or "SR-" in out
-    assert folder and os.path.basename(folder) in out
+    # the console folds long paths at the terminal width, so compare without line breaks or spaces
+    assert folder and os.path.basename(folder) in re.sub(r"\s+", "", out)
 
 
 def test_summary_shows_the_grade_cap_and_blind_spots(tmp_path, capsys):
