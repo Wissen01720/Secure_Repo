@@ -831,7 +831,7 @@
     rows.slice(0, d.limit).forEach((x) => {
       const tr = el('tr', { class: 'click' });
       const risk = x.max_severity ? SR.sevTag(x.max_severity) : (x.issues.length ? '<span class="st warning">REVIEW</span>' : '<span class="st pass">OK</span>');
-      const adv = x.vulnerabilities.slice(0, 3).map((v) => esc(v.id)).join(', ') + (x.vulnerabilities.length > 3 ? ' +' + (x.vulnerabilities.length - 3) : '') +
+      const adv = x.vulnerabilities.slice(0, 3).map((v) => esc(v.id)).join(', ') + (x.vulnerabilities.length > 3 ? ' +' + esc(x.vulnerabilities.length - 3) : '') +
         (x.issues.length ? (x.vulnerabilities.length ? ' · ' : '') + esc(x.issues[0]) : '');
       const how = x.resolved_by || (x.source === 'registry' ? 'unresolved' : x.source);
       SR.setHTML(tr, '<td class="mono">' + esc(x.name) + (x.parent ? '<div class="muted" style="font-size:11px">via ' + esc(x.parent) + '</div>' : '') + '</td><td class="mono">' + esc(x.version || x.spec || '*') +
@@ -871,8 +871,8 @@
       const card = el('div', { class: 'card fw' });
       const s = fw.summary;
       let html = '<div class="fw-top"><div class="mini-ring">' + ring(fw.score, 64) + '</div><div><h4>' + esc(fw.name) + '</h4><div class="ver">' + esc(fw.version) +
-        '</div><div class="fw-counts"><span class="st pass">PASS ' + s.pass + '</span><span class="st warning">WARN ' + s.warning + '</span><span class="st fail">FAIL ' + s.fail +
-        '</span><span class="st manual">MANUAL ' + s.manual + '</span></div></div></div><p class="muted" style="font-size:12px;margin:12px 0 0">' + esc(fw.description) + '</p><div class="controls">';
+        '</div><div class="fw-counts"><span class="st pass">PASS ' + esc(s.pass) + '</span><span class="st warning">WARN ' + esc(s.warning) + '</span><span class="st fail">FAIL ' + esc(s.fail) +
+        '</span><span class="st manual">MANUAL ' + esc(s.manual) + '</span></div></div></div><p class="muted" style="font-size:12px;margin:12px 0 0">' + esc(fw.description) + '</p><div class="controls">';
       fw.controls.forEach((c) => {
         html += '<div class="control"><div><span class="st ' + esc(c.status) + '">' + esc(c.status.toUpperCase()) + '</span></div><div class="cid">' + esc(c.id) + '</div><div><b>' + esc(c.title) +
           '</b><div class="muted" style="font-size:12px">' + esc(c.description) + '</div><ul>' + c.evidence.map((e) => '<li>' + esc(e) + '</li>').join('') + '</ul></div></div>';
@@ -1093,7 +1093,7 @@
       const info = S.report.owasp[node.code] || {};
       return openDrawer('// OWASP category', (body) => {
         SR.setHTML(body, '<span class="tag">' + esc(node.code) + '</span><h2>' + esc(info.name || node.code) + '</h2><p>' + esc(info.description || '') +
-          '</p><h5 class="where">Weaknesses in this category (' + node.count + ' findings)</h5>');
+          '</p><h5 class="where">Weaknesses in this category (' + esc(node.count) + ' findings)</h5>');
         groupByRule(node.findings).forEach((g) => body.appendChild(ruleRow(g)));
       });
     }

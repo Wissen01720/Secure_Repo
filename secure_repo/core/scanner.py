@@ -57,7 +57,7 @@ class ScanOptions:
     include_tests: bool = True
     enrich: bool = True
     auditor: str = ""
-    output_dir: str = "secure-repo-reports"
+    output_dir: str = field(default_factory=lambda: triage.default_output_dir())
     min_confidence: str = "low"
     learning: bool = True          # apply the triage knowledge base (decisions, learned patterns, rule stats)
     resolve_versions: bool = True  # virtual lockfile resolution for unpinned dependencies
@@ -511,7 +511,7 @@ class Scanner:
                     break
 
         inventory: Dict[Tuple[str, str, str], Dependency] = {}
-        for dep, is_lock in sorted(parsed, key=lambda item: item[1]):
+        for dep, _is_lock in sorted(parsed, key=lambda item: item[1]):
             identity = dep.version or f"spec:{dep.spec}"
             key = (dep.ecosystem, depmod.normalize_name(dep.ecosystem, dep.name), identity)
             existing = inventory.get(key)
@@ -663,7 +663,7 @@ class Scanner:
         content = ""
         if os.path.isfile(gitignore):
             try:
-                with open(gitignore, "r", encoding="utf-8", errors="replace") as handle:
+                with open(gitignore, encoding="utf-8", errors="replace") as handle:
                     content = handle.read()
             except OSError:
                 pass

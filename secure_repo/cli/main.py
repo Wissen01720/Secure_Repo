@@ -19,11 +19,11 @@ from secure_repo.cli import updates as update_views
 from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authorization, discover_with_auth, main_menu,
                                   open_path, post_scan_menu, run_scan)
 from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say
-from secure_repo.core import compliance, gitops, updater
+from secure_repo.core import compliance, gitops, triage, updater
 from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import ScanOptions
-from secure_repo.core.workspace import Target, discover_branches
+from secure_repo.core.workspace import Target
 
 EPILOG = """examples:
   secure-repo                                   interactive menu
@@ -62,7 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
                            f"({', '.join(compliance.FRAMEWORKS)})")
     scan.add_argument("--offline", action="store_true", help="disable OSV.dev / deps.dev lookups")
     scan.add_argument("--no-enrich", action="store_true", help="skip license/latest-version lookups (deps.dev)")
-    scan.add_argument("-o", "--output", default="secure-repo-reports", help="reports folder (default: %(default)s)")
+    scan.add_argument("-o", "--output", default=None, metavar="DIR",
+                      help="reports folder (default: the Secure Repo data folder, outside the audited repo)")
     scan.add_argument("-y", "--yes", action="store_true", help="confirm you are authorized to audit the target")
     scan.add_argument("--no-tests", action="store_true", help="skip files that look like tests/fixtures")
     scan.add_argument("--max-file-size", type=int, default=2048, metavar="KB", help="skip larger files (default 2048)")
@@ -105,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     gui = sub.add_parser("gui", help="launch the graphical interface (local web app)")
     gui.add_argument("--port", type=int, default=0, help="port (default: random free port)")
     gui.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
-    gui.add_argument("-o", "--output", default="secure-repo-reports", help="reports folder")
+    gui.add_argument("-o", "--output", default=None, metavar="DIR", help="reports folder (default: Secure Repo data folder)")
     gui.add_argument("--offline", action="store_true", help="default the GUI to offline mode")
 
     rules = sub.add_parser("rules", help="list detection rules")
@@ -190,12 +191,12 @@ def _state_from_args(args) -> SessionState:
             offline=args.offline, compliance=args.compliance is not None,
             frameworks=[p.strip() for p in (args.compliance or "all").split(",") if p.strip()],
             max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
-            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output,
+            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output or triage.default_output_dir(),
             min_confidence=args.min_confidence, learning=not args.no_learning, resolve_versions=not args.no_resolve,
             semantic=args.engine == "layered",
             trust_repo_config=True if args.trust_repo_config else (False if args.ignore_repo_config else None))
     elif getattr(args, "command", None) == "gui":
-        options = ScanOptions(offline=args.offline, output_dir=args.output)
+        options = ScanOptions(offline=args.offline, output_dir=args.output or triage.default_output_dir())
     interactive = console.is_terminal and sys.stdin is not None and sys.stdin.isatty()
     no_anim = getattr(args, "root_no_anim", False) or getattr(args, "no_anim", False) or bool(os.environ.get("CI"))
     return SessionState(options=options, animate=interactive and not no_anim,

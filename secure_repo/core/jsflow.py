@@ -258,7 +258,7 @@ class JsFlowAnalyzer:
                     final_rule = "SR-JS-008" if rule_id == "SR-JS-007" else rule_id
                     first_line = origin.line if origin.line > 0 else line
                     steps = origin.steps or [(first_line, f"source: {origin.label}")]
-                    flow = [{"line": l, "label": label, "code": self._code_line(l)} for l, label in steps]
+                    flow = [{"line": ln, "label": label, "code": self._code_line(ln)} for ln, label in steps]
                     sink = re.sub(r"\s+", "", match.group(0)).rstrip("(=")
                     flow.append({"line": line, "label": f"sink: {sink}", "code": self._code_line(line)})
                     detail = f"Untrusted data from {origin.label} (line {first_line}) reaches {sink} (line {line})."

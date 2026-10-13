@@ -73,9 +73,44 @@ def _write(path: str, content, binary: bool = False) -> None:
             handle.write(content)
 
 
+def _exclude_from_enclosing_repo(base: str) -> None:
+    """If the reports folder sits inside a Git work tree, also list it in .git/info/exclude.
+
+    The folder's own .gitignore does not stop `git add -f`; the exclude file lives outside the work tree content
+    and is honoured by every Git front end.
+    """
+    current = base
+    while True:
+        git_dir = os.path.join(current, ".git")
+        if os.path.isdir(git_dir):
+            rel = os.path.relpath(base, current).replace(os.sep, "/")
+            if rel in (".", "") or rel.startswith(".."):
+                return
+            entry = "/" + rel + "/"
+            exclude = os.path.join(git_dir, "info", "exclude")
+            try:
+                existing = ""
+                if os.path.exists(exclude):
+                    with open(exclude, encoding="utf-8") as handle:
+                        existing = handle.read()
+                if entry not in existing.splitlines():
+                    os.makedirs(os.path.dirname(exclude), exist_ok=True)
+                    with open(exclude, "a", encoding="utf-8", newline="\n") as handle:
+                        prefix = "" if existing.endswith("\n") or not existing else "\n"
+                        handle.write(prefix + "# Secure Repo reports (never commit)\n" + entry + "\n")
+            except OSError:
+                pass
+            return
+        parent = os.path.dirname(current)
+        if parent == current:
+            return
+        current = parent
+
+
 def ensure_output_root(output_dir: str) -> str:
     base = os.path.abspath(os.path.expanduser(output_dir))
     os.makedirs(base, exist_ok=True)
+    _exclude_from_enclosing_repo(base)
     guard = os.path.join(base, ".gitignore")
     if not os.path.exists(guard):
         _write(guard, "# Created by Secure Repo: security reports must never be committed.\n*\n")
@@ -141,7 +176,7 @@ def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[s
             rel = os.path.relpath(full, folder).replace(os.sep, "/")
             with open(full, "rb") as handle:
                 manifest_lines.append(f"{hashlib.sha256(handle.read()).hexdigest()}  {rel}")
-    _write(os.path.join(folder, "MANIFEST.sha256"), "\n".join(sorted(manifest_lines, key=lambda l: l[66:])) + "\n")
+    _write(os.path.join(folder, "MANIFEST.sha256"), "\n".join(sorted(manifest_lines, key=lambda entry: entry[66:])) + "\n")
     emit("MANIFEST.sha256")
 
 
@@ -170,7 +205,7 @@ def refresh_reports(report: Dict, folder: str, log_entry: str = "") -> None:
     """Regenerate every artifact of an existing report folder (after triage decisions)."""
     def read(rel: str) -> str:
         try:
-            with open(os.path.join(folder, *rel.split("/")), "r", encoding="utf-8") as handle:
+            with open(os.path.join(folder, *rel.split("/")), encoding="utf-8") as handle:
                 return handle.read()
         except OSError:
             return ""

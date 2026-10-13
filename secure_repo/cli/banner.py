@@ -31,7 +31,7 @@ SMALL_BANNER = [
     r"\__ \ _| (__| |_| |   / _|  |   / _||  _/ (_) |",
     r"|___/___\___|\___/|_|_\___| |_|_\___|_|  \___/ ",
 ]
-_fx = random.Random()  # cosmetic randomness for animations only - never used for security
+_fx = random.Random()  # noqa: S311  cosmetic randomness for animations only - never used for security
 
 GRADIENT = ["#00ff9c", "#00f5c4", "#00e5ff", "#4fc3ff", "#9d7bff", "#ff2e97"]
 

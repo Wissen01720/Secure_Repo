@@ -23,7 +23,6 @@ import time
 import uuid
 import webbrowser
 from dataclasses import replace
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse

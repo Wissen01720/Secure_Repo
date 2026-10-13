@@ -66,7 +66,7 @@ def markdown_summary(report: Dict) -> str:
     if analysis:
         engines = summary.get("by_engine", {})
         lines += ["", "## Analysis quality", "",
-                  f"- Findings by engine: " + (", ".join(f"{k} {v}" for k, v in engines.items()) or "none"),
+                  "- Findings by engine: " + (", ".join(f"{k} {v}" for k, v in engines.items()) or "none"),
                   f"- Noisy matches discarded automatically: {analysis.get('noise_total', 0)} (see quality.md)",
                   f"- Suppressed findings (false positives / filtered): {summary.get('suppressed', 0)}",
                   f"- Learning: {'on' if analysis.get('learning') else 'off'} - "
@@ -127,8 +127,8 @@ def markdown_dependencies(report: Dict) -> str:
     dep = report["dependency_summary"]
     lines = ["# Library & dependency analysis", "",
              f"- Libraries: **{dep['total']}** ({dep['direct']} direct / {dep['transitive']} transitive)",
-             f"- Ecosystems: " + (", ".join(f"{k} ({v})" for k, v in dep["ecosystems"].items()) or "none"),
-             f"- Manifests: " + (", ".join(f"`{m}`" for m in dep["manifests"]) or "none"),
+             "- Ecosystems: " + (", ".join(f"{k} ({v})" for k, v in dep["ecosystems"].items()) or "none"),
+             "- Manifests: " + (", ".join(f"`{m}`" for m in dep["manifests"]) or "none"),
              f"- Vulnerable libraries: **{dep['vulnerable']}** - unique advisories: **{dep['vulnerabilities']}**",
              f"- Intelligence source: {'OSV.dev + deps.dev' if dep['online'] else 'offline (static checks only)'}",
              "", "## Vulnerable libraries", ""]

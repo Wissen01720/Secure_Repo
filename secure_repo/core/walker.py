@@ -65,7 +65,7 @@ def _gitignored_names(directory: str, cache: Dict[str, set]) -> set:
         return cache[directory]
     names = set()
     try:
-        with open(os.path.join(directory, ".gitignore"), "r", encoding="utf-8", errors="replace") as handle:
+        with open(os.path.join(directory, ".gitignore"), encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 line = line.strip()
                 if not line or line.startswith(("#", "!")):

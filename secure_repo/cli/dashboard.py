@@ -240,7 +240,7 @@ class LiveDashboard:
             return Group(self._header(), middle, feed, self._footer())
 
     # ------------------------------------------------------------------ context
-    def __enter__(self) -> "LiveDashboard":
+    def __enter__(self) -> LiveDashboard:
         if not self.plain:
             self.live = Live(get_renderable=self.render, console=console, refresh_per_second=10, transient=False,
                              redirect_stdout=False, redirect_stderr=False)

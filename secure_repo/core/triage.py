@@ -45,6 +45,11 @@ def data_dir() -> str:
     return base
 
 
+def default_output_dir() -> str:
+    """Reports live next to the triage data, never inside the repository being audited."""
+    return os.path.join(data_dir(), "reports")
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -101,7 +106,7 @@ class KnowledgeBase:
     def load(self) -> None:
         if os.path.isfile(self.path):
             try:
-                with open(self.path, "r", encoding="utf-8") as handle:
+                with open(self.path, encoding="utf-8") as handle:
                     loaded = json.load(handle)
                 if isinstance(loaded, dict):
                     self.data.update({k: loaded.get(k, v) for k, v in self.data.items()})
@@ -246,7 +251,7 @@ class KnowledgeBase:
         return len(payload.get("decisions", {})) + len(payload.get("patterns", []))
 
     def import_file(self, path: str, key: Optional[str] = None) -> int:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
         imported = 0
         known = {p["id"] for p in self.data["patterns"]}
@@ -296,7 +301,7 @@ def load_repo_triage(root: str) -> Dict:
     if not os.path.isfile(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
         return payload if isinstance(payload, dict) else {}
     except (OSError, ValueError):

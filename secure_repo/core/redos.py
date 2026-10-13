@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Optional
 
 try:  # Python 3.11+
-    from re import _constants as _c, _parser as _p
+    from re import _constants as _c, _parser as _p  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover - Python 3.9 / 3.10
     import sre_constants as _c  # type: ignore
     import sre_parse as _p  # type: ignore

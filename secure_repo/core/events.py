@@ -41,7 +41,7 @@ class EventBus:
         for callback in subscribers:
             try:
                 callback(event)
-            except Exception:  # a broken listener must never break the scan
+            except Exception:  # noqa: S110  a broken listener must never break the scan
                 pass
 
     # Convenience helpers -------------------------------------------------

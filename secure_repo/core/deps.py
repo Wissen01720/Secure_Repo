@@ -84,7 +84,7 @@ def _safe_xml(text: str) -> Optional[ET.Element]:
     cleaned = re.sub(r"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", "", text, flags=re.S | re.I)
     cleaned = re.sub(r"<!ENTITY[^>]*>", "", cleaned, flags=re.I)
     try:
-        root = ET.fromstring(cleaned)
+        root = ET.fromstring(cleaned)  # noqa: S314  DOCTYPE/ENTITY were stripped above; defusedxml is used when installed
     except ET.ParseError:
         return None
     for element in root.iter():

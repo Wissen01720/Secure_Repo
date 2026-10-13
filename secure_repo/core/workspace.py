@@ -20,7 +20,7 @@ class Target:
     credentials: Optional[gitops.GitCredentials] = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def parse(cls, value: Optional[str], branch: Optional[str] = None) -> "Target":
+    def parse(cls, value: Optional[str], branch: Optional[str] = None) -> Target:
         value = (value or ".").strip()
         if gitops.is_git_url(value):
             clean, credentials = gitops.split_credentials(value)

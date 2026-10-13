@@ -20,10 +20,10 @@ from rich.text import Text
 from secure_repo.cli import views
 from secure_repo.cli.banner import section
 from secure_repo.cli.dashboard import LiveDashboard
-from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, VIOLET, console, say, sev_badge
+from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, VIOLET, console, say
 from secure_repo.core import compliance, gitops, updater
 from secure_repo.core.events import EventBus
-from secure_repo.core.models import SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES, SUPPRESSED_STATUSES, SUPPRESSED_STATUSES
+from secure_repo.core.models import SEVERITIES, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import Scanner, ScanOptions
 from secure_repo.core.workspace import Target, discover_branches
@@ -55,7 +55,7 @@ def open_path(path: str) -> None:
         if path.lower().endswith(".html"):
             webbrowser.open(Path(path).resolve().as_uri())
         elif platform.system() == "Windows":
-            os.startfile(path)  # type: ignore[attr-defined]  # nosec - opens a local report folder
+            os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606  # nosec - opens a local report folder
         elif platform.system() == "Darwin":
             subprocess.run(["open", path], check=False)
         else:
@@ -422,7 +422,7 @@ def help_panel() -> None:
     for command, description in rows:
         guide.append(f"  $ {command:<46}", style=f"bold {CYAN}")
         guide.append(f"{description}\n", style=DIM)
-    guide.append("\nReports are stored in ./secure-repo-reports/<repo>_<branch>_<timestamp>/ (never commit them).",
+    guide.append("\nReports go to the Secure Repo data folder (reports/<repo>_<branch>_<timestamp>/), outside the audited repo.",
                  style=MAGENTA)
     console.print(Panel(guide, border_style=CYAN, box=box.ROUNDED, padding=(1, 2)))
 

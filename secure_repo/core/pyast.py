@@ -79,7 +79,7 @@ class Taint:
     origin: str
     steps: List[Tuple[int, str]] = field(default_factory=list)
 
-    def extend(self, line: int, label: str) -> "Taint":
+    def extend(self, line: int, label: str) -> Taint:
         steps = self.steps + [(line, label)]
         return Taint(self.origin, steps[-8:])
 
@@ -205,7 +205,7 @@ class PythonAnalyzer:
             return scope.tainted.get(node.id)
         if isinstance(node, (ast.Attribute, ast.Subscript, ast.Starred, ast.Await, ast.FormattedValue,
                              ast.NamedExpr)):
-            return self.taint(getattr(node, "value"), scope)
+            return self.taint(node.value, scope)
         if isinstance(node, ast.Call):
             qualname = self._qualname(node.func)
             short = qualname.rsplit(".", 1)[-1]

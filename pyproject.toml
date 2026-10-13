@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-repo"
-version = "1.2.1"
+version = "1.2.2"
 description = "Repository security auditor with a hacker-style CLI and a neural-map GUI: static analysis, secrets, library vulnerabilities, supply chain and optional compliance evidence."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.5", "mypy>=1.10"]
 hardened = ["defusedxml>=0.7"]
 
 [project.scripts]
@@ -47,3 +47,53 @@ include = ["secure_repo*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# ---------------------------------------------------------------------------------------------- lint
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = ["secure_repo/benchmark/corpus"]   # deliberately vulnerable / false-positive samples
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "S"]
+ignore = [
+    "E501",                       # long lines: the rule tables are one-liners on purpose
+    "UP006", "UP035", "UP045",    # typing.Dict/Optional: kept for Python 3.9 compatibility
+    "S603", "S607",               # git / pip are started with argument lists, never through a shell
+    "S310",                       # urlopen is only used with fixed https endpoints
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S"]                                   # asserts, fixtures with fake secrets, temp paths
+"secure_repo/core/rules.py" = ["S"]                 # detection signatures, not executable code
+"secure_repo/core/checks.py" = ["S"]
+
+# ---------------------------------------------------------------------------------------------- types
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = ["secure_repo/benchmark/corpus/"]
+
+# Type debt: these modules still have errors. Remove a module from this list when it is fixed; new modules
+# are type-checked from the first commit.
+[[tool.mypy.overrides]]
+module = [
+    "secure_repo.core.triage", "secure_repo.core.updater", "secure_repo.core.scanner", "secure_repo.core.pyast",
+    "secure_repo.core.versions", "secure_repo.core.checks", "secure_repo.core.compliance", "secure_repo.core.deps",
+    "secure_repo.core.gitops", "secure_repo.core.intel", "secure_repo.core.summary", "secure_repo.core.walker",
+    "secure_repo.cli.views", "secure_repo.cli.learning", "secure_repo.cli.dashboard", "secure_repo.gui.server",
+]
+ignore_errors = true
+
+# ---------------------------------------------------------------------------------------------- coverage
+[tool.coverage.run]
+source = ["secure_repo"]
+omit = ["secure_repo/benchmark/corpus/*"]
+
+[tool.coverage.report]
+# Measured at about 75 %. The gate is a little lower so platform differences do not make CI flaky;
+# raise it as coverage grows (the CLI menus and the update flow are the least tested parts).
+fail_under = 70
+show_missing = false
+skip_covered = true

@@ -2,6 +2,31 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.2.2] - 2026-10-12
+
+### Security
+- **Report CSP by hash:** `report.html` allows scripts only by SHA-256 hash instead of `'unsafe-inline'`, so
+  anything injected later (an escaping bug, an edited file) does not run. Checked in a real browser.
+- **Reports leave the audited repository by default:** they are written to the Secure Repo data folder
+  (`.../SecureRepo/reports`). If `-o` points inside a Git repository, the folder is also added to
+  `.git/info/exclude`, not just to its own `.gitignore`.
+- A test now fails when the GUI builds markup by concatenation without escaping (`esc()`); the remaining unescaped
+  numeric interpolations were fixed.
+
+### Build and tooling
+- **CI:** GitHub Actions on Linux, Windows and macOS (Python 3.9 and 3.13), `ruff` and `mypy`, a coverage gate,
+  and a dogfood job that audits the repository and uploads SARIF. Actions are pinned by commit SHA.
+- **Dependabot** for `pip` and `github-actions`; `ruff`, `mypy` and `coverage` configured in `pyproject.toml`.
+- **One source of dependencies:** `requirements.txt` was replaced by a hashed, universal `requirements.lock`
+  generated from `pyproject.toml`; the launchers and the in-place updater install it with `--require-hashes`.
+- **Launchers** (`run.sh`, `run.bat`) write `.venv/.installed` only after a successful install and check every
+  step's exit code, so a failed first run is retried instead of leaving a broken environment.
+- Test coverage rose from 54 % to about 75 %: the CLI, the local web server flow, 30 manifest/lockfile formats
+  (plus malformed and hostile inputs) and the vulnerability-intelligence client (batching, 429, timeouts).
+
+### Fixed
+- `secure-repo benchmark` reported a wrong line number for missed detections (a stale loop variable, found by lint).
+
 ## [1.2.1] - 2026-10-11
 
 ### Security

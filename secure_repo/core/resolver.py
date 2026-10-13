@@ -65,7 +65,7 @@ def _python_environment(root: str) -> Dict[str, str]:
 
 def _read_json(path: str):
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             return json.load(handle)
     except (OSError, ValueError):
         return None

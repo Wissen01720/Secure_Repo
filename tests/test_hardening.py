@@ -1,8 +1,7 @@
 """Regression tests for review items C-05, C-06, C-07, C-19, C-22, C-25, C-26 and C-29."""
 import csv
-import io
-import json
 import os
+import secrets
 import threading
 import time
 import urllib.error
@@ -20,6 +19,7 @@ from secure_repo.gui.server import AppState, QuietServer, make_handler
 from secure_repo.report.formats import csv_safe
 from tests.conftest import write
 
+TOKEN = secrets.token_urlsafe(16)   # generated per run: no credential-looking literal in the repository
 BASE = ("import os\nfrom flask import request\n\n"
         "def run():\n    os.system(request.args.get('c'))\n    eval(request.args.get('x'))\n")
 
@@ -193,7 +193,7 @@ def test_report_folders_sort_by_time_and_latest_points_to_the_newest(tmp_path):
 # ---------------------------------------------------------------------- C-25 / C-26
 @pytest.fixture()
 def server(tmp_path):
-    state = AppState(ScanOptions(output_dir=str(tmp_path / "reports"), offline=True), "unit-test-token")
+    state = AppState(ScanOptions(output_dir=str(tmp_path / "reports"), offline=True), TOKEN)
     srv = QuietServer(("127.0.0.1", 0), make_handler(state))
     state.port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -212,9 +212,9 @@ def call(state, path, headers=None):
 
 
 def test_token_is_accepted_only_in_the_header(server):
-    assert call(server, "/api/context", {"X-SR-Token": "unit-test-token"})[0] == 200
-    assert call(server, "/api/context?token=unit-test-token")[0] == 401
-    assert call(server, "/api/context?token=unit-test-token", {"X-SR-Token": "wrong"})[0] == 401
+    assert call(server, "/api/context", {"X-SR-Token": TOKEN})[0] == 200
+    assert call(server, f"/api/context?token={TOKEN}")[0] == 401
+    assert call(server, f"/api/context?token={TOKEN}", {"X-SR-Token": "wrong"})[0] == 401
 
 
 def test_internal_errors_do_not_leak_details(server, monkeypatch, capsys):
@@ -222,7 +222,7 @@ def test_internal_errors_do_not_leak_details(server, monkeypatch, capsys):
         raise RuntimeError(r"C:\Users\secret-person\private\path")
 
     monkeypatch.setattr(updater, "check", boom)
-    status, body = call(server, "/api/update?force=1", {"X-SR-Token": "unit-test-token"})
+    status, body = call(server, "/api/update?force=1", {"X-SR-Token": TOKEN})
     assert status == 500
     assert b"secret-person" not in body and b"RuntimeError" not in body
     assert "secret-person" in capsys.readouterr().err  # the detail goes to the local terminal only

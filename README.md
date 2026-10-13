@@ -96,8 +96,11 @@ Python dependencies: [`rich`](https://github.com/Textualize/rich) (and `tomli` o
 
 ### Option A - one-step launchers (recommended)
 
-The launchers create a private virtual environment next to the project on the first run, install Secure Repo in
-it and forward every argument you pass.
+The launchers create a private virtual environment next to the project on the first run, install the
+dependencies from the hashed `requirements.lock` (`pip --require-hashes`), install Secure Repo in it and forward every
+argument you pass. The environment is only trusted once `.venv/.installed` exists, and that marker is written
+only after every install step succeeded: if the first run fails (for example without network access) nothing is
+left half-installed and the next run simply tries again.
 
 **Windows (PowerShell or CMD)**
 
@@ -138,7 +141,7 @@ Tip: `pipx install .` installs it in an isolated environment and makes `secure-r
 ### Option C - run from source
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 python -m secure_repo
 ```
 
@@ -163,7 +166,7 @@ secure-repo update --check   # only check (exit code 10 = update available)
 
 | Installation type | How the update is installed |
 |---|---|
-| Cloned repository (`run.sh` / `run.bat` / `pip install -e .`) | Fast-forward of the tracked branch. Dependencies are reinstalled only when `pyproject.toml` or `requirements.txt` changed. Local edits are never overwritten: the update stops and asks you to commit or stash them. |
+| Cloned repository (`run.sh` / `run.bat` / `pip install -e .`) | Fast-forward of the tracked branch. Dependencies are reinstalled only when `pyproject.toml` or `requirements.lock` changed. Local edits are never overwritten: the update stops and asks you to commit or stash them. |
 | `pip install` | `pip install --upgrade` of the exact upstream commit from GitHub. On Windows, if the running executable is locked, the upgrade finishes automatically when you close Secure Repo. |
 
 Restart Secure Repo after updating to load the new version. Checks are cached for 6 hours, take a few seconds at
@@ -199,7 +202,7 @@ repository.
   [2]  Audit a REMOTE repository by Git URL (https / ssh)
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
-  [5]  Settings  [compliance: OFF · intel: ON · output: secure-repo-reports]
+  [5]  Settings  [compliance: OFF · intel: ON · output: ~/.local/share/secure-repo/reports]
   [6]  List detection rules (169)
   [7]  Usage guide
   [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
@@ -429,7 +432,7 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `--compliance [LIST]` | off | Enable the compliance audit. Without a value: all frameworks. Values: `owasp`, `pci-dss`, `iso27001`, `soc2`, `gdpr`, `hipaa`, `nist-ssdf`. |
 | `--offline` | off | No network requests (no OSV.dev / deps.dev). |
 | `--no-enrich` | off | Skip license / latest-version lookups but keep vulnerability lookups. |
-| `-o, --output DIR` | `secure-repo-reports` | Where report folders are created. |
+| `-o, --output DIR` | `<data folder>/reports` | Where report folders are created. By default **outside** the audited repository (see below). |
 | `-y, --yes` | off | Confirm you are authorized to audit the target (required when not interactive). |
 | `--no-tests` | off | Do not analyze files that look like tests or fixtures. |
 | `--max-file-size KB` | `2048` | Skip larger files. |
@@ -458,10 +461,16 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 ## The report folder
 
 Every scan creates an organized, timestamped folder (names sort chronologically, to the millisecond;
-`latest.txt` in the output folder names the newest one):
+`latest.txt` in the output folder names the newest one).
+
+Reports contain code snippets and the weakness map of the audited project, so by default they are written
+**outside** the audited repository, in the Secure Repo data folder: `%APPDATA%/SecureRepo/reports` on Windows,
+`~/Library/Application Support/SecureRepo/reports` on macOS, `~/.local/share/secure-repo/reports` on Linux (or
+`$SECURE_REPO_HOME/reports`). If you choose a folder inside a Git repository with `-o`, Secure Repo also adds it to
+that repository's `.git/info/exclude`, in addition to the folder's own `.gitignore`.
 
 ```
-secure-repo-reports/
+reports/
 ├── .gitignore                       ← "*": reports can never be committed by accident
 └── my-api_main_20260926-213000/
     ├── README.txt                   ← index of the folder
@@ -700,15 +709,35 @@ Secure_Repo/
 │   ├── benchmark/    labeled corpus used by `secure-repo benchmark`
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
 │   └── gui/          local server + static web app (neural map, box map, UI)
-├── tests/            pytest suite
+├── tests/            pytest suite (CLI, GUI server, dependency parsers, intelligence, regression tests)
 ├── docs/images/      screenshots used in this README
+├── .github/          CI workflow (3 platforms, lint, types, self-audit) and Dependabot
+├── requirements.lock hashed, universal lock of the runtime dependencies (generated from pyproject.toml)
 ├── run.sh / run.bat  one-step launchers
 ├── CHANGELOG.md      release notes
 ├── LICENSE           Secure Repo Ethical Source-Available License
 └── SECURITY.md       how to report a vulnerability in Secure Repo
 ```
 
-Run the test suite with `python -m pip install -e ".[dev]"` and `python -m pytest`.
+### Development
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest --cov        # tests + coverage gate (pyproject.toml: [tool.coverage.report] fail_under)
+ruff check .                  # lint, including security rules (S)
+mypy secure_repo              # types (modules with known type debt are listed in pyproject.toml)
+```
+
+Continuous integration (`.github/workflows/ci.yml`) runs lint, types and the tests on Linux, Windows and macOS
+with Python 3.9 and 3.13, and then audits this repository with Secure Repo itself (`--fail-on high`), uploading the
+SARIF report to GitHub code scanning. Every action is pinned to a full commit SHA and the workflow has read-only
+permissions; Dependabot proposes weekly updates for the Python dependencies and the actions.
+
+Regenerate the lock after changing the dependencies in `pyproject.toml`:
+
+```bash
+uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.9 -o requirements.lock
+```
 
 ---
 

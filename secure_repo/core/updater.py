@@ -4,7 +4,7 @@ Two installation modes are supported:
 
 * **git** - Secure Repo runs from a clone (launchers / ``pip install -e``). Updates are detected by fetching the
   tracked branch, so *every* published commit is announced. Installing = fast-forward ``git merge`` + dependency
-  refresh when ``pyproject.toml``/``requirements.txt`` changed. Local edits are never overwritten.
+  refresh when ``pyproject.toml``/``requirements.lock`` changed. Local edits are never overwritten.
 * **pip** - installed as a package. Updates are detected through the GitHub API of the upstream repository and
   installed with ``pip install --upgrade`` pinned to the exact upstream commit.
 
@@ -95,7 +95,7 @@ def _state_path() -> str:
 
 def load_state() -> Dict:
     try:
-        with open(_state_path(), "r", encoding="utf-8") as handle:
+        with open(_state_path(), encoding="utf-8") as handle:
             data = json.load(handle)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
@@ -154,7 +154,7 @@ def _check_git(install: InstallInfo) -> UpdateInfo:
     info.current_commit = gitops.head_commit(root)
     current_source = ""
     try:
-        with open(os.path.join(root, "secure_repo", "__init__.py"), "r", encoding="utf-8") as handle:
+        with open(os.path.join(root, "secure_repo", "__init__.py"), encoding="utf-8") as handle:
             current_source = handle.read()
     except OSError:
         pass
@@ -323,14 +323,14 @@ def apply_update(info: Optional[UpdateInfo] = None, log: Callable[[str], None] =
         new = gitops.head_commit(root)
         note(f"Updated {old[:7]} -> {new[:7]}")
         changed = _git(root, "diff", "--name-only", old, new).splitlines()
-        if any(name in ("pyproject.toml", "requirements.txt") for name in changed):
+        if any(name in ("pyproject.toml", "requirements.lock") for name in changed):
             note("Dependencies changed - refreshing them")
-            requirements = os.path.join(root, "requirements.txt")
-            completed = _pip(["install", "--quiet", "-r", requirements], note)
+            requirements = os.path.join(root, "requirements.lock")
+            completed = _pip(["install", "--quiet", "--require-hashes", "-r", requirements], note)
             if completed.returncode != 0:
                 note(completed.stderr.strip()[-600:])
                 result.message = ("Code updated, but refreshing dependencies failed. Run: "
-                                  f"python -m pip install -r \"{requirements}\"")
+                                  f"python -m pip install --require-hashes -r \"{requirements}\"")
                 result.restart_required = True
                 result.log = lines
                 return result

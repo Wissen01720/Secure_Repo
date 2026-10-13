@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from rich import box
 from rich.panel import Panel
@@ -13,7 +13,7 @@ from rich.table import Table
 from rich.text import Text
 
 from secure_repo.cli.banner import section
-from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, VIOLET, bar, console, say, sev_badge
+from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, VIOLET, bar, console, say, sev_badge
 from secure_repo.core import benchmark, review
 from secure_repo.core.config import write_template
 from secure_repo.core.triage import REPO_TRIAGE_FILE, KnowledgeBase, data_dir, project_key
@@ -24,9 +24,9 @@ STATUS_STYLE = {"open": "white", "confirmed": f"bold {MAGENTA}", "accepted_risk"
                 "disabled_by_config": "grey50", "suppressed_inline": "grey50"}
 
 
-def _load_report(path: str) -> (Dict, str):
+def _load_report(path: str) -> Tuple[Dict, str]:
     folder = path if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
-    with open(os.path.join(folder, "report.json"), "r", encoding="utf-8") as handle:
+    with open(os.path.join(folder, "report.json"), encoding="utf-8") as handle:
         return json.load(handle), folder
 
 

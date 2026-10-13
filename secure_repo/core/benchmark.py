@@ -72,7 +72,7 @@ def run(extra_dirs: Optional[List[str]] = None, rule_filter: str = "", semantic:
     scores: Dict[str, RuleScore] = {}
     cases = []
     for path in case_files(extra_dirs):
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
         expected, forbidden = _annotations(text)
         rel = os.path.basename(path)
@@ -83,7 +83,7 @@ def run(extra_dirs: Optional[List[str]] = None, rule_filter: str = "", semantic:
         tp = expected & found
         fn = expected - found
         fp = {(line, rule) for line, rule in found - expected if rule in relevant}
-        for line, rule in tp:
+        for _line, rule in tp:
             scores.setdefault(rule, RuleScore()).tp += 1
         for line, rule in fn:
             score = scores.setdefault(rule, RuleScore())

@@ -27,7 +27,7 @@ def redact_text(text: str) -> str:
         if regex is None:
             continue
 
-        def _sub(match: "re.Match[str]") -> str:
+        def _sub(match: re.Match[str]) -> str:
             if match.lastindex:
                 start, end = match.span(1)
                 if start >= 0:

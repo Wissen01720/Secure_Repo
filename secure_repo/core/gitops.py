@@ -183,7 +183,7 @@ def auth_config(url: str, credentials: Optional[GitCredentials], env: Dict[str, 
     parts = urlsplit(url)
     prefix = f"{parts.scheme}://{parts.hostname}" + (f":{parts.port}" if parts.port else "") + "/"
     user = credentials.username or default_username(url)
-    basic = base64.b64encode(f"{user}:{credentials.token}".encode("utf-8")).decode("ascii")
+    basic = base64.b64encode(f"{user}:{credentials.token}".encode()).decode("ascii")
     key, value = f"http.{prefix}.extraHeader", f"Authorization: Basic {basic}"
     if _env_config_supported():
         index = int(env.get("GIT_CONFIG_COUNT", "0") or 0)
@@ -198,7 +198,7 @@ def _scrub(message: str, credentials: Optional[GitCredentials] = None) -> str:
     if credentials and credentials.token:
         message = message.replace(credentials.token, "****")
         for candidate in {credentials.username, "x-access-token", "oauth2", "x-token-auth", "pat", "git"}:
-            raw = f"{candidate}:{credentials.token}".encode("utf-8")
+            raw = f"{candidate}:{credentials.token}".encode()
             message = message.replace(base64.b64encode(raw).decode("ascii"), "****")
     return re.sub(r"(https?://)[^/\s:@]+:[^/\s@]+@", r"\1****@", message)
 

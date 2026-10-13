@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege by default; the dogfood job asks for more on its own.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      # Third-party actions are pinned to a full commit SHA (the tag is only a comment); Dependabot keeps them fresh.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --no-deps -e .
+          python -m pip install "ruff>=0.5" "mypy>=1.10"
+      - name: Ruff
+        run: ruff check .
+      - name: Mypy
+        run: mypy secure_repo
+
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --no-deps -e .
+          python -m pip install "pytest>=7" "pytest-cov>=4"
+      - name: Tests with coverage gate
+        # The minimum coverage lives in pyproject.toml ([tool.coverage.report] fail_under).
+        run: python -m pytest -q --cov
+
+  dogfood:
+    name: Audit this repository with Secure Repo
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    permissions:
+      contents: read
+      security-events: write   # upload the SARIF results to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --no-deps -e .
+      - name: Scan (fails on high or critical findings)
+        run: secure-repo --no-update-check scan . --offline --yes --plain --no-menu --fail-on high -o "$RUNNER_TEMP/secure-repo-reports"
+      - name: Locate the SARIF report
+        if: always()
+        run: |
+          latest="$(cat "$RUNNER_TEMP/secure-repo-reports/latest.txt")"
+          echo "REPORT_DIR=$RUNNER_TEMP/secure-repo-reports/$latest" >> "$GITHUB_ENV"
+      - name: Keep the full report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secure-repo-report
+          path: ${{ env.REPORT_DIR }}
+          retention-days: 30
+      - name: Upload SARIF to code scanning
+        if: always()
+        # Code scanning needs a public repository or GitHub Advanced Security; never fail the build over it.
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: ${{ env.REPORT_DIR }}/report.sarif
+          category: secure-repo
