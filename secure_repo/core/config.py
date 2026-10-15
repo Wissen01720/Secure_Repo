@@ -45,6 +45,11 @@ disable = []
 # Override a rule's severity, e.g. "SR-GEN-006" = "info"
 # "SR-GEN-006" = "info"
 
+[intel]
+# Package names that must never leave your machine: they are not resolved against any registry, not sent to
+# OSV.dev and not looked up on deps.dev. Glob patterns, case-insensitive. Use it for internal packages.
+# private = ["@mycompany/*", "mycompany-*", "com.mycompany:*"]
+
 [allowlist]
 # Findings in these paths are kept in the report but marked as false positives (audit trail).
 paths = []
@@ -77,6 +82,7 @@ class ProjectConfig:
     allow_paths: List[str] = field(default_factory=list)
     allow_values: List[re.Pattern] = field(default_factory=list)
     custom_rules: List[Rule] = field(default_factory=list)
+    intel_private: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     # Provenance: which entries came from the audited repository (as opposed to the analyst's own configuration).
     ignored_source: Optional[str] = None       # repository config found but NOT applied (untrusted target)
@@ -193,6 +199,8 @@ def load_config(root: str, user_dir: Optional[str] = None, trust_repo: bool = Tr
         overrides = {canonical_rule_id(str(k)): str(v).lower() for k, v in (rules.get("severity", {}) or {}).items()
                      if str(v).lower() in SEVERITIES}
         config.severity.update(overrides)
+        intel_section = data.get("intel", {}) or {}
+        config.intel_private += [str(p).strip() for p in intel_section.get("private", []) if str(p).strip()]
         allow = data.get("allowlist", {}) or {}
         allowed_paths = [str(p) for p in allow.get("paths", [])]
         config.allow_paths += allowed_paths

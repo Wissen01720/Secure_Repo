@@ -49,7 +49,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 |---|---|
 | **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
 | **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
-| **Static analysis** | 172 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Static analysis** | 173 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
 | **Layered engine** | Comments and strings are masked, Python is analyzed on its syntax tree with taint tracking, JavaScript/TypeScript get a data-flow pass. Findings confirmed by data flow show the **source → sink** trace. |
 | **Learns from you** | Mark false positives, accepted risks or confirmed findings; decisions, learned code patterns and per-rule statistics are re-applied on every scan. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
@@ -205,7 +205,7 @@ repository.
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
   [5]  Settings  [compliance: OFF · intel: ON · output: ~/.local/share/secure-repo/reports]
-  [6]  List detection rules (172)
+  [6]  List detection rules (173)
   [7]  Usage guide
   [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
   [0]  Exit
@@ -336,6 +336,26 @@ secure-repo scan . --yes --offline --plain --no-menu --fail-on high
 
 Exit codes: `0` success · `1` error · `2` invalid usage · `3` findings at/above `--fail-on` · `130` aborted.
 
+**Adopting it in an existing project without failing on day one.** `--fail-on high` fails on every old finding, which
+is why gates get switched off. Two options make the gate about *new* problems only:
+
+```bash
+# 1. once, on main: keep the report as the baseline (the report folder is outside the repository by default)
+secure-repo scan . --yes --plain --no-menu -o ci-reports
+cp "ci-reports/$(cat ci-reports/latest.txt)/report.json" baseline.json      # commit it, or store it as a CI artifact
+
+# 2. on every pull request: fail only on findings whose fingerprint is not in the baseline
+secure-repo scan . --yes --plain --no-menu --baseline baseline.json --fail-on high
+
+# or analyze only the files the pull request changed (fast on big repositories)
+secure-repo scan . --yes --plain --no-menu --since origin/main --fail-on high
+```
+
+The report marks every finding as `new` or `existing` (`summary.baseline`, `extra.baseline`, and SARIF `baselineState`).
+`--fail-on` never counts false positives, filtered or disabled findings or accepted risks, with or without a baseline.
+`--since REF` needs the working tree of a local Git repository (in CI: `fetch-depth: 0` or `git fetch origin main`) and
+still reports repository-level facts such as a missing SECURITY.md.
+
 ---
 
 ## Private and organization repositories
@@ -418,7 +438,7 @@ How to read it, honestly:
 - 28 weaknesses and 86 findings in four projects is a small sample. Treat the numbers as a floor of evidence, not as a
   guarantee, and expect results to differ in your code. The benchmark runs in CI and fails if precision (medium+
   confidence) drops below 65 % or recall below 80 %; every new finding must be labelled before it can pass.
-- Rules are tested one by one as well: each of the 172 rules ships a positive and a negative example in its data file
+- Rules are tested one by one as well: each of the 173 rules ships a positive and a negative example in its data file
   (`secure_repo/ruledata/`), and the test suite runs all of them.
 
 ```bash
@@ -490,6 +510,14 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `--token-env VARIABLE` | - | Read the access token from that environment variable (CI). |
 | `--no-learning` | off | Ignore the triage knowledge base. |
 | `--no-resolve` | off | Do not resolve versions of unpinned dependencies. |
+| `--private GLOB` | - | Package names that never leave your machine (repeatable). See *Private packages, registries and networks*. |
+| `--no-registry` | off | Do not query package registries (OSV.dev still runs). |
+| `--check-confusion` | off | Opt in: look private names up publicly to flag dependency confusion. |
+| `--ca-bundle PATH` | - | CA bundle for HTTPS lookups (TLS-inspecting proxies). |
+| `--no-cache` | off | Do not cache lookups on disk. |
+| `--max-registry N` / `--max-graph N` / `--max-enrich N` | 300 / 120 / 250 | Limits of the dependency intelligence; the report says when they are reached. |
+| `--baseline REPORT_JSON` | - | Earlier `report.json`: `--fail-on` counts only findings that are new. |
+| `--since REF` | - | Analyze only files changed relative to a Git reference. |
 | `--engine layered\|patterns` | `layered` | Choose the analysis engine. |
 
 `branches` also accepts `--ask-token` and `--token-env VARIABLE`.
@@ -661,6 +689,32 @@ read-only, reproducible (commit SHA recorded), attributable (auditor name), time
 
 ---
 
+### Private packages, registries and networks
+
+Secure Repo sends package names and versions to OSV.dev and deps.dev (and Packagist / pub.dev to resolve ranges). If
+the names of your internal packages must not leave your machine, say so:
+
+```toml
+# .securerepo.toml (applied for your own local repository) or ~/.../SecureRepo/config.toml
+[intel]
+private = ["@acme/*", "acme-*", "com.acme:*"]
+```
+
+or `--private '@acme/*'` (repeatable). Private packages are not resolved, not enriched and not sent to OSV.dev. A
+repository you audit cannot use this list to hide its own dependencies: its `.securerepo.toml` is ignored unless you
+trust it. `--check-confusion` is an explicit opt-in that *does* look the private names up in the public registry
+(sending them) to warn about **dependency confusion** (`SR-DEP-010`): an internal name that also exists publicly.
+
+| Option | Effect |
+|---|---|
+| `--no-registry` | No package-registry queries at all (deps.dev, Packagist, pub.dev); OSV.dev advisories for pinned versions still run. `--offline` turns off every request. |
+| `--ca-bundle PATH` | Certificate authority for HTTPS lookups behind a TLS-inspecting proxy. Also read from `SECURE_REPO_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and `SSL_CERT_FILE` (in that order). |
+| `--no-cache` | Lookups are cached on disk for 24 hours (advisory searches never are, so new vulnerabilities show up the same day). |
+| `--max-registry N`, `--max-graph N`, `--max-enrich N` | Limits (300, 120, 250). When one is hit, the report says how many dependencies were left out. |
+
+Lookups are retried with backoff on HTTP 429 / 5xx, responses are limited to 20 MB, OSV pagination is followed, and a
+failed batch is reported under *What was NOT analyzed* instead of cancelling the rest.
+
 ## Privacy & data handling
 
 - Source code **never leaves your machine**.
@@ -802,6 +856,8 @@ contradicts it in the code it could read, not that the control is satisfied.
 | `git is not installed or not on PATH` | Install Git and open a new terminal. |
 | Private repository: branch discovery fails | Configure your Git credentials first (SSH key, Git Credential Manager or `gh auth login`), check that `git ls-remote <url>` works, or use an SSH URL. |
 | `Vulnerability intelligence unavailable` | No internet or a proxy blocks it. Set `HTTPS_PROXY`, or run with `--offline`. |
+| Certificate errors behind a corporate proxy | Your network inspects TLS: pass `--ca-bundle company-ca.pem` or set `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE`. |
+| A report says some dependencies were not checked | See *What was NOT analyzed*: a batch failed after retries or a limit was reached (`--max-registry` ...). Run again; successful lookups are cached. |
 | Strange characters on old Windows consoles | Use Windows Terminal, or run with `--plain`. |
 | `secure-repo` command not found | Use `python -m secure_repo`, the launchers, or add Python's `Scripts`/`bin` folder to `PATH`. |
 | GUI says "Invalid or missing session token" | Open the exact URL printed in the terminal (it contains `#token=...`). |
@@ -821,7 +877,7 @@ contradicts it in the code it could read, not that the control is satisfied.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, updater, 172 rules, lexical masking, Python AST/taint and JS data-flow engines,
+│   ├── core/         scanner, updater, 173 rules, lexical masking, Python AST/taint and JS data-flow engines,
 │   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
 │   │                 triage knowledge base, confidence model, compliance frameworks, scoring
 │   ├── ruledata/     the detection rules as TOML (pattern, explanation and positive/negative examples)

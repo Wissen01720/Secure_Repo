@@ -2,6 +2,38 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.2.5] - 2026-10-15
+
+### Added
+- **CI-friendly gates:** `--baseline report.json` makes `--fail-on` count only findings that are new (matched by
+  fingerprint; SARIF `baselineState`), and `--since REF` analyzes only the files changed relative to a Git reference.
+- **Private packages:** `[intel] private = [...]` / `--private` keep internal package names away from every
+  registry and from OSV.dev; `--no-registry` skips package registries but keeps OSV advisories; `--check-confusion`
+  (opt in) warns when a private name also exists publicly (new rule `SR-DEP-010`, 173 rules). A repository you audit
+  cannot use the list to hide its dependencies.
+- **Resilient network layer** (`core/netio.py`): retries with backoff for 429/5xx (honours `Retry-After`), 20 MB
+  response limit, a 24-hour disk cache for registry and advisory-detail lookups (`--no-cache`), `--ca-bundle` and
+  the `SECURE_REPO_CA_BUNDLE` / `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE` / `SSL_CERT_FILE` variables.
+- **OSV pagination** (`next_page_token`) and one `try` per batch: a failing batch no longer discards all the
+  vulnerability intelligence of the scan.
+- Gaps are reported: failed batches, results cut by the pagination cap and the registry / graph / metadata limits
+  (`--max-registry`, `--max-graph`, `--max-enrich`) appear under *What was NOT analyzed*, in the CLI, the GUI and
+  `analysis.network` of the report.
+
+### Security
+- **Two built-in patterns were quadratic on hostile input.** The generic-credential detector took 36 seconds on one
+  21 KB single-line file and the template-escaping rule (`SR-WEB-001`) over 100 seconds on a line of 120,000 braces:
+  a repository could stall the audit. Both are now linear (0.3 s and 0.2 s on the same inputs), and a new test feeds
+  every supported file type 12 kinds of hostile lines and fails above a time budget.
+
+### Changed
+- The compromised and deprecated package lists moved to `secure_repo/data/packages.json` with a reason, date and source
+  per entry; the unverified `python-jose` entry was dropped.
+- `--fail-on` no longer counts false positives, filtered or disabled findings or accepted risks.
+
+### Known limitation
+- Two scans running at the same time in the GUI share the network counters, so their intelligence notes can mix.
+
 ## [1.2.4] - 2026-10-14
 
 ### Added

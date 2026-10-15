@@ -94,9 +94,9 @@ def _write(root: str, rel: str, content: str) -> None:
         handle.write(content)
 
 
-def _scan(root: str, online: bool = False) -> List[Dict]:
+def _scan(root: str, online: bool = False, extra: Optional[Dict] = None) -> List[Dict]:
     options = ScanOptions(offline=not online, trust_repo_config=False, learning=False, resolve_versions=online,
-                          enrich=online)
+                          enrich=online, **(extra or {}))
     report, _ = Scanner(options, EventBus()).run(Target.parse(root), write_reports=False)
     return report["findings"]
 
@@ -145,7 +145,7 @@ def run_examples(rules: Optional[List[Rule]] = None, online: bool = False) -> Li
                 _write(root, example.file or default_file(rule), expand(example.code))
                 for extra_name, extra_code in example.extra.items():
                     _write(root, extra_name, expand(extra_code))
-                passed, detail = _verdict(rule.id, example, _scan(root, online=example.online), "")
+                passed, detail = _verdict(rule.id, example, _scan(root, online=example.online, extra=example.options), "")
                 results.append(ExampleResult(rule.id, example.kind, index, passed, detail))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

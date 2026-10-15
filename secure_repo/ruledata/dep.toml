@@ -255,3 +255,43 @@ online = true
 code = '''six>=1.16.0
 '''
 
+[[rule]]
+id = 'SR-DEP-010'
+title = 'Private package name exists in the public registry'
+severity = 'high'
+category = 'Supply Chain'
+cwe = 'CWE-427'
+owasp = 'A08'
+languages = ['*']
+source = 'dependency'
+tags = ['supply-chain', 'dependency-confusion']
+description = 'A dependency you declared as private (an internal package) also exists, under the same name, in the public registry. If any build resolves it from the public index - a missing --index-url, a proxy without scoping - an attacker who published that name gets their code installed and run (dependency confusion).'
+recommendation = 'Reserve the name in the public registry or use a scoped namespace you own (npm @scope, Maven groupId), configure the package manager to resolve internal names only from your private index, and pin versions with hashes.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six==1.16.0
+'''
+options = {private = ['six'], check_confusion = true}
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''sr-private-example-no-such-package-0xq==1.0.0
+'''
+options = {private = ['sr-private-example-*'], check_confusion = true}
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six==1.16.0
+'''
+options = {private = ['six']}
+

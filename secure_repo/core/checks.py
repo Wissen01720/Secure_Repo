@@ -49,10 +49,10 @@ _KEY_WORDS = (r"password|passwd|passphrase|pwd|secret|api[_\-]?key|apikey|access
               r"access[_\-]?token|refresh[_\-]?token|client[_\-]?secret|private[_\-]?key|secret[_\-]?key|token|"
               r"credentials?")
 _GENERIC_QUOTED = re.compile(
-    r"(?i)(?P<key>[A-Za-z0-9_.\-]*(?:" + _KEY_WORDS + r")[A-Za-z0-9_.\-]*)['\"]?\s*(?::=|=>|=|:)\s*"
+    r"(?i)(?<![A-Za-z0-9_.\-])(?P<key>[A-Za-z0-9_.\-]{0,64}?(?:" + _KEY_WORDS + r")[A-Za-z0-9_.\-]{0,64})['\"]?\s*(?::=|=>|=|:)\s*"
     r"[rbuf]?(?P<q>['\"`])(?P<val>[^'\"`\r\n]{4,200})(?P=q)")
 _GENERIC_UNQUOTED = re.compile(
-    r"(?im)^\s*(?:export\s+)?(?P<key>[A-Za-z0-9_.\-]*(?:" + _KEY_WORDS + r")[A-Za-z0-9_.\-]*)\s*[:=]\s*"
+    r"(?im)^\s*(?:export\s+)?(?P<key>[A-Za-z0-9_.\-]{0,64}?(?:" + _KEY_WORDS + r")[A-Za-z0-9_.\-]{0,64})\s*[:=]\s*"
     r"(?P<val>[^\s'\"#`$<{\[][^\s#]{3,200})\s*(?:#.*)?$")
 
 _KEY_EXCLUDE = re.compile(

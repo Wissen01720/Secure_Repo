@@ -20,7 +20,7 @@ from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authoriza
                                   open_path, post_scan_menu, run_scan)
 from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say
 from secure_repo.core import compliance, gitops, triage, updater
-from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
+from secure_repo.core.models import SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES
 from secure_repo.core.scanner import ScanOptions
 from secure_repo.core.workspace import Target
@@ -94,6 +94,28 @@ def build_parser() -> argparse.ArgumentParser:
                       help="ignore the triage knowledge base (decisions, learned patterns, rule statistics)")
     scan.add_argument("--no-resolve", action="store_true",
                       help="do not resolve versions of unpinned dependencies (virtual lockfile)")
+    scan.add_argument("--private", action="append", default=[], metavar="GLOB",
+                      help="package name pattern that must never be sent to any service, e.g. '@acme/*' (repeatable; "
+                           "also [intel] private in .securerepo.toml)")
+    scan.add_argument("--no-registry", action="store_true",
+                      help="do not query package registries (deps.dev, Packagist, pub.dev); OSV.dev advisories still run")
+    scan.add_argument("--check-confusion", action="store_true",
+                      help="opt in: look the --private names up in the public registry to flag dependency confusion "
+                           "(this sends those names)")
+    scan.add_argument("--ca-bundle", default="", metavar="PATH",
+                      help="CA certificate bundle for HTTPS lookups (also SECURE_REPO_CA_BUNDLE, REQUESTS_CA_BUNDLE, "
+                           "SSL_CERT_FILE) - for networks that inspect TLS")
+    scan.add_argument("--no-cache", action="store_true", help="do not keep registry/advisory lookups on disk for 24 hours")
+    scan.add_argument("--max-registry", type=int, default=300, metavar="N",
+                      help="direct dependencies resolved against package registries (default 300)")
+    scan.add_argument("--max-graph", type=int, default=120, metavar="N",
+                      help="direct dependencies whose transitive graph is expanded (default 120)")
+    scan.add_argument("--max-enrich", type=int, default=250, metavar="N",
+                      help="direct dependencies that get license / latest-version metadata (default 250)")
+    scan.add_argument("--baseline", default="", metavar="REPORT_JSON",
+                      help="an earlier report.json: --fail-on then counts only findings that are new")
+    scan.add_argument("--since", default="", metavar="REF",
+                      help="analyze only the files that changed relative to a Git reference (e.g. origin/main)")
     scan.add_argument("--engine", choices=("layered", "patterns"), default="layered",
                       help="'layered' (default): masking + syntax tree + data flow; 'patterns': legacy regex only")
 
@@ -203,7 +225,10 @@ def _state_from_args(args) -> SessionState:
             offline=args.offline, compliance=args.compliance is not None,
             frameworks=[p.strip() for p in (args.compliance or "all").split(",") if p.strip()],
             max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
-            jobs=max(0, args.jobs), enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output or triage.default_output_dir(),
+            jobs=max(0, args.jobs), private=list(args.private), no_registry=args.no_registry,
+            check_confusion=args.check_confusion, ca_bundle=args.ca_bundle, cache=not args.no_cache,
+            max_registry=max(0, args.max_registry), max_graph=max(0, args.max_graph), max_enrich=max(0, args.max_enrich),
+            baseline=args.baseline, since=args.since, enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output or triage.default_output_dir(),
             min_confidence=args.min_confidence, learning=not args.no_learning, resolve_versions=not args.no_resolve,
             semantic=args.engine == "layered",
             trust_repo_config=True if args.trust_repo_config else (False if args.ignore_repo_config else None))
@@ -235,7 +260,35 @@ def _apply_token_options(args, target: Target) -> bool:
     return True
 
 
+def _check_ci_options(args) -> str:
+    """Validate the options that point at files or Git references before any scanning starts."""
+    from secure_repo.core import netio
+    from secure_repo.core.scanner import load_baseline
+
+    if args.baseline:
+        try:
+            load_baseline(args.baseline)
+        except ValueError as exc:
+            return str(exc)
+    if args.since:
+        try:
+            gitops.validate_ref(args.since)
+        except gitops.GitError as exc:
+            return str(exc)
+    bundle = args.ca_bundle or netio.ca_bundle_path()
+    if args.ca_bundle:
+        try:
+            netio.validate_ca_bundle(bundle)
+        except netio.NetworkError as exc:
+            return str(exc)
+    return ""
+
+
 def cmd_scan(args, state: SessionState) -> int:
+    problem = _check_ci_options(args)
+    if problem:
+        say(problem, "error")
+        return 2
     if args.compliance is not None and not compliance.resolve_frameworks(state.options.frameworks):
         say(f"Unknown framework list '{args.compliance}'. Available: {', '.join(compliance.FRAMEWORKS)}", "error")
         return 2
@@ -277,9 +330,14 @@ def cmd_scan(args, state: SessionState) -> int:
     update_views.render_compact(updater.background_result(timeout=0.5))
     if args.fail_on:
         threshold = SEVERITY_RANK[args.fail_on]
-        failing = [f for f in report["findings"] if SEVERITY_RANK[f["severity"]] <= threshold]
+        # Only findings that still count: not false positives / filtered / disabled, not accepted risks, and - with
+        # --baseline - only those that were not already in the baseline.
+        failing = [f for f in report["findings"] if SEVERITY_RANK[f["severity"]] <= threshold
+                   and f["status"] not in SUPPRESSED_STATUSES + ("accepted_risk",)
+                   and (f.get("extra") or {}).get("baseline") != "existing"]
         if failing:
-            say(f"{len(failing)} finding(s) at or above '{args.fail_on}' - exiting with code 3 (--fail-on).", "error")
+            scope = " new" if args.baseline else ""
+            say(f"{len(failing)}{scope} finding(s) at or above '{args.fail_on}' - exiting with code 3 (--fail-on).", "error")
             return 3
     return 0
 

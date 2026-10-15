@@ -10,7 +10,7 @@ import stat
 import subprocess
 import tarfile
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -255,6 +255,23 @@ def _run(args: List[str], cwd: Optional[str] = None, timeout: int = 120, interac
                                f"{auth_help(url, sso)}", sso=sso)
         raise GitError(lines[-1] if lines else f"git {args[0]} failed")
     return completed.stdout
+
+
+def validate_ref(ref: str) -> str:
+    ref = ref.strip()
+    if not ref or ref.startswith("-") or ".." in ref or not re.fullmatch(r"[A-Za-z0-9_./@{}\-^~]+", ref):
+        raise GitError(f"Invalid Git reference: {ref!r}")
+    return ref
+
+
+def changed_files(root: str, ref: str) -> Set[str]:
+    """Files that differ from ``ref`` in the working tree, plus untracked ones (forward-slash relative paths)."""
+    ref = validate_ref(ref)
+    if not head_commit(root, ref):
+        raise GitError(f"Unknown Git reference: {ref} (fetch it first, e.g. 'git fetch origin main')")
+    changed = _run(["-C", root, "diff", "--name-only", "-z", "--diff-filter=ACMRT", ref, "--"], timeout=60)
+    untracked = _run(["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], timeout=60)
+    return {name for name in (changed + "\0" + untracked).split("\0") if name}
 
 
 def find_repo_root(path: str) -> Optional[str]:

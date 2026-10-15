@@ -32,7 +32,10 @@ def split_score_lines(summary: Dict) -> List[str]:
     density = scores["density"]
     per_kloc = "n/a" if density["per_kloc"] is None else f"{density['per_kloc']} per 1,000 lines"
     serious = "n/a" if density["serious_per_kloc"] is None else f"{density['serious_per_kloc']} per 1,000 lines"
-    return ["| Score of | Value |", "|---|---|",
+    baseline = summary.get("baseline")
+    extra_rows = ([f"| New findings since the baseline | {baseline['new']} ({baseline['existing']} already known) |"]
+                  if baseline else [])
+    return ["| Score of | Value |", "|---|---|", *extra_rows,
             f"| Production code | {scores['production']['score']}/100 (grade {scores['production']['grade']}) |",
             f"| Test code | {scores['tests']['score']}/100 (grade {scores['tests']['grade']}) |",
             f"| Findings in production code | {density['findings']} ({per_kloc}; {density['kloc']} KLOC analyzed) |",
@@ -216,6 +219,14 @@ def markdown_not_analyzed(report: Dict) -> str:
             lines.append(f"| `{_md_escape(entry['path'])}` | {_md_escape(entry['reason'])} | "
                          f"{'-' if count is None else (str(count) + ('+' if count >= 5000 else ''))} |")
         lines.append("")
+    if skipped.get("since"):
+        since = skipped["since"]
+        lines += [f"### Only files changed since `{_md_escape(since['ref'])}` were analyzed", "",
+                  f"{since['changed']} changed file(s) analyzed; {since['unchanged_skipped']} unchanged file(s) were not.", ""]
+    if skipped.get("intel"):
+        lines += ["### Gaps in the dependency intelligence", "",
+                  "Vulnerability or version lookups that were limited, failed or skipped:", ""]
+        lines += [f"- {_md_escape(note)}" for note in skipped["intel"]] + [""]
     if skipped.get("unparsed"):
         lines += ["### Dependency manifests that could not be parsed",
                   "", "Their libraries are missing from the inventory, so vulnerabilities in them were not checked.", ""]
@@ -415,6 +426,8 @@ def sarif(report: Dict) -> Dict:
                 {"location": {"physicalLocation": {"artifactLocation": {"uri": f["file"]},
                                                    "region": {"startLine": max(1, step["line"])}},
                               "message": {"text": step["label"]}}} for step in f["flow"]]}]}]
+        if (f.get("extra") or {}).get("baseline"):
+            result["baselineState"] = "new" if f["extra"]["baseline"] == "new" else "unchanged"
         if f.get("status") in SUPPRESSED_STATUSES + ("accepted_risk",):
             result["suppressions"] = [{"kind": "external", "status": "accepted",
                                        "justification": f"{f['status']}: {(f.get('triage') or {}).get('reason', '')}"}]

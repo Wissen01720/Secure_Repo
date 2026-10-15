@@ -14,6 +14,8 @@ Analysis layers applied to each source file:
 from __future__ import annotations
 
 import bisect
+import fnmatch
+import json
 import os
 import pickle
 import platform
@@ -27,8 +29,8 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from secure_repo import __author__, __version__
-from secure_repo.core import (checks, compliance, confidence, deps as depmod, gitops, intel, jsflow, lexer, pyast,
-                              regions, resolver, summary as summarymod, thirdparty, triage, webchecks)
+from secure_repo.core import (checks, compliance, confidence, deps as depmod, gitops, intel, jsflow, lexer, netio,
+                              pyast, regions, resolver, summary as summarymod, thirdparty, triage, webchecks)
 from secure_repo.core.config import ProjectConfig, load_config
 from secure_repo.core.events import EventBus
 from secure_repo.core.languages import DOCUMENTATION
@@ -73,6 +75,16 @@ class ScanOptions:
     # Does the audited repository's own configuration (.securerepo.toml, .securerepo/triage.json, nosec comments)
     # get authority over the result? None = automatic: only for the working tree of a local Git repository.
     trust_repo_config: Optional[bool] = None
+    private: List[str] = field(default_factory=list)  # package-name globs that are never sent to any service
+    no_registry: bool = False      # do not resolve versions or fetch metadata from package registries (OSV still runs)
+    check_confusion: bool = False  # opt in: look private names up in the public registry (sends those names)
+    ca_bundle: str = ""            # certificate authority bundle for HTTPS lookups (corporate TLS inspection)
+    cache: bool = True             # keep registry / advisory lookups on disk for 24 hours
+    max_registry: int = 300        # direct dependencies resolved against the registries
+    max_graph: int = 120           # direct dependencies whose transitive graph is expanded
+    max_enrich: int = 250          # direct dependencies that get license / latest-version metadata
+    baseline: str = ""             # report.json of an earlier run: --fail-on then counts only findings that are new
+    since: str = ""                # Git reference: analyze only the files that changed relative to it
     jobs: int = 0                  # worker processes for file analysis: 0 = automatic, 1 = single process
     parallel_threshold: int = 400  # below this many files a single process is faster than starting workers
 
@@ -82,6 +94,19 @@ class ScanOptions:
 
 class ScanCancelled(Exception):
     pass
+
+
+def load_baseline(path: str) -> set:
+    """Fingerprints of every finding of an earlier report.json (raises ValueError when the file is not a report)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read the baseline report {path}: {exc}") from exc
+    findings = data.get("findings") if isinstance(data, dict) else None
+    if not isinstance(findings, list) or (findings and not any(isinstance(f, dict) and f.get("fingerprint") for f in findings)):
+        raise ValueError(f"{path} is not a Secure Repo report.json (no findings with fingerprints)")
+    return {f["fingerprint"] for f in findings if isinstance(f, dict) and f.get("fingerprint")}
 
 
 MAX_AUTO_JOBS = 8
@@ -119,7 +144,7 @@ class Scanner:
         self._min_conf_from_repo = False
         # What was NOT (fully) analyzed - shown in every report so the analyst knows the blind spots.
         self.not_analyzed: Dict = {"directories": [], "minified": [], "too_large": [], "binary": 0, "by_type": 0,
-                                   "unparsed": []}
+                                   "unparsed": [], "intel": []}
         self.engine_stats: Dict[str, int] = {"python_ast": 0, "python_fallback": 0, "js_flow": 0, "masked_files": 0}
         self._rule_cache: Dict[Tuple[str, Tuple[str, ...]], List[Rule]] = {}
         self.log_lines: List[str] = []
@@ -671,6 +696,62 @@ class Scanner:
                 existing.locked = existing.locked or dep.locked
         return list(inventory.values()), issues, [m.rel for m in manifests]
 
+    def _mark_private(self, inventory: List[Dependency]) -> int:
+        """Flag dependencies whose names must never be sent anywhere (``--private`` and ``[intel] private``)."""
+        patterns = [p.lower() for p in list(self.options.private) + list(self.config.intel_private) if p]
+        if not patterns:
+            return 0
+        count = 0
+        for dep in inventory:
+            if any(fnmatch.fnmatchcase(dep.name.lower(), pattern) for pattern in patterns):
+                dep.private = True
+                count += 1
+        if count:
+            self.bus.log(f"{count} private package(s) are excluded from every network lookup", "ok")
+        return count
+
+    def _confusion_findings(self, inventory: List[Dependency]) -> None:
+        """Opt-in: a private package name that also exists in the public registry invites dependency confusion."""
+        rule = RULES_BY_ID["SR-DEP-010"]
+        for dep in inventory:
+            if not (dep.private and dep.direct and dep.source == "registry"):
+                continue
+            if intel.exists_publicly(dep) is True:
+                detail = (f"'{dep.name}' is declared as private, but a package with that exact name exists in the public "
+                          f"{dep.ecosystem} registry. If a build resolves it from the public index (a missing "
+                          f"--index-url, a proxy without scoping), an attacker's package is installed instead.")
+                self._add(self._finding_from_rule(rule, dep.manifest, dep.line, dep.name, detail=detail,
+                                                  title=f"Private package name exists publicly: {dep.name}",
+                                                  extra={"package": dep.name, "ecosystem": dep.ecosystem}))
+                dep.issues.append("Private name also exists in the public registry")
+
+    def _files_since(self, workspace: Workspace, files: List[FileInfo]) -> List[FileInfo]:
+        """Restrict the analysis to the files that changed relative to ``options.since`` (local working tree only)."""
+        if workspace.mode != "working-tree":
+            raise ValueError("--since works on the working tree of a local Git repository (not on remote repositories, "
+                             "other branches or plain folders)")
+        changed = gitops.changed_files(workspace.path, self.options.since)
+        selected = [f for f in files if f.rel in changed]
+        self.not_analyzed["since"] = {"ref": self.options.since, "changed": len(selected),
+                                      "unchanged_skipped": len(files) - len(selected)}
+        self.bus.log(f"--since {self.options.since}: analyzing {len(selected)} changed file(s); "
+                     f"{len(files) - len(selected)} unchanged file(s) are not analyzed", "ok")
+        return selected
+
+    def _apply_baseline(self, findings: List[Dict]) -> Optional[Dict]:
+        """Mark each finding as new or already present in the baseline report (matched by fingerprint)."""
+        if not self.options.baseline:
+            return None
+        known = load_baseline(self.options.baseline)
+        new = 0
+        for finding in findings:
+            state = "existing" if finding.get("fingerprint") in known else "new"
+            finding.setdefault("extra", {})["baseline"] = state
+            new += int(state == "new" and finding["status"] == "open")
+        self.bus.log(f"Baseline {os.path.basename(self.options.baseline)}: {new} new open finding(s), "
+                     f"{sum(1 for f in findings if f['extra']['baseline'] == 'existing')} already known", "ok")
+        return {"file": os.path.basename(self.options.baseline), "known_fingerprints": len(known), "new_open": new}
+
     def _stage_resolve(self, inventory: List[Dependency], root: str) -> Dict[str, int]:
         counts = {"environment": 0, "registry": 0, "graph": 0}
         if not self.options.resolve_versions or not inventory:
@@ -678,10 +759,10 @@ class Scanner:
         counts["environment"] = resolver.resolve_from_environment(inventory, root)
         if counts["environment"]:
             self.bus.log(f"{counts['environment']} version(s) resolved from the installed environment", "ok")
-        if not self.options.offline:
+        if not self.options.offline and not self.options.no_registry:
             try:
-                counts["registry"] = resolver.resolve_from_registry(inventory, self.bus)
-                added = resolver.resolve_graph(inventory, self.bus)
+                counts["registry"] = resolver.resolve_from_registry(inventory, self.bus, limit=self.options.max_registry)
+                added = resolver.resolve_graph(inventory, self.bus, limit=self.options.max_graph)
                 inventory.extend(added)
                 counts["graph"] = len(added)
             except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -773,7 +854,8 @@ class Scanner:
                       and d.range_lowest != d.version and not d.vulnerabilities]
         if not candidates:
             return
-        found = intel.osv_vulnerability_ids([(d.ecosystem, d.name, d.range_lowest) for d in candidates])
+        found = intel.osv_vulnerability_ids([(d.ecosystem, d.name, d.range_lowest) for d in candidates
+                                             if not d.private])
         rule = RULES_BY_ID["SR-DEP-009"]
         for dep in candidates:
             ids = found.get((dep.ecosystem, dep.name, dep.range_lowest))
@@ -1002,19 +1084,24 @@ class Scanner:
             bus.log(f"Mapped {len(files)} files in {directories} directories", "ok")
             bus.stage("enumerate", "done", f"{len(files)} files")
 
+            analyzed_files = files
+            if self.options.since:
+                analyzed_files = self._files_since(workspace, files)
             bus.stage("analyze", "start")
             stats = {"scanned": 0, "skipped": 0, "lines": 0, "languages": {}}
-            self._stage_analyze(files, tree, stats)
+            self._stage_analyze(analyzed_files, tree, stats)
             engines = self.engine_stats
             bus.log(f"Engines: {engines['python_ast']} Python syntax trees, {engines['js_flow']} JS/TS data-flow passes, "
                     f"{engines['masked_files']} files lexically masked; {sum(self.noise.values())} noisy matches discarded", "ok")
             bus.stage("analyze", "done", f"{stats['scanned']} files analyzed, {len(self.findings)} findings")
 
             bus.stage("dependencies", "start")
-            inventory, issues, manifests = self._stage_dependencies(files)
+            inventory, issues, manifests = self._stage_dependencies(analyzed_files)
             direct = sum(1 for d in inventory if d.direct)
             bus.stage("dependencies", "done", f"{len(inventory)} libraries ({direct} direct) in {len(manifests)} manifests")
 
+            self._mark_private(inventory)
+            netio.configure(ca_bundle=self.options.ca_bundle, cache=self.options.cache)
             bus.stage("resolve", "start")
             resolution = self._stage_resolve(inventory, workspace.path)
             unresolved = sum(1 for d in inventory if d.direct and not d.version and d.source == "registry")
@@ -1037,10 +1124,12 @@ class Scanner:
             else:
                 try:
                     queried, vulnerable = intel.osv_lookup(inventory, bus)
-                    if self.options.enrich:
-                        intel.depsdev_enrich(inventory, bus)
+                    if self.options.enrich and not self.options.no_registry:
+                        intel.depsdev_enrich(inventory, bus, limit=self.options.max_enrich)
                     self._vulnerability_findings(inventory)
                     self._range_findings(inventory)
+                    if self.options.check_confusion:
+                        self._confusion_findings(inventory)
                     bus.stage("intel", "done", f"{queried} versions checked, {vulnerable} vulnerable")
                 except (urllib.error.URLError, OSError, ValueError) as exc:
                     intel_error = str(getattr(exc, "reason", exc))
@@ -1048,6 +1137,7 @@ class Scanner:
                     self._vulnerability_findings(inventory)
                     bus.stage("intel", "skip", "network unavailable")
 
+            self.not_analyzed["intel"] = list(netio.STATS.notes)
             bus.stage("hygiene", "start")
             hygiene = self._stage_hygiene(files, workspace.path, bool(inventory))
             bus.stage("hygiene", "done", f"{sum(hygiene.values())}/{len(hygiene)} practices present")
@@ -1072,6 +1162,9 @@ class Scanner:
             # Quality pipeline: fingerprints, confidence, triage knowledge, configuration --------------
             findings = [f.to_dict() for f in self.findings]
             quality = self._apply_quality(findings, meta, workspace.path)
+            baseline_info = self._apply_baseline(findings)
+            if baseline_info:
+                meta["baseline"] = baseline_info
             influence = self._repo_influence(findings, workspace, excluded_by_config)
             if quality["decisions"] or quality["learned_patterns"]:
                 bus.log(f"Triage knowledge applied: {quality['decisions']} decision(s), "
@@ -1117,6 +1210,7 @@ class Scanner:
                     "custom_rules": [r.id for r in self.config.custom_rules], "min_confidence": self.options.min_confidence,
                     "repo_influence": influence,
                     "not_analyzed": self.not_analyzed,
+                    "network": netio.STATS.to_dict(),
                 },
                 "structure": tree.to_dict(),
                 "languages": stats["languages"],

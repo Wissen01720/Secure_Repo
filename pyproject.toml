@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-repo"
-version = "1.2.4"
+version = "1.2.5"
 description = "Repository security auditor with a hacker-style CLI and a neural-map GUI: static analysis, secrets, library vulnerabilities, supply chain and optional compliance evidence."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -45,6 +45,7 @@ include = ["secure_repo*"]
 "secure_repo.gui" = ["static/*"]
 "secure_repo.benchmark" = ["corpus/*"]
 "secure_repo.ruledata" = ["*.toml"]
+"secure_repo.data" = ["*.json"]
 "secure_repo.benchmark.extdata" = ["*.toml"]
 
 [tool.pytest.ini_options]

@@ -119,6 +119,14 @@ def build_summary(report: Dict) -> None:
         })
     summary = report.setdefault("summary", {})
     summary["scores"] = split_scores(report, findings)
+    marked = [f for f in findings if (f.get("extra") or {}).get("baseline")]
+    if marked:
+        fresh = [f for f in marked if f["extra"]["baseline"] == "new" and reportable(f)]
+        summary["baseline"] = {"new": len(fresh), "existing": len([f for f in marked if f["extra"]["baseline"] == "existing"
+                                                                   and reportable(f)]),
+                               "new_by_severity": {s: sum(1 for f in fresh if f["severity"] == s) for s in SEVERITIES}}
+    else:
+        summary.pop("baseline", None)
     summary.update({
         "findings": len(active), "by_severity": by_severity,
         "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),

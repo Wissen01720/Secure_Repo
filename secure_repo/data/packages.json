@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "reviewed": "2026-10-15",
+  "note": "Fallback lists used when the vulnerability databases cannot be reached. OSV.dev publishes malicious packages as MAL-* advisories and those take precedence (they are reported as critical). Entries have a source and a date when one is known; an empty date means the incident is recorded but its exact date was not verified. Add or correct entries through a pull request.",
+  "compromised": {
+    "npm": {
+      "event-stream": {"versions": ["3.3.6"], "date": "2018-11", "source": "https://github.com/dominictarr/event-stream/issues/116", "reason": "release that pulled the malicious flatmap-stream dependency"},
+      "flatmap-stream": {"versions": [], "date": "2018-11", "source": "https://github.com/dominictarr/event-stream/issues/116", "reason": "malicious package injected into event-stream"},
+      "ua-parser-js": {"versions": ["0.7.29", "0.8.0", "1.0.0"], "date": "2021-10", "source": "https://github.com/advisories/GHSA-pjwm-rvh2-c87w", "reason": "hijacked releases that installed a cryptominer and a credential stealer"},
+      "coa": {"versions": ["2.0.3", "2.0.4", "2.1.1", "2.1.3", "3.0.1", "3.1.3"], "date": "2021-11", "source": "https://github.com/advisories/GHSA-73qr-pfmq-6rp8", "reason": "hijacked releases that installed malware"},
+      "rc": {"versions": ["1.2.9", "1.3.9", "2.3.9"], "date": "2021-11", "source": "https://github.com/advisories/GHSA-g2q5-5433-rhrf", "reason": "hijacked releases that installed malware"},
+      "node-ipc": {"versions": ["10.1.1", "10.1.2"], "date": "2022-03", "source": "https://github.com/advisories/GHSA-97m3-w2cp-4xx6", "reason": "protestware that wiped files on machines in some regions"},
+      "colors": {"versions": ["1.4.44-liberty-2"], "date": "2022-01", "source": "", "reason": "sabotaged release by the maintainer"},
+      "faker": {"versions": ["6.6.6"], "date": "2022-01", "source": "", "reason": "sabotaged release by the maintainer"},
+      "crossenv": {"versions": [], "date": "2017-08", "source": "https://blog.npmjs.org/post/163723642530/crossenv-malware-on-the-npm-registry", "reason": "typosquat of cross-env that stole environment variables"}
+    },
+    "PyPI": {
+      "jeilyfish": {"versions": [], "date": "2019-12", "source": "", "reason": "typosquat of jellyfish that stole SSH and GPG keys"},
+      "python3-dateutil": {"versions": [], "date": "2019-12", "source": "", "reason": "typosquat of python-dateutil that stole SSH and GPG keys"},
+      "python-sqlite": {"versions": [], "date": "", "source": "", "reason": "recorded malicious or typosquatting package"},
+      "urlib3": {"versions": [], "date": "", "source": "", "reason": "typosquat of urllib3"},
+      "colourama": {"versions": [], "date": "", "source": "", "reason": "typosquat of colorama"}
+    }
+  },
+  "deprecated": {
+    "npm": {
+      "request": {"hint": "Use undici, node-fetch or axios.", "date": "2020-02", "source": "https://github.com/request/request/issues/3142"},
+      "request-promise": {"hint": "Use a maintained HTTP client.", "date": "", "source": ""},
+      "node-uuid": {"hint": "Use uuid.", "date": "", "source": ""},
+      "crypto": {"hint": "Use Node's built-in crypto module.", "date": "", "source": ""},
+      "querystring": {"hint": "Use URLSearchParams.", "date": "", "source": ""},
+      "left-pad": {"hint": "Use String.prototype.padStart.", "date": "", "source": ""},
+      "nomnom": {"hint": "Use commander or yargs.", "date": "", "source": ""},
+      "istanbul": {"hint": "Use nyc / c8.", "date": "", "source": ""},
+      "tslint": {"hint": "Use ESLint with typescript-eslint.", "date": "2019", "source": "https://github.com/palantir/tslint/issues/4534"}
+    },
+    "PyPI": {
+      "pycrypto": {"hint": "Use pycryptodome or cryptography.", "date": "", "source": ""},
+      "nose": {"hint": "Use pytest.", "date": "", "source": ""}
+    },
+    "RubyGems": {
+      "therubyracer": {"hint": "Use mini_racer or execjs.", "date": "", "source": ""}
+    }
+  }
+}

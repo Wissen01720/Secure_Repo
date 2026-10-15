@@ -51,6 +51,7 @@ class RuleExample:
     scope: str = "file"            # "repo": scanned as a whole repository (hygiene, dependency and CI rules)
     extra: Dict[str, str] = field(default_factory=dict)   # additional files of the example repository
     online: bool = False           # needs OSV.dev / deps.dev: skipped unless the examples are run online
+    options: Dict[str, object] = field(default_factory=dict)  # scan options for this example (e.g. private patterns)
 
 
 @dataclass
@@ -190,7 +191,7 @@ def _rule_from_table(table: Dict, origin: str) -> Rule:
             raise RuleDataError(f"{where}: an example needs kind = positive|negative and code")
         examples.append(RuleExample(kind=raw["kind"], code=raw["code"], file=raw.get("file", ""),
                                     scope=raw.get("scope", "file"), extra=dict(raw.get("extra", {})),
-                                    online=bool(raw.get("online", False))))
+                                    online=bool(raw.get("online", False)), options=dict(raw.get("options", {}))))
     rule = Rule(
         id=table["id"], title=table["title"], severity=table["severity"], category=table["category"],
         cwe=table.get("cwe", ""), owasp=table.get("owasp", ""), description=table["description"],

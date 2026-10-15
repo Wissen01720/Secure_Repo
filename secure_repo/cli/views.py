@@ -418,6 +418,10 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
         parts = []
         if skipped.get("directories"):
             parts.append(f"{len(skipped['directories'])} folder(s)")
+        if skipped.get("intel"):
+            parts.append(f"{len(skipped['intel'])} gap(s) in the dependency intelligence")
+        if skipped.get("since"):
+            parts.append(f"{skipped['since']['unchanged_skipped']} unchanged file(s) (--since)")
         if skipped.get("unparsed"):
             parts.append(f"{len(skipped['unparsed'])} manifest(s) that could not be parsed")
         if skipped.get("minified"):

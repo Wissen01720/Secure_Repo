@@ -24,7 +24,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
-from secure_repo.core import versions as vmod
+from secure_repo.core import netio, versions as vmod
 from secure_repo.core.deps import normalize_name
 from secure_repo.core.events import EventBus
 from secure_repo.core.intel import DEPSDEV_SYSTEMS, DEPSDEV_URL, _http_json
@@ -119,14 +119,14 @@ def registry_versions(ecosystem: str, name: str) -> List[str]:
     if ecosystem in DEPSDEV_SYSTEMS:
         lookup = normalize_name("PyPI", name) if ecosystem == "PyPI" else name
         data = _http_json(DEPSDEV_URL + DEPSDEV_SYSTEMS[ecosystem] + "/packages/" + urllib.parse.quote(lookup, safe=""),
-                          timeout=20)
+                          timeout=20, cache=True)
         return [(v.get("versionKey") or {}).get("version", "") for v in data.get("versions", []) or []]
     if ecosystem == "Packagist":
-        data = _http_json("https://repo.packagist.org/p2/" + urllib.parse.quote(name.lower(), safe="/") + ".json", timeout=20)
+        data = _http_json("https://repo.packagist.org/p2/" + urllib.parse.quote(name.lower(), safe="/") + ".json", timeout=20, cache=True)
         releases = (data.get("packages") or {}).get(name.lower(), [])
         return [str(r.get("version", "")).lstrip("v") for r in releases if not str(r.get("version", "")).startswith("dev-")]
     if ecosystem == "Pub":
-        data = _http_json("https://pub.dev/api/packages/" + urllib.parse.quote(name, safe=""), timeout=20)
+        data = _http_json("https://pub.dev/api/packages/" + urllib.parse.quote(name, safe=""), timeout=20, cache=True)
         return [v.get("version", "") for v in data.get("versions", []) or []]
     return []
 
@@ -140,8 +140,13 @@ def _spec_for_resolution(dep: Dependency) -> str:
     return spec or "*"
 
 
-def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 12) -> int:
-    targets = [d for d in deps if not d.version and d.source == "registry" and d.direct and d.spec != "managed"][:MAX_REGISTRY]
+def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 12, limit: int = MAX_REGISTRY) -> int:
+    eligible = [d for d in deps if not d.version and d.source == "registry" and d.direct and d.spec != "managed"
+                and not d.private]
+    targets = eligible[:limit]
+    if len(eligible) > len(targets):
+        netio.note(f"{len(eligible) - len(targets)} dependenc{'y' if len(eligible) - len(targets) == 1 else 'ies'} "
+                   f"were not resolved against the registries because of the limit ({limit}); raise it with --max-registry")
     if not targets:
         return 0
     bus.log(f"Resolving {len(targets)} version range(s) against the package registries")
@@ -166,10 +171,15 @@ def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 
     return resolved
 
 
-def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8) -> List[Dependency]:
+def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit: int = MAX_GRAPH) -> List[Dependency]:
     """Expand transitive dependencies of registry-resolved direct libraries (no lockfile available)."""
-    roots = [d for d in deps if d.direct and d.version and d.resolved_by in ("registry", "environment", "manifest")
-             and not d.locked and d.ecosystem in GRAPH_SYSTEMS][:MAX_GRAPH]
+    eligible = [d for d in deps if d.direct and d.version and d.resolved_by in ("registry", "environment", "manifest")
+                and not d.locked and d.ecosystem in GRAPH_SYSTEMS and not d.private]
+    roots = eligible[:limit]
+    if len(eligible) > len(roots):
+        netio.note(f"The transitive dependencies of {len(eligible) - len(roots)} direct librar"
+                   f"{'y' if len(eligible) - len(roots) == 1 else 'ies'} were not expanded because of the limit "
+                   f"({limit}); raise it with --max-graph")
     if not roots:
         return []
     bus.log(f"Building the virtual dependency graph for {len(roots)} direct librar{'y' if len(roots) == 1 else 'ies'}")
@@ -179,7 +189,7 @@ def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Li
         url = (DEPSDEV_URL + DEPSDEV_SYSTEMS[dep.ecosystem] + "/packages/" + urllib.parse.quote(name, safe="") +
                "/versions/" + urllib.parse.quote(dep.version or "", safe="") + ":dependencies")
         try:
-            data = _http_json(url, timeout=25)
+            data = _http_json(url, timeout=25, cache=True)
         except (urllib.error.URLError, OSError, ValueError):
             return []
         found = []

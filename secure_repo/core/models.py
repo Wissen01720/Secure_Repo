@@ -150,6 +150,7 @@ class Dependency:
     resolved_by: Optional[str] = None
     range_lowest: Optional[str] = None   # lowest version admitted by the declared range (registry resolution)
     parent: Optional[str] = None         # direct dependency that pulls this one in (virtual graph)
+    private: bool = False                # matches an [intel] private pattern: its name is never sent to any service
 
     @property
     def key(self) -> str:

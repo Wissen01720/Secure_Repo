@@ -12,7 +12,7 @@ owasp = 'A03'
 languages = ['HTML', 'PHP', 'Ruby', 'Vue']
 keywords = ['safe', '{{{', '<%-', '{!!', 'html.raw', 'utext']
 tags = ['xss', 'injection']
-pattern = '\{\{[^}\n]*\|\s*safe\s*\}\}|\{\{\{[^}\n]+\}\}\}|<%-\s|\{!!\s*[^!\n]+!!\}|@Html\.Raw\s*\(|\bth:utext\s*='
+pattern = '\{\{[^}\n]{0,200}\|\s*safe\s*\}\}|\{\{\{[^}\n]{1,200}\}\}\}|<%-\s|\{!!\s*[^!\n]{1,200}!!\}|@Html\.Raw\s*\(|\bth:utext\s*='
 description = 'Raw/unescaped template output (|safe, {{{ }}}, <%-, {!! !!}, Html.Raw, th:utext) renders data as HTML. Untrusted values become stored or reflected XSS.'
 recommendation = 'Use the escaped form of the output tag and sanitize any HTML that must be rendered.'
 

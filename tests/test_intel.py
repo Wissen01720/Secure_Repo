@@ -21,7 +21,7 @@ class FakeNetwork:
     def __init__(self, batch=None, details=None, metadata=None, fail=None):
         self.calls, self.batch, self.details, self.metadata, self.fail = [], batch or {}, details or {}, metadata or {}, fail
 
-    def __call__(self, url, payload=None, timeout=20):
+    def __call__(self, url, payload=None, timeout=20, cache=False):
         self.calls.append((url, payload))
         if self.fail:
             raise self.fail
@@ -148,7 +148,7 @@ def test_http_json_sends_a_post_with_identifying_headers(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-        def read(self):
+        def read(self, size=-1):
             return b'{"ok": true}'
 
     def fake_urlopen(request, timeout=None, context=None):

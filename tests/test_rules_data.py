@@ -49,7 +49,7 @@ def test_example_placeholders_never_leave_a_token_shaped_literal_in_the_reposito
 # ------------------------------------------------------------------------------------------ data invariants
 def test_rule_data_is_well_formed():
     identifiers = [rule.id for rule in RULES]
-    assert identifiers == sorted(identifiers) and len(set(identifiers)) == len(identifiers) == 172
+    assert identifiers == sorted(identifiers) and len(set(identifiers)) == len(identifiers) == 173
     for rule in RULES:
         assert re.fullmatch(r"SR-[A-Z0-9]+-\d{3}", rule.id), rule.id
         assert rule.severity in ("critical", "high", "medium", "low", "info"), rule.id

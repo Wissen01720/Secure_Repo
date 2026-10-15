@@ -642,6 +642,7 @@
     if (na) {
       const parts = [];
       if ((na.directories || []).length) parts.push(na.directories.length + ' folder(s) not entered');
+      if ((na.intel || []).length) parts.push(na.intel.length + ' gap(s) in the dependency intelligence');
       if ((na.unparsed || []).length) parts.push(na.unparsed.length + ' manifest(s) could not be parsed');
       if ((na.minified || []).length) parts.push(na.minified.length + ' minified bundle(s) (reduced mode)');
       if ((na.too_large || []).length) parts.push(na.too_large.length + ' file(s) over the size limit');
@@ -649,6 +650,7 @@
       const box = el('div', { class: 'infl-box' }, [el('b', { text: 'Not analyzed' })]);
       if (!parts.length) parts.push('nothing was skipped');
       parts.forEach((p) => box.appendChild(el('div', { class: 'infl-row' }, [el('span', { text: '·' }), el('span', { text: p })])));
+      (na.intel || []).slice(0, 6).forEach((note) => box.appendChild(el('div', { class: 'infl-row' }, [el('span', { text: '·' }), el('span', { text: note })])));
       (na.unparsed || []).slice(0, 6).forEach((d) => box.appendChild(el('div', { class: 'infl-row' }, [el('span', { text: d.path }), el('span', { text: d.error })])));
       (na.directories || []).slice(0, 6).forEach((d) => box.appendChild(el('div', { class: 'infl-row' }, [el('span', { text: d.path }), el('span', { text: d.reason })])));
       qualityCard.appendChild(box);
