@@ -24,6 +24,21 @@ def _where(finding: Dict) -> str:
     return finding["file"] + (f":{finding['line']}" if finding.get("line") else "")
 
 
+def split_score_lines(summary: Dict) -> List[str]:
+    """Production / tests / density, as a small table under the headline score."""
+    scores = summary.get("scores")
+    if not scores:
+        return []
+    density = scores["density"]
+    per_kloc = "n/a" if density["per_kloc"] is None else f"{density['per_kloc']} per 1,000 lines"
+    serious = "n/a" if density["serious_per_kloc"] is None else f"{density['serious_per_kloc']} per 1,000 lines"
+    return ["| Score of | Value |", "|---|---|",
+            f"| Production code | {scores['production']['score']}/100 (grade {scores['production']['grade']}) |",
+            f"| Test code | {scores['tests']['score']}/100 (grade {scores['tests']['grade']}) |",
+            f"| Findings in production code | {density['findings']} ({per_kloc}; {density['kloc']} KLOC analyzed) |",
+            f"| Critical + high in production code | {density['serious']} ({serious}) |", ""]
+
+
 def markdown_summary(report: Dict) -> str:
     meta, summary = report["meta"], report["summary"]
     dep = report["dependency_summary"]
@@ -42,7 +57,7 @@ def markdown_summary(report: Dict) -> str:
         "",
         f"## Security score: **{summary['score']}/100 (grade {summary['grade']})**",
         "",
-    ] + ([f"> **{summary['grade_cap']['message']}**", ""] if summary.get("grade_cap") else []) + [
+    ] + ([f"> **{summary['grade_cap']['message']}**", ""] if summary.get("grade_cap") else []) + split_score_lines(summary) + [
         "| Severity | Findings | Meaning |", "|---|---:|---|",
     ]
     for sev in SEVERITIES:

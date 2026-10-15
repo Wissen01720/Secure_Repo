@@ -471,6 +471,12 @@
     $('#res-name').textContent = meta.name;
     const chips = $('#res-chips');
     chips.textContent = '';
+    if (sum.scores) {
+      const sc = sum.scores, dn = sc.density;
+      chips.appendChild(el('span', { class: 'meta-chip', title: 'Score of the production code on its own' }, ['production ', el('b', { text: sc.production.score + ' (' + sc.production.grade + ')' })]));
+      chips.appendChild(el('span', { class: 'meta-chip', title: 'Score of the test code on its own' }, ['tests ', el('b', { text: sc.tests.score + ' (' + sc.tests.grade + ')' })]));
+      if (dn.serious_per_kloc !== null) chips.appendChild(el('span', { class: 'meta-chip', title: 'Critical and high findings in production code per 1,000 lines (' + dn.kloc + ' KLOC analyzed)' }, ['density ', el('b', { text: dn.serious_per_kloc + ' / KLOC' })]));
+    }
     if (sum.grade_cap) chips.appendChild(el('span', { class: 'meta-chip cap-chip', title: sum.grade_cap.message }, ['grade ', el('b', { text: 'capped to ' + sum.grade_cap.grade + ' · ' + sum.grade_cap.reason })]));
     [['branch', meta.branch || 'n/a'], ['commit', (meta.commit || 'n/a').slice(0, 12)], ['mode', meta.mode],
       ['files', SR.num(sum.files_total)], ['lines', SR.num(sum.lines)], ['duration', meta.duration_seconds + 's'],

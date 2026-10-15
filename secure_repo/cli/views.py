@@ -58,6 +58,14 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
     cap_note = None
     if summary.get("grade_cap"):
         cap_note = Text("  ▲ " + summary["grade_cap"]["message"], style="bold #ff8a00")
+    split_note = None
+    scores = summary.get("scores")
+    if scores:
+        density = scores["density"]
+        per_kloc = "n/a" if density["serious_per_kloc"] is None else f"{density['serious_per_kloc']}"
+        split_note = Text(f"  production {scores['production']['score']} ({scores['production']['grade']})  ·  "
+                          f"tests {scores['tests']['score']} ({scores['tests']['grade']})  ·  critical+high per 1,000 lines: "
+                          f"{per_kloc}", style=DIM)
 
     histogram = Table.grid(padding=(0, 2))
     histogram.add_column(no_wrap=True)
@@ -82,7 +90,7 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
                                f"{deps['vulnerable']} vulnerable · {deps['vulnerabilities']} advisories")
     facts.add_row("Intelligence", "online (OSV.dev + deps.dev)" if deps["online"] else "offline / unavailable")
     facts.add_row("Duration", f"{meta['duration_seconds']} s")
-    console.print(Panel(Group(*([score] + ([cap_note] if cap_note else [])), Text(""), histogram, Text(""), facts),
+    console.print(Panel(Group(*([score] + ([cap_note] if cap_note else []) + ([split_note] if split_note else [])), Text(""), histogram, Text(""), facts),
                         title=Text(" SECURITY POSTURE ", style=f"bold {NEON}"), border_style=grade_color,
                         box=box.HEAVY, padding=(1, 2)))
 

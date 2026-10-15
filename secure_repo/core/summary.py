@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from secure_repo.core import compliance
+from secure_repo.core.languages import DOCUMENTATION
 from secure_repo.core.models import OWASP_TOP10, REPO_CONTROLLED_ORIGINS, SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES_BY_ID
 from secure_repo.core.scoring import compute_score
@@ -45,6 +46,32 @@ def annotate_structure(structure: Dict, findings: List[Dict]) -> None:
             target["severity"][severity] = target["severity"].get(severity, 0) + 1
             if target["risk"] is None or SEVERITY_RANK[severity] < SEVERITY_RANK[target["risk"]]:
                 target["risk"] = severity
+
+
+def _brief(score: Dict) -> Dict:
+    return {"score": score["score"], "grade": score["grade"], "cap": score["cap"]}
+
+
+def split_scores(report: Dict, findings: List[Dict]) -> Dict:
+    """Three numbers instead of one: production code, test code, and findings per thousand lines of code.
+
+    The headline score mixes everything (tests count half). On its own it saturates on big projects and cannot tell a
+    mature framework from a deliberately vulnerable app, so the report also shows how the production code scores by
+    itself and how dense the findings are relative to the size of the code base.
+    """
+    production = compute_score([f for f in findings if not f.get("in_test")])
+    in_tests = compute_score([f for f in findings if f.get("in_test")])
+    code_lines = sum(entry.get("lines", 0) for language, entry in (report.get("languages") or {}).items()
+                     if language not in DOCUMENTATION)
+    kloc = code_lines / 1000.0
+    own = [f for f in findings if reportable(f) and not f.get("in_test") and f.get("source") in ("code", "secret")]
+    serious = [f for f in own if f["severity"] in ("critical", "high")]
+    return {
+        "production": _brief(production), "tests": _brief(in_tests),
+        "density": {"kloc": round(kloc, 1), "findings": len(own), "serious": len(serious),
+                    "per_kloc": round(len(own) / kloc, 2) if kloc else None,
+                    "serious_per_kloc": round(len(serious) / kloc, 2) if kloc else None},
+    }
 
 
 def build_summary(report: Dict) -> None:
@@ -91,6 +118,7 @@ def build_summary(report: Dict) -> None:
             "active": bool(touched or influence["excluded_by_config"]["files"] or influence["ignored"]),
         })
     summary = report.setdefault("summary", {})
+    summary["scores"] = split_scores(report, findings)
     summary.update({
         "findings": len(active), "by_severity": by_severity,
         "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
