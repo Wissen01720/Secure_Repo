@@ -66,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="reports folder (default: the Secure Repo data folder, outside the audited repo)")
     scan.add_argument("-y", "--yes", action="store_true", help="confirm you are authorized to audit the target")
     scan.add_argument("--no-tests", action="store_true", help="skip files that look like tests/fixtures")
+    scan.add_argument("-j", "--jobs", type=int, default=0, metavar="N",
+                      help="worker processes for file analysis (default 0 = automatic; 1 = a single process)")
     scan.add_argument("--max-file-size", type=int, default=2048, metavar="KB", help="skip larger files (default 2048)")
     scan.add_argument("--exclude", action="append", default=[], metavar="GLOB", help="exclude paths (repeatable)")
     scan.add_argument("--auditor", default="", help="auditor name recorded in the audit trail")
@@ -201,7 +203,7 @@ def _state_from_args(args) -> SessionState:
             offline=args.offline, compliance=args.compliance is not None,
             frameworks=[p.strip() for p in (args.compliance or "all").split(",") if p.strip()],
             max_file_size=max(1, args.max_file_size) * 1024, exclude=args.exclude, include_tests=not args.no_tests,
-            enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output or triage.default_output_dir(),
+            jobs=max(0, args.jobs), enrich=not args.no_enrich, auditor=args.auditor, output_dir=args.output or triage.default_output_dir(),
             min_confidence=args.min_confidence, learning=not args.no_learning, resolve_versions=not args.no_resolve,
             semantic=args.engine == "layered",
             trust_repo_config=True if args.trust_repo_config else (False if args.ignore_repo_config else None))

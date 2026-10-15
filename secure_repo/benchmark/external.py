@@ -29,7 +29,7 @@ except ModuleNotFoundError:  # pragma: no cover
     import tomli as _toml  # type: ignore
 
 EXTERNAL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extdata")
-LINE_TOLERANCE = 6
+LINE_TOLERANCE = 0
 
 
 @dataclass

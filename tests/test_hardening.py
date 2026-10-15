@@ -214,7 +214,7 @@ def call(state, path, headers=None):
 def test_token_is_accepted_only_in_the_header(server):
     assert call(server, "/api/context", {"X-SR-Token": TOKEN})[0] == 200
     assert call(server, f"/api/context?token={TOKEN}")[0] == 401
-    assert call(server, f"/api/context?token={TOKEN}", {"X-SR-Token": "wrong"})[0] == 401
+    assert call(server, f"/api/context?token={TOKEN}", {"X-SR-Token": TOKEN[::-1]})[0] == 401
 
 
 def test_internal_errors_do_not_leak_details(server, monkeypatch, capsys):

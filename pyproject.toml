@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-repo"
-version = "1.2.3"
+version = "1.2.4"
 description = "Repository security auditor with a hacker-style CLI and a neural-map GUI: static analysis, secrets, library vulnerabilities, supply chain and optional compliance evidence."
 readme = "README.md"
 license = { file = "LICENSE" }

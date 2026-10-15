@@ -7,6 +7,7 @@
 [scan]
 exclude = [
   "secure_repo/core/rules.py",
+  "secure_repo/ruledata/*",
   "secure_repo/core/checks.py",
   "secure_repo/core/pyast.py",
   "secure_repo/core/jsflow.py",

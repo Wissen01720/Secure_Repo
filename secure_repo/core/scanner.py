@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import bisect
 import os
+import pickle
 import platform
 import re
 import time
 import urllib.error
-from dataclasses import asdict, dataclass, field
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -70,6 +73,8 @@ class ScanOptions:
     # Does the audited repository's own configuration (.securerepo.toml, .securerepo/triage.json, nosec comments)
     # get authority over the result? None = automatic: only for the working tree of a local Git repository.
     trust_repo_config: Optional[bool] = None
+    jobs: int = 0                  # worker processes for file analysis: 0 = automatic, 1 = single process
+    parallel_threshold: int = 400  # below this many files a single process is faster than starting workers
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -77,6 +82,23 @@ class ScanOptions:
 
 class ScanCancelled(Exception):
     pass
+
+
+MAX_AUTO_JOBS = 8
+_WORKER: Dict[str, Scanner] = {}
+
+
+def _init_worker(options: ScanOptions, config: ProjectConfig, trusted: bool) -> None:
+    """Runs once in every worker process: a private scanner configured like the parent's (no learning, no events)."""
+    scanner = Scanner(replace(options, learning=False), EventBus(), knowledge=None)
+    scanner.config, scanner.trusted = config, trusted
+    scanner.rules = list(PATTERN_RULES) + config.custom_rules
+    scanner.path_rules = [r for r in scanner.rules if r.path]
+    _WORKER["scanner"] = scanner
+
+
+def _worker_process(info: FileInfo) -> Dict:
+    return _WORKER["scanner"]._process_file(info, collect=True)
 
 
 class Scanner:
@@ -440,58 +462,124 @@ class Scanner:
         return file_findings
 
     # ------------------------------------------------------------------ stages
+    def _process_file(self, info: FileInfo, collect: bool = False) -> Dict:
+        """Everything that is done to one file, without touching the report-wide statistics.
+
+        Runs in the main process (findings go straight to ``self.findings``) or in a worker process with
+        ``collect=True`` (findings and counters are handed back to the parent, which merges them in file order).
+        """
+        findings_before = len(self.findings)
+        noise_before, engines_before, inline_before = dict(self.noise), dict(self.engine_stats), self.inline_ignored
+        outcome: Dict = {"rel": info.rel, "language": info.language, "size": info.size, "lines": None, "skip": None,
+                         "minified": False, "marker": False, "scanned": False}
+        sensitive = checks.match_sensitive_file(info.rel)
+        text = None
+        if info.scannable or sensitive:
+            text = read_text(info, self.options.max_file_size)
+        if sensitive:
+            label, severity, required = sensitive
+            if required is None or (text is not None and required.search(text)):
+                rule = RULES_BY_ID["SR-SEC-020"]
+                self._add(self._finding_from_rule(rule, info.rel, 0, info.rel, detail=label, severity=severity,
+                                                  in_test=info.in_test))
+        if text is None:
+            outcome["skip"] = ("symlink" if info.is_symlink else
+                               "too_large" if info.size > self.options.max_file_size else "binary")
+        else:
+            line_count = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
+            outcome["lines"] = line_count
+            minified = (len(text) > 20000 and line_count < len(text) / 1500 and info.language in MINIFIABLE_LANGUAGES)
+            outcome["marker"] = IGNORE_FILE_MARKER in text[:2000]
+            if info.scannable and (self.options.include_tests or not info.in_test):
+                outcome["minified"], outcome["scanned"] = minified, True
+                self.analyze_text(info, text, minified=minified)
+            else:
+                outcome["skip"] = "filtered" if info.scannable else "by_type"
+        if collect:
+            outcome["findings"] = self.findings[findings_before:]
+            del self.findings[findings_before:]
+            outcome["noise"] = {k: v - noise_before.get(k, 0) for k, v in self.noise.items() if v != noise_before.get(k, 0)}
+            outcome["engines"] = {k: v - engines_before.get(k, 0) for k, v in self.engine_stats.items()}
+            outcome["inline_ignored"] = self.inline_ignored - inline_before
+        return outcome
+
+    def _worker_count(self, total: int) -> int:
+        jobs = self.options.jobs
+        if jobs <= 0:
+            jobs = min(os.cpu_count() or 1, MAX_AUTO_JOBS)
+        if jobs <= 1 or total < self.options.parallel_threshold:
+            return 1
+        return min(jobs, total)
+
+    def _outcomes(self, files: List[FileInfo], workers: int):
+        """Per-file outcomes in file order: from a pool of worker processes when it pays off, else in this process."""
+        done = 0
+        if workers > 1:
+            pool = None
+            try:
+                pool = ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
+                                           initargs=(self.options, self.config, self.trusted))
+                self.bus.log(f"Analyzing {len(files)} files with {workers} worker processes", "ok")
+                chunk = max(1, min(32, len(files) // (workers * 8)))
+                for outcome in pool.map(_worker_process, files, chunksize=chunk):
+                    self._merge_worker(outcome)
+                    done += 1
+                    yield outcome
+                return
+            except (BrokenProcessPool, OSError, ImportError, pickle.PicklingError) as exc:
+                self.bus.log(f"Parallel analysis is unavailable ({type(exc).__name__}: {exc}); continuing in one process",
+                             "warn")
+            finally:
+                if pool is not None:
+                    pool.shutdown(wait=False, cancel_futures=True)
+        for info in files[done:]:
+            yield self._process_file(info)
+
+    def _merge_worker(self, outcome: Dict) -> None:
+        for finding in outcome.pop("findings", []):
+            self._add(finding)
+        for reason, amount in outcome.pop("noise", {}).items():
+            self._count_noise(reason, amount)
+        for engine, amount in outcome.pop("engines", {}).items():
+            self.engine_stats[engine] = self.engine_stats.get(engine, 0) + amount
+        self.inline_ignored += outcome.pop("inline_ignored", 0)
+
     def _stage_analyze(self, files: List[FileInfo], tree: StructureTree, stats: Dict) -> None:
         total = len(files)
         batch: List[str] = []
         last_emit = time.time()
         languages: Dict[str, Dict[str, int]] = {}
-        for index, info in enumerate(files, 1):
+        for index, outcome in enumerate(self._outcomes(files, self._worker_count(total)), 1):
             self._check_cancel()
-            sensitive = checks.match_sensitive_file(info.rel)
-            text = None
-            if info.scannable or sensitive:
-                text = read_text(info, self.options.max_file_size)
-            if sensitive:
-                label, severity, required = sensitive
-                if required is None or (text is not None and required.search(text)):
-                    rule = RULES_BY_ID["SR-SEC-020"]
-                    self._add(self._finding_from_rule(rule, info.rel, 0, info.rel, detail=label, severity=severity,
-                                                      in_test=info.in_test))
-            if text is None:
+            skip = outcome["skip"]
+            if skip in ("symlink", "too_large", "binary"):
                 stats["skipped"] += 1
-                if info.is_symlink:
-                    pass
-                elif info.size > self.options.max_file_size:
-                    if len(self.not_analyzed["too_large"]) < 200:
-                        self.not_analyzed["too_large"].append({"path": info.rel, "bytes": info.size})
-                else:
+                if skip == "too_large" and len(self.not_analyzed["too_large"]) < 200:
+                    self.not_analyzed["too_large"].append({"path": outcome["rel"], "bytes": outcome["size"]})
+                elif skip == "binary":
                     self.not_analyzed["binary"] += 1
             else:
-                line_count = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
-                tree.set_lines(info.rel, line_count)
-                lang = languages.setdefault(info.language, {"files": 0, "lines": 0, "bytes": 0})
+                tree.set_lines(outcome["rel"], outcome["lines"])
+                lang = languages.setdefault(outcome["language"], {"files": 0, "lines": 0, "bytes": 0})
                 lang["files"] += 1
-                lang["lines"] += line_count
-                lang["bytes"] += info.size
-                stats["lines"] += line_count
-                minified = (len(text) > 20000 and line_count < len(text) / 1500
-                            and info.language in MINIFIABLE_LANGUAGES)
-                if IGNORE_FILE_MARKER in text[:2000] and len(self.ignore_markers) < 200:
-                    self.ignore_markers.append(info.rel)  # reported, never honoured: use an explicit exclude instead
-                if info.scannable and (self.options.include_tests or not info.in_test):
-                    if minified and len(self.not_analyzed["minified"]) < 200:
-                        self.not_analyzed["minified"].append(info.rel)
-                    self.analyze_text(info, text, minified=minified)
+                lang["lines"] += outcome["lines"]
+                lang["bytes"] += outcome["size"]
+                stats["lines"] += outcome["lines"]
+                if outcome["marker"] and len(self.ignore_markers) < 200:
+                    self.ignore_markers.append(outcome["rel"])  # reported, never honoured: use an explicit exclude instead
+                if outcome["scanned"]:
+                    if outcome["minified"] and len(self.not_analyzed["minified"]) < 200:
+                        self.not_analyzed["minified"].append(outcome["rel"])
                     stats["scanned"] += 1
                 else:
                     stats["skipped"] += 1
-                    if not info.scannable:
+                    if skip == "by_type":
                         self.not_analyzed["by_type"] += 1
-            batch.append(info.rel)
+            batch.append(outcome["rel"])
             now = time.time()
             if now - last_emit > 0.12 or index == total:
                 self.bus.emit("files", paths=batch, done=index, total=total)
-                self.bus.progress("analyze", index, total, info.rel)
+                self.bus.progress("analyze", index, total, outcome["rel"])
                 batch = []
                 last_emit = now
         stats["languages"] = dict(sorted(languages.items(), key=lambda kv: -kv[1]["lines"]))

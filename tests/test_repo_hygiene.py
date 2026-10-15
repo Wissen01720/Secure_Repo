@@ -60,3 +60,9 @@ def test_launchers_trust_the_environment_only_after_a_successful_install():
 def test_updater_refreshes_dependencies_from_the_hashed_lock():
     source = read("secure_repo", "core", "updater.py")
     assert "requirements.lock" in source and "--require-hashes" in source and "requirements.txt" not in source
+
+
+def test_ci_measures_accuracy_on_pinned_third_party_repositories():
+    workflow = read(".github", "workflows", "ci.yml")
+    assert "benchmark --external --fetch" in workflow and "--min-precision" in workflow and "--min-recall" in workflow
+    assert "SECURE_REPO_ONLINE_TESTS" in workflow

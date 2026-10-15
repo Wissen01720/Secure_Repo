@@ -9,7 +9,8 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-00e5ff?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
-![Rules](https://img.shields.io/badge/detection%20rules-172-ff2e97?style=flat-square)
+![Precision](https://img.shields.io/badge/precision%20on%20third--party%20code-71%25-ff2e97?style=flat-square)
+![Recall](https://img.shields.io/badge/recall%20on%20documented%20weaknesses-82%25-ff2e97?style=flat-square)
 ![License](https://img.shields.io/badge/license-Ethical%20Source--Available-9d7bff?style=flat-square)
 
 <img src="docs/images/cli-banner.svg" alt="Secure Repo CLI banner and boot sequence" width="900">
@@ -389,6 +390,42 @@ Findings go through several layers:
 
 Findings confirmed by data flow show the full **source → sink trace** in the CLI, the GUI, the Markdown reports and SARIF `codeFlows`.
 
+### How accurate is it? (measured on third-party code)
+
+The built-in corpus is written by the rule authors, so its 100 % only proves that the rules fit their own
+examples. The number that matters is measured on code the authors did not write. `secure-repo benchmark --external`
+audits four public projects pinned to an exact commit, and every finding is reviewed by hand (the verdicts are plain
+data in `secure_repo/benchmark/extdata/*.toml`, so they can be disputed).
+
+| Project | Kind | Findings reviewed | Precision (all) | Precision (medium+ confidence) | Documented weaknesses found |
+|---|---|---:|---:|---:|---:|
+| NodeGoat (JavaScript) | vulnerable by design | 36 | 64 % | 100 % | 9 of 12 |
+| DVPWA (Python) | vulnerable by design | 10 | 70 % | 100 % | 6 of 7 |
+| Vulnerable-Flask-App (Python) | vulnerable by design | 24 | 75 % | 75 % | 8 of 9 |
+| requests (Python) | clean, mature library | 16 | 12 % (all but two are test fixtures) | 12 % | n/a |
+| **Total** | | **86** | **58 %** | **71 %** | **23 of 28 (82 %)** |
+
+How to read it, honestly:
+
+- **Precision** is the share of reported findings that are real weaknesses. Counting *every* finding, including
+  low-confidence ones and findings in test code, it is 58 %; counting only findings of medium or high confidence it is
+  71 %. In `requests`, a library audited for years, nothing is reported in its production code: the false positives are
+  throw-away test certificates, URL-parsing test data and pickle/TLS tests.
+- **Recall** is the share of weaknesses that really exist in the vulnerable projects and that were found at the exact
+  line. The five misses are an SSRF whose URL travels through a variable, a hardcoded encryption key whose value looks
+  like an identifier, CSRF protection commented out (two projects) and plain-text password handling: absent settings and
+  logic flaws that no rule covers yet.
+- 28 weaknesses and 86 findings in four projects is a small sample. Treat the numbers as a floor of evidence, not as a
+  guarantee, and expect results to differ in your code. The benchmark runs in CI and fails if precision (medium+
+  confidence) drops below 65 % or recall below 80 %; every new finding must be labelled before it can pass.
+- Rules are tested one by one as well: each of the 172 rules ships a positive and a negative example in its data file
+  (`secure_repo/ruledata/`), and the test suite runs all of them.
+
+```bash
+secure-repo benchmark                        # built-in corpus + the examples of every rule
+secure-repo benchmark --external --fetch     # download the pinned projects and measure (needs git)
+```
+
 ### Teach Secure Repo (learning loop)
 
 - **Triage.** Mark findings as *confirmed*, *accepted risk* or *false positive* from the post-scan menu, from the GUI finding panel, or with `secure-repo triage mark <report-folder> SR-0004 --status false_positive --reason "..." --scope project-pattern`. A reason is required.
@@ -398,7 +435,7 @@ Findings confirmed by data flow show the full **source → sink trace** in the C
 - **Team sharing.** Share decisions with `secure-repo triage export --to-repo .`, which writes `.securerepo/triage.json`. Other commands: `export`, `import`, `forget`, `reset`.
 - **Audit trail.** Suppressed findings never affect the score or the compliance audit, but they stay in `findings/suppressed.md` with their reason, author and date.
 - **Project tuning.** `secure-repo init-config` creates `.securerepo.toml`, where you can disable rules, override severities, allow-list paths or values, set a minimum confidence and write **custom rules**.
-- **Benchmark.** `secure-repo benchmark --compare` measures precision and recall against a labeled corpus. On the bundled corpus the layered engine scores 100 % / 100 %, versus 55 % / 67 % for the legacy pattern-only engine (`--engine patterns`). `secure-repo triage export-cases` turns your false positives into regression cases.
+- **Benchmark.** `secure-repo benchmark --compare` measures precision and recall against the built-in labeled corpus (written by the rule authors, so treat it as a regression test: the layered engine scores 100 % / 100 %, versus 55 % / 67 % for the legacy pattern-only engine, `--engine patterns`). The real-world numbers are in *How accurate is it?* above. `secure-repo triage export-cases` turns your false positives into regression cases.
 
 ### Virtual lockfile
 
@@ -419,7 +456,8 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `secure-repo rules [--search TEXT]` | List the detection rules (filter by id, language, CWE...). |
 | `secure-repo frameworks` | List the compliance frameworks. |
 | `secure-repo triage <list\|stats\|mark\|forget\|export\|import\|export-cases\|reset>` | Manage the triage knowledge base. |
-| `secure-repo benchmark [--compare]` | Precision/recall of the detection engines. |
+| `secure-repo benchmark [--compare]` | Precision/recall on the built-in corpus and the examples of every rule. |
+| `secure-repo benchmark --external [--fetch] [--dir DIR] [--min-precision P] [--min-recall R]` | Precision and recall measured on pinned third-party projects; exits 1 below the given floors. |
 | `secure-repo init-config [PATH]` | Create a `.securerepo.toml` for a project. |
 | `secure-repo update [--check] [-y]` | Check for and install a new version of Secure Repo (no re-cloning). |
 | `secure-repo --no-update-check ...` | Skip the start-up update check for this run. |
@@ -437,6 +475,7 @@ All resolved versions are checked against OSV. `SR-DEP-009` warns when a range s
 | `-y, --yes` | off | Confirm you are authorized to audit the target (required when not interactive). |
 | `--no-tests` | off | Do not analyze files that look like tests or fixtures. |
 | `--max-file-size KB` | `2048` | Skip larger files. |
+| `-j, --jobs N` | `0` (automatic) | Worker processes for file analysis (up to 8 automatically, only for repositories of 400+ files). `1` forces a single process. The report is identical either way; Django (7,000 files) takes about 15 s instead of 60 s on 12 cores. |
 | `--exclude GLOB` | - | Exclude paths (repeatable), e.g. `--exclude "legacy/*"`. |
 | `--auditor NAME` | - | Name recorded in the audit trail of the reports. |
 | `--fail-on SEVERITY` | - | Exit with code 3 when findings of this severity or worse exist. |
@@ -785,7 +824,8 @@ Secure_Repo/
 │   ├── core/         scanner, updater, 172 rules, lexical masking, Python AST/taint and JS data-flow engines,
 │   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
 │   │                 triage knowledge base, confidence model, compliance frameworks, scoring
-│   ├── benchmark/    labeled corpus used by `secure-repo benchmark`
+│   ├── ruledata/     the detection rules as TOML (pattern, explanation and positive/negative examples)
+│   ├── benchmark/    labeled corpus, rule-example runner and the external benchmark manifests
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
 │   └── gui/          local server + static web app (neural map, box map, UI)
 ├── tests/            pytest suite (CLI, GUI server, dependency parsers, intelligence, regression tests)
@@ -806,6 +846,36 @@ python -m pytest --cov        # tests + coverage gate (pyproject.toml: [tool.cov
 ruff check .                  # lint, including security rules (S)
 mypy secure_repo              # types (modules with known type debt are listed in pyproject.toml)
 ```
+
+### Adding or changing a rule
+
+Rules are data, not code: edit the table of the rule (or add one) in `secure_repo/ruledata/<prefix>.toml`. A rule
+needs an ID, title, severity, CWE/OWASP, a pattern (regular expression) or an engine that owns it, a description, a
+recommendation and **at least one positive and one negative example**:
+
+```toml
+[[rule]]
+id = 'SR-PY-099'
+title = 'Example rule'
+severity = 'high'
+category = 'Injection'
+languages = ['@PY']                 # '@PY', '@JS', '@CODE' are language groups; '*' means every file
+pattern = '\bdangerous_call\s*\('
+description = 'Why this is dangerous.'
+recommendation = 'What to do instead.'
+
+[[rule.example]]
+kind = 'positive'
+code = 'dangerous_call(user_input)'
+
+[[rule.example]]
+kind = 'negative'
+code = 'safe_call(user_input)'
+```
+
+Secret-shaped examples must not contain real-looking tokens: write `AKIA<<upper:16>>` and the test runner builds the
+value at run time (`<<alnum:N>>`, `<<hex:N>>`, `<<digits:N>>`, `<<b64url:N>>`, `<<lit:text>>`). Then run
+`python -m pytest tests/test_rules_data.py`. Patterns that could backtrack catastrophically are rejected by the tests.
 
 Continuous integration (`.github/workflows/ci.yml`) runs lint, types and the tests on Linux, Windows and macOS
 with Python 3.9 and 3.13, and then audits this repository with Secure Repo itself (`--fail-on high`), uploading the

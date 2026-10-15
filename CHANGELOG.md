@@ -2,6 +2,33 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.2.4] - 2026-10-14
+
+### Added
+- **Measured accuracy on third-party code.** `secure-repo benchmark --external` audits NodeGoat, DVPWA,
+  Vulnerable-Flask-App and `requests` at pinned commits and scores the findings against hand-written verdicts:
+  precision 58 % over every finding (71 % for medium/high confidence), recall 82 % on 28 documented weaknesses. CI
+  runs it and fails below 65 % / 80 %. The README badges show these numbers instead of the rule count.
+- **Rules are data.** The 172 rules moved from Python to `secure_repo/ruledata/*.toml`. Every rule carries a positive
+  and a negative example (secret-shaped values are built at run time from placeholders) and a test runs all of them
+  (`secure-repo benchmark` reports it too). Malformed rule files fail with the file and rule name.
+- **Production, test and density scores** next to the headline score, in the CLI, `summary.md` and the GUI; the
+  penalty now also grows with the number of files a weakness appears in (attack surface).
+- **Parallel analysis** (`-j/--jobs`): files are analyzed in worker processes; Django goes from 60 s to 15 s with an
+  identical report. It falls back to one process if workers cannot start.
+- README: support level by language, a limitations and threat-model section, how to add a rule.
+
+### Changed
+- `Development Status` classifier is now `4 - Beta`.
+- Precision fixes found while labelling third-party code: `<!-- commented-out HTML -->` is no longer scanned,
+  `jwt.decode(..., verify=False)` is no longer reported as a TLS problem, `pickle.loads(pickle.dumps(x))` round trips
+  and placeholder URL passwords (`user:pass@host`) are ignored, `id-token: write` is no longer a credential, PyOpenSSL is
+  no longer "deprecated", and plain-HTTP URLs in test code are not reported (`skip_in_tests`).
+- The `ADD` rule for Dockerfiles uses a bounded repeat so every built-in pattern passes the ReDoS check.
+
+### Not done
+- Splitting `app.js` and `scanner.py` into smaller modules (C-41) was left for later; only the rules were moved to data.
+
 ## [1.2.3] - 2026-10-13
 
 ### Added
