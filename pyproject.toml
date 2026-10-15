@@ -45,6 +45,7 @@ include = ["secure_repo*"]
 "secure_repo.gui" = ["static/*"]
 "secure_repo.benchmark" = ["corpus/*"]
 "secure_repo.ruledata" = ["*.toml"]
+"secure_repo.benchmark.extdata" = ["*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

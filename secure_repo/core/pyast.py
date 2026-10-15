@@ -517,7 +517,8 @@ class PythonAnalyzer:
         attr = call.func.attr if isinstance(call.func, ast.Attribute) else ""
 
         # TLS verification disabled (any HTTP client call)
-        if self._is_false(self._kw(call, "verify")):
+        if self._is_false(self._kw(call, "verify")) and not qualname.startswith(("jwt.", "jose.", "authlib.")):
+            # jwt.decode(..., verify=False) skips the token *signature*, not TLS: that is SR-GEN-011.
             self._emit("SR-PY-006", call, detail="verify=False disables certificate validation for this request.")
 
         if qualname in CODE_EXEC:
@@ -564,6 +565,8 @@ class PythonAnalyzer:
             arg = self._first_arg(call)
             if self.is_constant(arg):
                 return self._skip("constant argument")
+            if isinstance(arg, ast.Call) and self._qualname(arg.func).rsplit(".", 1)[-1] in ("dumps", "dump"):
+                return self._skip("round trip of data serialized in the same expression")
             found = self.taint(arg, scope)
             if found:
                 return self._emit("SR-PY-002", call, "critical", taint=found, sink=f"{qualname}()")

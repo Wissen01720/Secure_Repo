@@ -64,11 +64,12 @@ _KEY_EXCLUDE = re.compile(
     r"schema|route|template|selector|attr|event|action|handler|callback|status|state|type_)")
 
 _PLACEHOLDER = re.compile(
-    r"(?i)^(?:\$\{?|\{\{|<|%\(|%s|\[|process\.env|os\.environ|env\(|getenv|config\(|settings\.|"
+    r"(?i)^(?:\$\{?|\{|<|%\(|%s|\[|process\.env|os\.environ|env\(|getenv|config\(|settings\.|"
     r"x{3,}|\*{3,}|\.{3,}|-{3,}|your|change|replace|example|sample|dummy|test|fake|placeholder|redacted|"
     r"none$|null$|nil$|undefined$|true$|false$|todo|tbd|secret$|password$|passwd$|pass$|token$|string$|"
     r"str$|required|optional|default|enter|insert|put|mysecret|supersecret|s3cr3t$|abc123$|12345|qwerty|"
-    r"admin$|root$|user$|guest$|foo|bar$|baz$|dev$|local$|localhost|value$|key$|api[_-]?key$)")
+    r"admin$|root$|user$|guest$|foo|bar$|baz$|dev$|local$|localhost|value$|key$|api[_-]?key$|"
+    r"read$|write$|read-all$|write-all$|inherit$|auto$)")
 
 DOC_LANGUAGES = {"Markdown", "reStructuredText", "Text", "HTML"}
 
@@ -102,6 +103,11 @@ def _is_placeholder(key: str, value: str) -> bool:
     if re.search(r"\.(?:json|ya?ml|txt|pem|key|crt|env|cfg|ini|py|js|ts)$", stripped, re.I):
         return True
     return False
+
+
+def is_placeholder_value(value: str) -> bool:
+    """True for obvious stand-ins (``pass``, ``changeme``, ``{PASSWORD}``): never a real credential."""
+    return _is_placeholder("password", value)
 
 
 def find_generic_credentials(text: str, language: str) -> List[Tuple[int, str, str, float]]:

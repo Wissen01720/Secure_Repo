@@ -1,0 +1,158 @@
+name = "flask-vuln"
+repo = "https://github.com/we45/Vulnerable-Flask-App.git"
+commit = "b6a4f97afd466e83e1f60781494252dec1c37039"
+kind = "vulnerable"
+language = "Python"
+description = "Vulnerable-Flask-App (we45): Flask API with deliberate flaws, used as a ZAP test target."
+
+[[known]]
+id = "FL-01"
+title = "Hardcoded Flask secret key"
+file = "app/app.py"
+line = 28
+cwe = "CWE-798"
+rules = ["SR-PY-016"]
+
+[[known]]
+id = "FL-02"
+title = "Hardcoded administrator password"
+file = "app/app.py"
+line = 63
+cwe = "CWE-798"
+rules = ["SR-SEC-019"]
+
+[[known]]
+id = "FL-03"
+title = "Passwords hashed with MD5"
+file = "app/app.py"
+line = 141
+cwe = "CWE-328"
+rules = ["SR-PY-008"]
+
+[[known]]
+id = "FL-04"
+title = "JWT decoded without verifying the signature"
+file = "app/app.py"
+line = 97
+cwe = "CWE-347"
+rules = ["SR-GEN-011"]
+
+[[known]]
+id = "FL-05"
+title = "Server-side template injection through render_template_string"
+file = "app/app.py"
+line = 114
+cwe = "CWE-1336"
+rules = ["SR-PY-022"]
+
+[[known]]
+id = "FL-06"
+title = "SQL injection in /search"
+file = "app/app.py"
+line = 265
+cwe = "CWE-89"
+rules = ["SR-PY-011"]
+
+[[known]]
+id = "FL-07"
+title = "Unsafe yaml.load on an uploaded file"
+file = "app/app.py"
+line = 329
+cwe = "CWE-502"
+rules = ["SR-PY-003"]
+
+[[known]]
+id = "FL-08"
+title = "Container runs as root"
+file = "Dockerfile"
+cwe = "CWE-250"
+rules = ["SR-DOCKER-002"]
+
+[[known]]
+id = "FL-09"
+title = "Passwords stored and compared in plain text (logic flaw, no rule covers it)"
+file = "app/app.py"
+line = 182
+cwe = "CWE-256"
+rules = []
+
+[[verdict]]
+rule = "SR-CI-003"
+file = ".github/workflows/zap_test.yml"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-DOCKER-002"
+file = "Dockerfile"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-016"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-SEC-019"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-GEN-011"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-022"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-008"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-011"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-003"
+file = "app/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-JS-001"
+file = "app/static/loader.js"
+verdict = "FP"
+note = "compiled Google Charts loader (third-party); not recognised as a bundled library because it has no banner"
+
+[[verdict]]
+rule = "SR-JS-002"
+file = "app/static/loader.js"
+verdict = "FP"
+note = "compiled third-party loader"
+
+[[verdict]]
+rule = "SR-JS-003"
+file = "app/static/loader.js"
+verdict = "FP"
+note = "compiled third-party loader"
+
+[[verdict]]
+rule = "SR-SEC-020"
+file = "app/test.db"
+verdict = "TP"
+note = "SQLite database committed to the repository"
+
+[[verdict]]
+rule = "SR-SEC-019"
+file = "tests/e2e_zap.py"
+verdict = "TP"
+note = "hardcoded test credential (low impact)"
+
+[[verdict]]
+rule = "SR-PY-006"
+file = "tests/e2e_zap.py"
+verdict = "TP"
+note = "TLS verification disabled in a test client (low impact)"

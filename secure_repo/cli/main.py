@@ -146,6 +146,16 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--cases", action="append", default=[], metavar="DIR", help="additional labeled case folders")
     bench.add_argument("--rule", default="", help="only show rules containing this text")
     bench.add_argument("--compare", action="store_true", help="also run the legacy pattern-only engine")
+    bench.add_argument("--external", action="store_true",
+                       help="audit real third-party repositories pinned to a commit and score the findings against "
+                            "hand-labelled verdicts (needs git; --fetch downloads them)")
+    bench.add_argument("--fetch", action="store_true", help="with --external: download the pinned repositories first")
+    bench.add_argument("--dir", default=None, metavar="DIR", help="with --external: folder holding the repositories")
+    bench.add_argument("--only", action="append", default=[], metavar="NAME", help="with --external: limit to a repository")
+    bench.add_argument("--min-precision", type=float, default=0.0, metavar="P",
+                       help="with --external: exit 1 if the precision of medium/high-confidence findings is below P (0-1)")
+    bench.add_argument("--min-recall", type=float, default=0.0, metavar="R",
+                       help="with --external: exit 1 if the recall of documented weaknesses is below R (0-1)")
 
     init = sub.add_parser("init-config", help="create a .securerepo.toml template in a repository")
     init.add_argument("path", nargs="?", default=".")

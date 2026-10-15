@@ -276,6 +276,9 @@ class Scanner:
                 continue
             if rule.keywords and not any(keyword in lower for keyword in rule.keywords):
                 continue
+            if rule.skip_in_tests and in_test:
+                self._count_noise(f"{rule.id}: rule not applied to test code")
+                continue
             regex = rule.regex
             if regex is None:
                 continue
@@ -310,6 +313,9 @@ class Scanner:
                         continue
                 if is_doc and rule.source == "code":
                     continue  # code patterns inside documentation are examples, not code
+                if rule.id == "SR-SEC-018" and match.groups() and checks.is_placeholder_value(match.group(1)):
+                    self._count_noise("credentials in URL: placeholder password")
+                    continue
                 seen.add(line_no)
                 severity = rule.severity
                 if is_doc and rule.source == "secret" and SEVERITY_RANK[severity] < SEVERITY_RANK["medium"]:

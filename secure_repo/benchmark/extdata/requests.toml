@@ -1,0 +1,95 @@
+name = "requests"
+repo = "https://github.com/psf/requests.git"
+commit = "611c6162cbc4ac2020a2f91c7cfa4f3abf9bbb60"
+kind = "clean"
+language = "Python"
+description = "psf/requests: a mature, widely audited library. Anything reported in its production code is a false positive until proven otherwise."
+
+[[verdict]]
+rule = "SR-DEP-004"
+file = "pyproject.toml"
+verdict = "TP"
+note = "dependencies declared as ranges and no lock file"
+
+[[verdict]]
+rule = "SR-DEP-004"
+file = "requirements-dev.txt"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-002"
+file = "tests/test_requests.py"
+verdict = "FP"
+note = "round-trips of the library's own objects through pickle in unit tests"
+
+[[verdict]]
+rule = "SR-PY-006"
+file = "tests/test_requests.py"
+verdict = "FP"
+note = "tests that exercise the library's verify=False behaviour against a local test server"
+
+[[verdict]]
+rule = "SR-SEC-018"
+file = "tests/test_utils.py"
+verdict = "FP"
+note = "URL-parsing test data (user:pass@host)"
+
+[[verdict]]
+rule = "SR-SEC-009"
+file = "tests/certs/expired/ca/ca-private.key"
+verdict = "FP"
+note = "throw-away key of a test certificate authority"
+
+[[verdict]]
+rule = "SR-SEC-020"
+file = "tests/certs/expired/ca/ca-private.key"
+verdict = "FP"
+note = "throw-away key of a test certificate authority"
+
+[[verdict]]
+rule = "SR-SEC-009"
+file = "tests/certs/expired/server/server.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-SEC-020"
+file = "tests/certs/expired/server/server.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-SEC-009"
+file = "tests/certs/mtls/client/client.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-SEC-020"
+file = "tests/certs/mtls/client/client.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-SEC-009"
+file = "tests/certs/valid/server/server.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-SEC-020"
+file = "tests/certs/valid/server/server.key"
+verdict = "FP"
+note = "test fixture (throw-away key of a test server or client)"
+
+[[verdict]]
+rule = "SR-GEN-004"
+file = "tests/test_lowlevel.py"
+verdict = "FP"
+note = "URLs of a local test server built from host and port variables"
+
+[[verdict]]
+rule = "SR-GEN-004"
+file = "tests/test_requests.py"
+verdict = "FP"
+note = "URLs used as test data for the URL handling code"

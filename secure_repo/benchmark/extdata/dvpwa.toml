@@ -1,0 +1,108 @@
+name = "dvpwa"
+repo = "https://github.com/anxolerd/dvpwa.git"
+commit = "a1d8f89fac2e57093189853c6527c2b01fc1d9c1"
+kind = "vulnerable"
+language = "Python"
+description = "DVPWA: Damn Vulnerable Python Web Application (aiohttp)."
+
+[[known]]
+id = "DV-01"
+title = "SQL injection: INSERT built with % formatting"
+file = "sqli/dao/student.py"
+line = 45
+cwe = "CWE-89"
+rules = ["SR-PY-011"]
+
+[[known]]
+id = "DV-02"
+title = "Passwords hashed with MD5"
+file = "sqli/dao/user.py"
+line = 41
+cwe = "CWE-328"
+rules = ["SR-PY-008"]
+
+[[known]]
+id = "DV-03"
+title = "Session cookie without HttpOnly"
+file = "sqli/middlewares.py"
+line = 20
+cwe = "CWE-1004"
+rules = ["SR-PY-020"]
+
+[[known]]
+id = "DV-04"
+title = "Template auto-escaping disabled (XSS)"
+file = "sqli/app.py"
+line = 35
+cwe = "CWE-79"
+rules = ["SR-PY-013"]
+
+[[known]]
+id = "DV-05"
+title = "Hardcoded database password in configuration"
+file = "config/dev.yaml"
+line = 3
+cwe = "CWE-798"
+rules = ["SR-SEC-019"]
+
+[[known]]
+id = "DV-06"
+title = "Container runs as root"
+file = "Dockerfile.app"
+cwe = "CWE-250"
+rules = ["SR-DOCKER-002"]
+
+[[known]]
+id = "DV-07"
+title = "CSRF middleware commented out (absent setting, no rule covers it yet)"
+file = "sqli/app.py"
+line = 27
+cwe = "CWE-352"
+rules = []
+
+[[verdict]]
+rule = "SR-DOCKER-002"
+file = "Dockerfile.app"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-DOCKER-002"
+file = "Dockerfile.db"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-SEC-019"
+file = "config/dev.yaml"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-013"
+file = "sqli/app.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-011"
+file = "sqli/dao/student.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-008"
+file = "sqli/dao/user.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-PY-020"
+file = "sqli/middlewares.py"
+verdict = "TP"
+
+[[verdict]]
+rule = "SR-JS-001"
+file = "sqli/static/js/materialize.js"
+verdict = "FP"
+note = "bundled third-party library (Materialize); reported at low confidence and flagged as third-party"
+
+[[verdict]]
+rule = "SR-JS-002"
+file = "sqli/static/js/materialize.js"
+verdict = "FP"
+note = "bundled third-party library (Materialize)"

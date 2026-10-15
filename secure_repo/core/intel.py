@@ -46,8 +46,7 @@ DEPRECATED = {
             "istanbul": "Use nyc / c8.", "tslint": "Use ESLint with typescript-eslint.",
             "request-promise": "Use a maintained HTTP client."},
     "PyPI": {"pycrypto": "Use pycryptodome or cryptography.", "nose": "Use pytest.",
-             "python-jose": "Consider pyjwt or joserfc (maintained).",
-             "pyopenssl": "Prefer the cryptography package where possible."},
+             "python-jose": "Consider pyjwt or joserfc (maintained)."},
     "RubyGems": {"therubyracer": "Use mini_racer or execjs."},
 }
 COPYLEFT_RE = re.compile(r"(?i)\b(?:A?GPL|LGPL|SSPL|EUPL|OSL|CC-BY-SA|CPAL|RPL|MS-RL|Commons-Clause|BUSL)")

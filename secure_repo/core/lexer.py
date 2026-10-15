@@ -60,6 +60,9 @@ _PHP_PATTERN = re.compile(
     r'|(?P<dq>"(?:\\.|[^"\\])*"?)'
     r"|(?P<sq>'(?:\\.|[^'\\])*'?)", re.S)
 
+# HTML and template languages: only <!-- comments --> are blanked (attributes and text stay visible to the rules).
+_HTML_PATTERN = re.compile(r"(?P<bc><!--.*?(?:-->|\Z))", re.S)
+
 _INTERPOLATION = {
     "tpl": re.compile(r"\$\{(?:[^{}]|\{[^{}]*\})*\}"),
     "ruby": re.compile(r"\#\{[^}]*\}"),
@@ -79,13 +82,15 @@ def family(language: str) -> Optional[str]:
         return "go"
     if language == "Rust":
         return "rust"
+    if language == "HTML":
+        return "html"
     if language in C_LIKE:
         return "c"
     return None
 
 
 _PATTERNS = {"js": _JS_PATTERN, "python": _PY_PATTERN, "ruby": _RUBY_PATTERN, "php": _PHP_PATTERN,
-             "go": _GO_PATTERN, "rust": _RUST_PATTERN, "c": _C_PATTERN}
+             "go": _GO_PATTERN, "rust": _RUST_PATTERN, "c": _C_PATTERN, "html": _HTML_PATTERN}
 
 
 def _blank(chars: List[str], start: int, end: int, keep: Optional[List[Tuple[int, int]]] = None) -> None:

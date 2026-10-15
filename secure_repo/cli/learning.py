@@ -186,7 +186,71 @@ def cmd_triage(args, parser) -> int:
     return 2
 
 
+def _percent(value) -> str:
+    return "n/a" if value is None else f"{round(value * 100)}%"
+
+
+def cmd_external_benchmark(args) -> int:
+    from secure_repo.benchmark import external
+
+    section("EXTERNAL BENCHMARK", NEON)
+    cache = args.dir or os.path.join(data_dir(), "benchmark-repos")
+    try:
+        results = external.run(cache, names=args.only or None, download=args.fetch)
+    except FileNotFoundError as exc:
+        say(str(exc), "error")
+        return 2
+    except Exception as exc:  # network or git problems while fetching
+        say(f"Could not prepare the benchmark repositories: {exc}", "error")
+        return 2
+    table = Table(box=box.SIMPLE_HEAVY, header_style=f"bold {CYAN}", expand=True)
+    table.add_column("Repository", style="bold white")
+    table.add_column("Kind", style=DIM)
+    table.add_column("TP", justify="right", style=NEON)
+    table.add_column("FP", justify="right", style="#ff2e63")
+    table.add_column("Precision", justify="right")
+    table.add_column("Conf. >= medium", justify="right")
+    table.add_column("Production code", justify="right")
+    table.add_column("Recall", justify="right")
+    for item in results:
+        table.add_row(item.manifest.name, item.manifest.kind, str(item.tp), str(item.fp), _percent(item.precision),
+                      _percent(item.precision_confident), _percent(item.precision_production), _percent(item.recall))
+    console.print(table)
+    total = external.totals(results)
+    summary = Table.grid(padding=(0, 3))
+    summary.add_row(Text("precision (every finding)", style="white"), Text(_percent(total["precision"]), style=NEON),
+                    Text(f"TP {total['tp']} · FP {total['fp']}", style=DIM))
+    summary.add_row(Text("precision (medium/high confidence)", style="white"),
+                    Text(_percent(total["precision_confident"]), style=NEON),
+                    Text(f"TP {total['tp_confident']} · FP {total['fp_confident']}", style=DIM))
+    summary.add_row(Text("precision (production code)", style="white"),
+                    Text(_percent(total["precision_production"]), style=NEON),
+                    Text(f"TP {total['tp_production']} · FP {total['fp_production']}", style=DIM))
+    summary.add_row(Text("recall (documented weaknesses)", style="white"), Text(_percent(total["recall"]), style=CYAN),
+                    Text(f"{total['found']} of {total['known']} found", style=DIM))
+    console.print(Panel(summary, title=Text(" MEASURED ON THIRD-PARTY CODE ", style=f"bold {NEON}"), border_style=NEON))
+    for item in results:
+        for line in item.missed:
+            console.print(Text(f"  missed [{item.manifest.name}] {line}", style="#ffd23f"))
+        for line in item.unlabeled:
+            console.print(Text(f"  UNLABELED [{item.manifest.name}] {line}", style="#ff2e63"))
+    if total["unlabeled"]:
+        say(f"{total['unlabeled']} finding(s) have no verdict: review them and add them to the manifest.", "error")
+        return 1
+    failed = False
+    if total["precision_confident"] < args.min_precision:
+        say(f"Precision {_percent(total['precision_confident'])} is below the required "
+            f"{_percent(args.min_precision)}.", "error")
+        failed = True
+    if total["recall"] < args.min_recall:
+        say(f"Recall {_percent(total['recall'])} is below the required {_percent(args.min_recall)}.", "error")
+        failed = True
+    return 1 if failed else 0
+
+
 def cmd_benchmark(args) -> int:
+    if getattr(args, "external", False):
+        return cmd_external_benchmark(args)
     section("DETECTION BENCHMARK", NEON)
     extra = list(args.cases)
     user_cases = os.path.join(data_dir(), "benchmark")
@@ -217,7 +281,17 @@ def cmd_benchmark(args) -> int:
     console.print(Panel(summary, title=Text(" ENGINE QUALITY ", style=f"bold {NEON}"), border_style=NEON))
     console.print(Text(f"{len(main['cases'])} case files · add yours with --cases DIR or 'secure-repo triage "
                        "export-cases'", style=DIM))
-    return 0 if main["fp"] == 0 and main["fn"] == 0 else 1
+    from secure_repo.benchmark import examples
+
+    coverage = examples.coverage()
+    outcome = examples.run_examples()
+    failing = [r for r in outcome if not r.passed]
+    console.print(Text(f"Rule examples: {coverage['with_examples']} of {coverage['rules']} rules carry a positive and a "
+                       f"negative example; {len(outcome) - len(failing)} of {len(outcome)} examples behave as expected "
+                       f"(offline). Real-world numbers: secure-repo benchmark --external", style=DIM))
+    for item in failing:
+        say(f"example {item.rule_id} {item.kind} #{item.index}: {item.detail}", "error")
+    return 0 if main["fp"] == 0 and main["fn"] == 0 and not failing and not coverage["missing"] else 1
 
 
 def cmd_init_config(args) -> int:

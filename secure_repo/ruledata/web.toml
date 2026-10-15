@@ -54,3 +54,11 @@ file = 'index.html'
 code = '''<script src="https://cdn.example.org/lib.js"></script>
 '''
 
+[[rule.example]]
+kind = 'negative'
+file = 'index.html'
+code = '''<!--
+<img src="http://cdn.partner-service.net/old.gif">
+-->
+'''
+

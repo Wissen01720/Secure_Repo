@@ -77,6 +77,7 @@ class Rule:
     flags: int = 0
     needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
     region: str = ""             # only report matches inside this structural region (see core/regions.py)
+    skip_in_tests: bool = False  # not applied to test code (e.g. plain-HTTP URLs of local test servers)
     examples: List[RuleExample] = field(default_factory=list, compare=False, repr=False)
     _regex: Optional[Pattern] = field(default=None, repr=False, compare=False)
     _path_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
@@ -147,7 +148,7 @@ _LANGUAGE_GROUPS = {"CODE": CODE, "PY": PY, "JS": JS, "WEB": WEB, "JVM": JVM, "C
                     "CC": CC, "RS": RS, "SHELLISH": SHELLISH, "IAC": IAC, "CONFIG": CONFIG}
 _RULE_KEYS = {"id", "title", "severity", "category", "cwe", "owasp", "description", "recommendation", "pattern",
               "languages", "path", "exclude", "keywords", "tags", "confidence", "scan_comments", "redact", "source",
-              "references", "flags", "needs_strings", "region", "example"}
+              "references", "flags", "needs_strings", "region", "skip_in_tests", "example"}
 _REQUIRED_KEYS = ("id", "title", "severity", "category", "description", "recommendation")
 _SEVERITIES = ("critical", "high", "medium", "low", "info")
 
@@ -199,7 +200,7 @@ def _rule_from_table(table: Dict, origin: str) -> Rule:
         confidence=table.get("confidence", "medium"), scan_comments=bool(table.get("scan_comments", False)),
         redact=bool(table.get("redact", False)), source=table.get("source", "code"),
         references=tuple(table.get("references", ())), flags=flags, needs_strings=bool(table.get("needs_strings", False)),
-        region=table.get("region", ""), examples=examples)
+        region=table.get("region", ""), skip_in_tests=bool(table.get("skip_in_tests", False)), examples=examples)
     if rule.pattern:
         try:
             re.compile(rule.pattern, re.MULTILINE | rule.flags)

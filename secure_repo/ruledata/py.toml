@@ -160,6 +160,7 @@ owasp = 'A07'
 languages = ['@PY']
 keywords = ['verify']
 tags = ['transport']
+exclude = '\bjwt\.decode\s*\('
 pattern = '\bverify\s*=\s*False\b'
 description = 'Disabling certificate verification (requests/httpx verify=False) accepts any certificate, so a network attacker can transparently intercept and modify HTTPS traffic (man-in-the-middle).'
 recommendation = '''Keep verification enabled. For private CAs pass verify='/path/to/ca-bundle.pem'.'''
@@ -178,6 +179,14 @@ code = '''import requests
 
 def fetch(url):
     return requests.get(url, timeout=10)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import jwt
+
+def read(token):
+    return jwt.decode(token, verify=False)
 '''
 
 [[rule]]
