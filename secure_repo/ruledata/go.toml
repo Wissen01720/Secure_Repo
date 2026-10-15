@@ -1,0 +1,216 @@
+# Detection rules with the ID prefix SR-GO-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-GO-001'
+title = 'TLS verification disabled (InsecureSkipVerify)'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@GO']
+keywords = ['insecureskipverify']
+tags = ['transport']
+pattern = 'InsecureSkipVerify\s*:\s*true'
+description = 'InsecureSkipVerify accepts any certificate chain and host name, enabling MITM attacks.'
+recommendation = 'Remove it; add private CAs to RootCAs instead.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import "crypto/tls"
+
+var cfg = &tls.Config{InsecureSkipVerify: true}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "crypto/tls"
+
+var cfg = &tls.Config{MinVersion: tls.VersionTLS12}
+'''
+
+[[rule]]
+id = 'SR-GO-002'
+title = 'Command executed through a shell'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@GO']
+keywords = ['exec.command']
+tags = ['injection']
+needs_strings = true
+pattern = '''exec\.Command(?:Context)?\s*\(\s*(?:ctx\s*,\s*)?['\"](?:sh|bash|zsh|/bin/sh|/bin/bash|cmd|cmd\.exe|powershell|pwsh)['\"]'''
+description = 'Running commands via sh -c / cmd /c reintroduces shell parsing and command injection.'
+recommendation = 'Invoke the binary directly with separate arguments.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import "os/exec"
+
+func run(cmd string) {
+	exec.Command("sh", "-c", cmd).Run()
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "os/exec"
+
+func run() {
+	exec.Command("ls", "-l").Run()
+}
+'''
+
+[[rule]]
+id = 'SR-GO-003'
+title = 'SQL query built with fmt.Sprintf/concatenation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@GO']
+keywords = ['query', 'exec', 'raw', 'where']
+tags = ['injection']
+pattern = '''\.(?:Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext|Raw|Where)\s*\(\s*(?:ctx\s*,\s*)?(?:fmt\.Sprintf\s*\(|['\"`][^'\"`\n]*['\"`]\s*\+)'''
+description = 'Formatting values into SQL text allows SQL injection.'
+recommendation = 'Use placeholders ($1, ?) and pass values as arguments.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import (
+	"database/sql"
+	"fmt"
+)
+
+func find(db *sql.DB, id string) {
+	db.Query(fmt.Sprintf("SELECT * FROM users WHERE id = %s", id))
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "database/sql"
+
+func find(db *sql.DB, id string) {
+	db.Query("SELECT * FROM users WHERE id = $1", id)
+}
+'''
+
+[[rule]]
+id = 'SR-GO-004'
+title = 'Weak cryptographic package'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-327'
+owasp = 'A02'
+languages = ['@GO']
+keywords = ['crypto/']
+tags = ['crypto']
+needs_strings = true
+pattern = '''['\"]crypto/(?:md5|sha1|des|rc4)['\"]'''
+description = 'crypto/md5, sha1, des and rc4 provide broken primitives.'
+recommendation = 'Use crypto/sha256, crypto/aes with cipher.NewGCM, or x/crypto/argon2.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import "crypto/md5"
+
+var _ = md5.New
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "crypto/sha256"
+
+var _ = sha256.New
+'''
+
+[[rule]]
+id = 'SR-GO-005'
+title = 'math/rand imported'
+severity = 'low'
+category = 'Cryptography'
+cwe = 'CWE-338'
+owasp = 'A02'
+languages = ['@GO']
+confidence = 'low'
+keywords = ['math/rand']
+tags = ['crypto']
+needs_strings = true
+pattern = '''['\"]math/rand(?:/v2)?['\"]'''
+description = 'math/rand is deterministic and must not generate secrets, tokens or keys.'
+recommendation = 'Use crypto/rand for security-sensitive randomness.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import "math/rand"
+
+var _ = rand.Int
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "crypto/rand"
+
+var _ = rand.Read
+'''
+
+[[rule]]
+id = 'SR-GO-006'
+title = 'HTTP server without TLS'
+severity = 'low'
+category = 'Transport Security'
+cwe = 'CWE-319'
+owasp = 'A02'
+languages = ['@GO']
+confidence = 'low'
+keywords = ['listenandserve']
+tags = ['transport']
+pattern = '\bhttp\.ListenAndServe\s*\('
+description = 'The server listens over plaintext HTTP. Unless TLS is terminated upstream, credentials and data travel unencrypted.'
+recommendation = 'Use ListenAndServeTLS or terminate TLS at a trusted proxy.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''package main
+
+import "net/http"
+
+func main() {
+	http.ListenAndServe(":8080", nil)
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''package main
+
+import "net/http"
+
+func main() {
+	http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", nil)
+}
+'''
+

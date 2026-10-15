@@ -1,0 +1,143 @@
+# Detection rules with the ID prefix SR-DOCKER-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-DOCKER-001'
+title = 'Unpinned container base image'
+severity = 'low'
+category = 'Supply Chain'
+cwe = 'CWE-1357'
+owasp = 'A08'
+languages = ['Dockerfile']
+tags = ['supply-chain', 'container']
+description = 'Base images referenced without a tag or with :latest change silently between builds, making builds non-reproducible and able to pull in compromised or vulnerable layers.'
+recommendation = 'Pin a specific version tag and preferably the image digest (image:1.2.3@sha256:...).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''FROM ubuntu:latest
+USER app
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''FROM ubuntu:22.04
+USER app
+'''
+
+[[rule]]
+id = 'SR-DOCKER-002'
+title = 'Container runs as root'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-250'
+owasp = 'A05'
+languages = ['Dockerfile']
+tags = ['config', 'container']
+description = 'Without a non-root USER the application runs as UID 0; a container escape or file-write bug then has root privileges.'
+recommendation = '''Create an unprivileged user and add 'USER appuser' before the entrypoint.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''FROM python:3.12-slim
+CMD ["python", "app.py"]
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''FROM python:3.12-slim
+USER app
+CMD ["python", "app.py"]
+'''
+
+[[rule]]
+id = 'SR-DOCKER-003'
+title = 'ADD from remote URL'
+severity = 'medium'
+category = 'Supply Chain'
+cwe = 'CWE-494'
+owasp = 'A08'
+languages = ['Dockerfile']
+keywords = ['add']
+tags = ['supply-chain', 'container']
+flags = ['IGNORECASE']
+pattern = '^\s*ADD\s+(?:--\S+\s+){0,6}https?://'
+description = 'ADD <url> downloads content without integrity verification at build time.'
+recommendation = 'Use curl with checksum verification in a RUN step, or ADD --checksum=sha256:...'
+
+[[rule.example]]
+kind = 'positive'
+code = '''FROM python:3.12-slim
+ADD https://example.org/tool.tar.gz /opt/
+USER app
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''FROM python:3.12-slim
+COPY tool.tar.gz /opt/
+USER app
+'''
+
+[[rule]]
+id = 'SR-DOCKER-004'
+title = 'Secret passed through ENV/ARG'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ['Dockerfile']
+source = 'secret'
+exclude = '=\s*\$\{?\w+\}?\s*$'
+keywords = ['env', 'arg']
+tags = ['secrets', 'container']
+redact = true
+flags = ['IGNORECASE']
+pattern = '^\s*(?:ENV|ARG)\s+\w*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY)\w*(?:\s*=\s*|\s+)(\S+)'
+description = '''Values set with ENV/ARG are stored in image layers and visible via 'docker history' to anyone who can pull the image.'''
+recommendation = 'Use BuildKit secrets (RUN --mount=type=secret) and inject runtime secrets at deploy time.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''FROM python:3.12-slim
+ENV API_TOKEN=f81d4fae7dec11d0a76500a0c91e6bf6
+USER app
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''FROM python:3.12-slim
+ENV APP_MODE=production
+USER app
+'''
+
+[[rule]]
+id = 'SR-DOCKER-005'
+title = 'SSH port exposed'
+severity = 'low'
+category = 'Misconfiguration'
+cwe = 'CWE-284'
+owasp = 'A05'
+languages = ['Dockerfile']
+keywords = ['expose']
+tags = ['config', 'container']
+flags = ['IGNORECASE']
+pattern = '^\s*EXPOSE\s+(?:[\d/a-z\s]*\s)?22(?:/tcp)?\b'
+description = 'Running SSH inside containers increases attack surface and credential sprawl.'
+recommendation = '''Use 'docker exec' / 'kubectl exec' for debugging instead of an SSH daemon.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''FROM python:3.12-slim
+EXPOSE 22
+USER app
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''FROM python:3.12-slim
+EXPOSE 8080
+USER app
+'''
+

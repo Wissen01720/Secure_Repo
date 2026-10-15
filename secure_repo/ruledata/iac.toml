@@ -1,0 +1,195 @@
+# Detection rules with the ID prefix SR-IAC-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-IAC-001'
+title = 'Network rule open to the internet'
+severity = 'medium'
+category = 'Infrastructure as Code'
+cwe = 'CWE-284'
+owasp = 'A01'
+languages = ['@IAC']
+keywords = ['0.0.0.0/0', '::/0']
+tags = ['iac', 'config']
+pattern = '''['\"](?:0\.0\.0\.0/0|::/0)['\"]'''
+description = 'A security group / firewall rule allows traffic from any IP address. Exposed admin or database ports are rapidly discovered and attacked.'
+recommendation = 'Restrict CIDR ranges to known networks or place services behind a load balancer/VPN.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''resource "aws_security_group_rule" "ssh" {
+  type        = "ingress"
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"]
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''resource "aws_security_group_rule" "ssh" {
+  type        = "ingress"
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["10.0.0.0/16"]
+}
+'''
+
+[[rule]]
+id = 'SR-IAC-002'
+title = 'Publicly accessible storage bucket'
+severity = 'high'
+category = 'Infrastructure as Code'
+cwe = 'CWE-732'
+owasp = 'A01'
+languages = ['@IAC']
+keywords = ['public', 'block_public', 'restrict_public']
+tags = ['iac', 'access-control']
+pattern = '''\bacl\s*=\s*['\"]public-read(?:-write)?['\"]|['\"]?AccessControl['\"]?\s*:\s*['\"]?Public(?:Read|ReadWrite)|block_public_(?:acls|policy)\s*=\s*false|restrict_public_buckets\s*=\s*false'''
+description = 'Public bucket ACLs or disabled public-access blocks are a leading cause of large data leaks.'
+recommendation = 'Keep buckets private, enable Block Public Access and serve content via signed URLs or a CDN.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''resource "aws_s3_bucket_acl" "logs" {
+  bucket = "logs"
+  acl    = "public-read"
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''resource "aws_s3_bucket_acl" "logs" {
+  bucket = "logs"
+  acl    = "private"
+}
+'''
+
+[[rule]]
+id = 'SR-IAC-003'
+title = 'Encryption at rest disabled'
+severity = 'medium'
+category = 'Infrastructure as Code'
+cwe = 'CWE-311'
+owasp = 'A02'
+languages = ['@IAC']
+keywords = ['encrypt']
+tags = ['iac', 'crypto']
+flags = ['IGNORECASE']
+pattern = '''\b(?:encrypted|storage_encrypted|encryption_enabled|enable_encryption|kms_encrypted|encrypt_at_rest)['\"]?\s*[=:]\s*false\b'''
+description = 'Storage without encryption at rest exposes data if disks, snapshots or backups leak.'
+recommendation = 'Enable encryption (ideally with customer-managed KMS keys).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''resource "aws_ebs_volume" "data" {
+  size      = 10
+  encrypted = false
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''resource "aws_ebs_volume" "data" {
+  size      = 10
+  encrypted = true
+}
+'''
+
+[[rule]]
+id = 'SR-IAC-004'
+title = 'Publicly accessible database'
+severity = 'high'
+category = 'Infrastructure as Code'
+cwe = 'CWE-284'
+owasp = 'A01'
+languages = ['@IAC']
+keywords = ['publicly']
+tags = ['iac', 'access-control']
+pattern = '''\bpublicly_accessible\s*[=:]\s*true|['\"]?PubliclyAccessible['\"]?\s*:\s*['\"]?true'''
+description = 'The database instance is reachable from the internet.'
+recommendation = 'Disable public accessibility and connect through private networking.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''resource "aws_db_instance" "main" {
+  engine              = "postgres"
+  publicly_accessible = true
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''resource "aws_db_instance" "main" {
+  engine              = "postgres"
+  publicly_accessible = false
+}
+'''
+
+[[rule]]
+id = 'SR-IAC-005'
+title = 'Audit logging disabled'
+severity = 'low'
+category = 'Infrastructure as Code'
+cwe = 'CWE-778'
+owasp = 'A09'
+languages = ['@IAC']
+keywords = ['logging', 'log_file']
+tags = ['iac', 'logging']
+pattern = '\b(?:enable_logging|logging_enabled|enable_log_file_validation)\s*[=:]\s*false'
+description = 'Disabling audit logs removes the evidence needed to detect and investigate incidents.'
+recommendation = 'Enable logging and log-file validation and ship logs to a central store.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''resource "aws_cloudtrail" "main" {
+  name           = "main"
+  enable_logging = false
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''resource "aws_cloudtrail" "main" {
+  name           = "main"
+  enable_logging = true
+}
+'''
+
+[[rule]]
+id = 'SR-IAC-006'
+title = 'IAM policy grants all actions'
+severity = 'high'
+category = 'Infrastructure as Code'
+cwe = 'CWE-269'
+owasp = 'A01'
+languages = ['@IAC']
+keywords = ['action']
+tags = ['iac', 'access-control']
+pattern = '''['\"]?Action['\"]?\s*[:=]\s*\[?\s*['\"]\*['\"]|\bactions\s*=\s*\[\s*['\"]\*['\"]'''
+description = 'Wildcard IAM actions violate least privilege; a leaked credential gets full control.'
+recommendation = 'Grant only the specific actions and resources that are required.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''data "aws_iam_policy_document" "admin" {
+  statement {
+    actions   = ["*"]
+    resources = ["*"]
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''data "aws_iam_policy_document" "reader" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::logs/*"]
+  }
+}
+'''
+

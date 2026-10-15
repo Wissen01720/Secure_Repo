@@ -1,0 +1,385 @@
+# Detection rules with the ID prefix SR-GEN-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-GEN-001'
+title = 'Deprecated SSL/TLS protocol version'
+severity = 'medium'
+category = 'Transport Security'
+cwe = 'CWE-326'
+owasp = 'A02'
+languages = ['Python', 'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Java', 'Kotlin', 'Scala', 'Groovy', 'C#', 'VB.NET', 'F#', 'PHP', 'Go', 'Ruby', 'C', 'C++', 'Objective-C', 'Rust', 'Swift', 'Dart', 'Lua', 'Perl', 'Elixir', 'Solidity', 'Env', 'INI', 'Config', 'Properties', 'YAML', 'TOML']
+keywords = ['ssl', 'tls']
+tags = ['transport', 'crypto']
+needs_strings = true
+pattern = '\b(?:SSLv2|SSLv3|TLSv1(?![._]?[23])|TLSv1_1|PROTOCOL_TLSv1(?:_1)?\b|PROTOCOL_SSLv\d|VersionTLS1[01]\b|VersionSSL30|SslProtocols\.(?:Ssl\d|Tls(?:11)?\b))'
+description = 'SSLv2/SSLv3 and TLS 1.0/1.1 have known cryptographic weaknesses (POODLE, BEAST) and are prohibited by PCI DSS and modern baselines.'
+recommendation = 'Require TLS 1.2 or later (prefer TLS 1.3).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import ssl
+
+CONTEXT = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import ssl
+
+CONTEXT = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+'''
+
+[[rule]]
+id = 'SR-GEN-002'
+title = 'Weak cipher / ECB mode'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-327'
+owasp = 'A02'
+languages = ['@CODE']
+keywords = ['ecb', '.new']
+tags = ['crypto']
+needs_strings = true
+pattern = '\bMODE_ECB\b|\b(?:DES|DES3|ARC4|ARC2|Blowfish)\.new\s*\(|\bAES/ECB/'
+description = 'ECB mode leaks plaintext structure and legacy ciphers are breakable.'
+recommendation = 'Use authenticated encryption such as AES-GCM or ChaCha20-Poly1305.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from Crypto.Cipher import AES
+
+cipher = AES.new(key, AES.MODE_ECB)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from Crypto.Cipher import AES
+
+cipher = AES.new(key, AES.MODE_GCM)
+'''
+
+[[rule]]
+id = 'SR-GEN-003'
+title = 'Sensitive data written to logs'
+severity = 'low'
+category = 'Logging'
+cwe = 'CWE-532'
+owasp = 'A09'
+languages = ['@CODE']
+confidence = 'low'
+keywords = ['password', 'passwd', 'secret', 'token', 'api_key', 'apikey', 'credit', 'card', 'cvv', 'ssn']
+tags = ['logging', 'pii']
+needs_strings = true
+pattern = '(?i)(?:\b(?:log|logger|logging|console|log4j|slf4j|winston|Log)\.(?:debug|info|warn|warning|error|log|trace|fatal|critical|exception)|System\.out\.print(?:ln)?|fmt\.Print(?:ln|f)?)\s*\([^)\n]{0,150}\b(?:password|passwd|pwd|secret|token|api_?key|credit_?card|card_?number|cvv|ssn)\b'
+description = 'Log statements appear to include credentials or personal data. Logs are widely replicated and retained, so the data escapes its intended protection (GDPR/PCI issue).'
+recommendation = 'Remove sensitive fields from log messages or mask them with a logging filter.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import logging
+
+logger = logging.getLogger(__name__)
+logger.info('login with password=' + password)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import logging
+
+logger = logging.getLogger(__name__)
+logger.info('user logged in')
+'''
+
+[[rule]]
+id = 'SR-GEN-004'
+title = 'Cleartext HTTP endpoint'
+severity = 'low'
+category = 'Transport Security'
+cwe = 'CWE-319'
+owasp = 'A02'
+languages = ['@CODE']
+confidence = 'low'
+keywords = ['http://']
+tags = ['transport']
+needs_strings = true
+pattern = '''['\"`]http://(?!localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[\w.-]*example\.(?:com|org|net)|[\w.-]*\.(?:local|test|invalid|localhost)\b|schemas\.|www\.w3\.org|json-schema\.org|xmlns|java\.sun\.com|maven\.apache\.org|purl\.org|ns\.adobe\.com|schemas\.microsoft\.com|www\.apache\.org/licenses|opensource\.org|creativecommons\.org)[^'\"`\s]+['\"`]'''
+description = 'Hardcoded http:// URLs send data without encryption or server authentication.'
+recommendation = 'Use https:// endpoints and enforce TLS.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''API = 'http://api.partner-service.net/v1'
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''API = 'https://api.partner-service.net/v1'
+'''
+
+[[rule]]
+id = 'SR-GEN-005'
+title = 'Security-related TODO/FIXME'
+severity = 'info'
+category = 'Code Quality'
+cwe = 'CWE-546'
+owasp = 'A04'
+languages = ['@CODE']
+keywords = ['todo', 'fixme', 'hack', 'xxx']
+tags = ['hygiene']
+scan_comments = true
+pattern = '(?i)\b(?:TODO|FIXME|HACK|XXX)\b[^\n]{0,80}\b(?:security|insecure|vuln\w*|auth\w*|password|crypt\w*|sanitiz\w*|escap\w*|xss|csrf|injection|hardcoded)\b'
+description = 'A comment indicates a known, unresolved security concern in this area of the code.'
+recommendation = 'Track the item in your issue tracker and resolve it before release.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''# TODO: fix insecure password handling before release
+value = 1
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''# TODO: rename this variable
+value = 1
+'''
+
+[[rule]]
+id = 'SR-GEN-006'
+title = 'Service bound to all interfaces'
+severity = 'low'
+category = 'Misconfiguration'
+cwe = 'CWE-1327'
+owasp = 'A05'
+languages = ['@CODE']
+confidence = 'low'
+keywords = ['0.0.0.0']
+tags = ['config']
+needs_strings = true
+pattern = '''['\"]0\.0\.0\.0['\"]'''
+description = 'Binding to 0.0.0.0 exposes the service on every network interface, including public ones, which may be unintended for admin or development servers.'
+recommendation = 'Bind to 127.0.0.1 or a specific interface unless public exposure is intended.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask
+
+app = Flask(__name__)
+app.run(host='0.0.0.0')
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import Flask
+
+app = Flask(__name__)
+app.run(host='127.0.0.1')
+'''
+
+[[rule]]
+id = 'SR-GEN-007'
+title = 'Debug flag enabled in configuration'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-489'
+owasp = 'A05'
+languages = ['@CONFIG']
+keywords = ['debug']
+tags = ['config']
+flags = ['IGNORECASE']
+pattern = '''^\s*(?:debug|app_debug|flask_debug|django_debug)\s*[:=]\s*['\"]?(?:true|1|on|yes)['\"]?\s*$'''
+description = 'Debug settings in configuration files tend to reach production, exposing internals.'
+recommendation = 'Keep debug off by default and enable it only in local overrides.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.env'
+code = '''DEBUG=true
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.env'
+code = '''DEBUG=false
+'''
+
+[[rule]]
+id = 'SR-GEN-008'
+title = 'TLS certificate validation disabled'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Env', 'Shell', 'JSON', 'YAML', 'Dockerfile', 'INI']
+keywords = ['rejectunauthorized', 'node_tls_reject_unauthorized', 'strictssl', 'strict-ssl']
+tags = ['transport']
+needs_strings = true
+pattern = '''rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED['\"]?\s*[\]:=,]\s*['\"]?0|strictSSL\s*:\s*false|strict-ssl\s*=\s*false'''
+description = 'Certificate validation is turned off for Node.js/npm connections, allowing any intermediary to intercept or tamper with HTTPS traffic.'
+recommendation = 'Keep validation on; trust private CAs with the ca option or NODE_EXTRA_CA_CERTS.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''const https = require('https');
+
+const agent = new https.Agent({ rejectUnauthorized: false });
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const https = require('https');
+
+const agent = new https.Agent({ rejectUnauthorized: true });
+'''
+
+[[rule]]
+id = 'SR-GEN-009'
+title = 'MongoDB $where operator'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-943'
+owasp = 'A03'
+languages = ['JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Python', 'PHP']
+keywords = ['$where']
+tags = ['injection']
+needs_strings = true
+pattern = '''['\"]?\$where['\"]?\s*:'''
+description = '$where executes JavaScript inside the database; combined with user input it enables NoSQL injection and denial of service.'
+recommendation = 'Use standard query operators and validate input types.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''db.users.find({ $where: 'this.age > 5' });
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''db.users.find({ age: { $gt: 5 } });
+'''
+
+[[rule]]
+id = 'SR-GEN-010'
+title = 'Permissive CORS policy'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-942'
+owasp = 'A05'
+languages = ['@CODE']
+keywords = ['access-control-allow-origin', 'origin', 'cors']
+tags = ['config']
+needs_strings = true
+pattern = '''Access-Control-Allow-Origin['\"]?\s*[,:=]\s*['\"]\*['\"]|\borigin\s*:\s*['\"]\*['\"]|\bcors\s*\(\s*\)|CORS_ORIGIN_ALLOW_ALL\s*=\s*True|CORS_ALLOW_ALL_ORIGINS\s*=\s*True|allow_origins\s*=\s*\[\s*['\"]\*['\"]'''
+description = 'A wildcard CORS policy lets any website read responses from this API. Combined with credentials or internal-only endpoints it exposes data cross-origin.'
+recommendation = '''Allow only the specific trusted origins and avoid combining credentials with '*'.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''const cors = require('cors');
+
+app.use(cors());
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const cors = require('cors');
+
+app.use(cors({ origin: 'https://app.example.org' }));
+'''
+
+[[rule]]
+id = 'SR-GEN-011'
+title = 'JWT signature verification weakened'
+severity = 'high'
+category = 'Authentication'
+cwe = 'CWE-347'
+owasp = 'A07'
+languages = ['@CODE']
+keywords = ['none', 'verify_signature', 'verify', 'ignoreexpiration']
+tags = ['auth']
+needs_strings = true
+pattern = '''(?i)algorithms?['\"]?\s*[:=]\s*\[?\s*['\"]none['\"]|verify_signature['\"]?\s*:\s*False|\bjwt\.decode\s*\([^)\n]{0,200}verify\s*=\s*False|ignoreExpiration\s*:\s*true'''
+description = '''Accepting the 'none' algorithm or skipping signature/expiry checks lets attackers forge or replay tokens and impersonate any user.'''
+recommendation = 'Pin the expected algorithm (e.g. RS256/ES256), always verify signatures and expiry.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import jwt
+
+def read(token):
+    return jwt.decode(token, verify=False)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import jwt
+
+def read(token, key):
+    return jwt.decode(token, key, algorithms=['HS256'])
+'''
+
+[[rule]]
+id = 'SR-GEN-012'
+title = 'SQL query built with concatenation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['Java', 'Kotlin', 'Scala', 'Groovy', 'C#', 'VB.NET', 'F#']
+keywords = ['execute', 'preparestatement', 'createquery', 'createnativequery', 'addbatch']
+tags = ['injection']
+pattern = '''\b(?:executeQuery|executeUpdate|execute|prepareStatement|createQuery|createNativeQuery|addBatch)\s*\(\s*['\"][^'\"\n]*['\"]\s*\+'''
+description = 'Concatenating values into SQL/JPQL text allows SQL injection, even when the result is passed to prepareStatement().'
+recommendation = 'Use PreparedStatement placeholders (?) or named parameters with setParameter().'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Repo {
+  void find(java.sql.Statement stmt, String id) throws Exception {
+    stmt.executeQuery("SELECT * FROM users WHERE id = " + id);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Repo {
+  void find(java.sql.Connection c, String id) throws Exception {
+    c.prepareStatement("SELECT * FROM users WHERE id = ?");
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-GEN-013'
+title = 'Predictable random generator'
+severity = 'low'
+category = 'Cryptography'
+cwe = 'CWE-338'
+owasp = 'A02'
+languages = ['Java', 'Kotlin', 'Scala', 'Groovy', 'C#', 'VB.NET', 'F#']
+confidence = 'low'
+keywords = ['random']
+tags = ['crypto']
+pattern = 'new\s+(?:java\.util\.)?Random\s*\('
+description = 'java.util.Random / System.Random are predictable and unsuitable for tokens or keys.'
+recommendation = 'Use SecureRandom (Java) or RandomNumberGenerator (.NET) for security values.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Token {
+  java.util.Random make() {
+    return new java.util.Random();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Token {
+  java.security.SecureRandom make() {
+    return new java.security.SecureRandom();
+  }
+}
+'''
+

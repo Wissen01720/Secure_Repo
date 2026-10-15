@@ -1,0 +1,180 @@
+# Detection rules with the ID prefix SR-RB-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-RB-001'
+title = 'Dynamic code evaluation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['@RB']
+keywords = ['eval']
+tags = ['injection']
+pattern = '''(?<![\w.])eval\s*[\( ]|\b(?:instance_eval|class_eval|module_eval)\s*\(?\s*['\"]'''
+description = 'eval and string-based *_eval execute Ruby code built at runtime.'
+recommendation = 'Use blocks, public_send with allow-lists or explicit dispatch.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''def run(code)
+  eval(code)
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def run(code)
+  code.to_s
+end
+'''
+
+[[rule]]
+id = 'SR-RB-002'
+title = 'Shell command with interpolation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@RB']
+keywords = ['#{']
+tags = ['injection']
+pattern = '\b(?:system|exec|spawn|IO\.popen|Open3\.\w+)\s*\(?[^\n]{0,200}#\{|%x[\(\[\{][^\n]*#\{|`[^`\n]*#\{[^`\n]*`'
+description = 'Interpolating values into shell commands allows command injection.'
+recommendation = '''Pass arguments separately: system('cmd', arg1, arg2).'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''def ping(host)
+  system("ping #{host}")
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def ping(host)
+  system('ping', host)
+end
+'''
+
+[[rule]]
+id = 'SR-RB-003'
+title = 'Unsafe YAML/Marshal load'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@RB']
+keywords = ['yaml', 'psych', 'marshal']
+tags = ['deserialization']
+pattern = '\b(?:YAML|Psych)\.(?:load|unsafe_load)\b(?!_file)|\bMarshal\.(?:load|restore)\b'
+description = 'YAML.load (Psych < 4) and Marshal.load can instantiate arbitrary objects, leading to remote code execution.'
+recommendation = 'Use YAML.safe_load with permitted_classes, and never Marshal.load untrusted data.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''require 'yaml'
+
+def load(text)
+  YAML.load(text)
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''require 'yaml'
+
+def load(text)
+  YAML.safe_load(text)
+end
+'''
+
+[[rule]]
+id = 'SR-RB-004'
+title = 'Output escaping bypassed'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@RB']
+keywords = ['html_safe', 'raw', '<%==']
+tags = ['xss', 'injection']
+pattern = '\.html_safe\b|<%==|(?<![\w.])raw\s*\('
+description = 'html_safe/raw mark strings as trusted HTML and disable Rails escaping.'
+recommendation = 'Escape by default; use sanitize() with an allow-list for rich text.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''def page(name)
+  "<b>#{name}</b>".html_safe
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def page(name)
+  ERB::Util.html_escape(name)
+end
+'''
+
+[[rule]]
+id = 'SR-RB-005'
+title = 'SQL string interpolation (ActiveRecord)'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@RB']
+keywords = ['#{']
+tags = ['injection']
+pattern = '''\.(?:where|find_by_sql|order|group|having|joins|select|pluck|execute|delete_all|update_all)\s*\(\s*['\"][^'\"\n]*#\{'''
+description = 'Interpolating values into ActiveRecord SQL fragments allows SQL injection.'
+recommendation = '''Use hash conditions or placeholders: where('id = ?', id).'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''def find(name)
+  User.where("name = '#{name}'")
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def find(name)
+  User.where(name: name)
+end
+'''
+
+[[rule]]
+id = 'SR-RB-006'
+title = 'Mass assignment with permit!'
+severity = 'medium'
+category = 'Insecure Design'
+cwe = 'CWE-915'
+owasp = 'A04'
+languages = ['@RB']
+keywords = ['permit!']
+tags = ['access-control']
+pattern = '\.permit!'
+description = 'permit! allows every request parameter to be mass-assigned, including admin flags.'
+recommendation = 'Whitelist attributes with permit(:field1, :field2).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class UsersController
+  def params_for
+    params.require(:user).permit!
+  end
+end
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class UsersController
+  def params_for
+    params.require(:user).permit(:name, :email)
+  end
+end
+'''
+

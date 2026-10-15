@@ -1,0 +1,182 @@
+# Detection rules with the ID prefix SR-HYG-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-HYG-001'
+title = 'No security policy (SECURITY.md)'
+severity = 'low'
+category = 'Repository Hygiene'
+cwe = 'CWE-1059'
+owasp = 'A04'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene']
+description = 'Without a security policy researchers do not know how to report vulnerabilities privately, which leads to public disclosure or unreported issues.'
+recommendation = 'Add SECURITY.md describing supported versions and a private reporting channel.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+extra.'SECURITY.md' = '''Report issues to security@example.org
+'''
+
+[[rule]]
+id = 'SR-HYG-002'
+title = 'Secrets not excluded by .gitignore'
+severity = 'medium'
+category = 'Repository Hygiene'
+cwe = 'CWE-538'
+owasp = 'A05'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene', 'secrets']
+description = 'The repository lacks .gitignore rules for environment and key files, making accidental commits of secrets likely.'
+recommendation = 'Ignore .env*, *.pem, *.key, credential files and local configuration.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+extra.'.gitignore' = '''.env
+*.pem
+*.key
+'''
+
+[[rule]]
+id = 'SR-HYG-003'
+title = 'No automated dependency updates'
+severity = 'info'
+category = 'Repository Hygiene'
+cwe = 'CWE-1104'
+owasp = 'A06'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene', 'supply-chain']
+description = 'No Dependabot/Renovate configuration was found, so vulnerable dependencies may go unnoticed.'
+recommendation = 'Enable Dependabot or Renovate security updates.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''flask==2.0.1
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''flask==2.0.1
+'''
+extra.'.github/dependabot.yml' = '''version: 2
+updates: []
+'''
+
+[[rule]]
+id = 'SR-HYG-004'
+title = 'No license file'
+severity = 'info'
+category = 'Repository Hygiene'
+cwe = ''
+owasp = 'OTHER'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene', 'license']
+description = 'Without a LICENSE the terms of use are unclear, a gap for intellectual-property compliance.'
+recommendation = 'Add a LICENSE file that states the terms under which the code may be used.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+extra.'LICENSE' = '''MIT License
+'''
+
+[[rule]]
+id = 'SR-HYG-005'
+title = 'No continuous integration checks'
+severity = 'info'
+category = 'Repository Hygiene'
+cwe = ''
+owasp = 'A08'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene']
+description = 'No CI pipeline was found, so tests and security checks are not enforced on changes.'
+recommendation = 'Add a CI workflow that runs tests, linters and a security scan on every change.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+extra.'.github/workflows/ci.yml' = '''on: push
+jobs: {}
+'''
+
+[[rule]]
+id = 'SR-HYG-006'
+title = 'No code owners defined'
+severity = 'info'
+category = 'Repository Hygiene'
+cwe = ''
+owasp = 'A01'
+languages = ["*"]
+source = 'hygiene'
+tags = ['hygiene']
+description = 'Without CODEOWNERS there is no enforced reviewer for sensitive paths.'
+recommendation = 'Add a CODEOWNERS file and require code-owner review on protected branches.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'app.py'
+scope = 'repo'
+code = '''print('hi')
+'''
+extra.'.github/CODEOWNERS' = '''* @owner
+'''
+

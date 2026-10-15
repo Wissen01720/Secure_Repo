@@ -1,0 +1,244 @@
+# Detection rules with the ID prefix SR-PHP-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-PHP-001'
+title = 'Dynamic code evaluation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['@PHP']
+keywords = ['eval', 'assert', 'create_function']
+tags = ['injection']
+pattern = '(?<![\w>$])(?:eval|assert|create_function)\s*\('
+description = 'eval(), assert() with strings and create_function() execute PHP code built at runtime.'
+recommendation = 'Remove dynamic evaluation and use explicit control flow.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+$code = $_GET['code'];
+eval($code);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+$value = intval($_GET['n']);
+echo $value;
+'''
+
+[[rule]]
+id = 'SR-PHP-002'
+title = 'OS command execution'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@PHP']
+keywords = ['system', 'exec', 'passthru', 'popen', 'proc_open', '`']
+tags = ['injection']
+pattern = '(?<![\w>$:])(?:system|exec|shell_exec|passthru|popen|proc_open|pcntl_exec)\s*\(|`[^`\n]*\$[^`\n]*`'
+description = 'Shell execution functions and backticks run OS commands; variables inside them allow command injection.'
+recommendation = 'Avoid shelling out; otherwise use escapeshellarg() on every argument and allow-lists.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+$host = $_GET['host'];
+system('ping ' . $host);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+$parts = explode(',', 'a,b');
+'''
+
+[[rule]]
+id = 'SR-PHP-003'
+title = 'unserialize() on data'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@PHP']
+keywords = ['unserialize']
+tags = ['deserialization']
+pattern = '(?<![\w>$])unserialize\s*\('
+description = 'unserialize() on attacker data triggers magic methods (POP chains) leading to code execution or file operations.'
+recommendation = '''Use json_decode(), or unserialize($x, ['allowed_classes' => false]).'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+$data = unserialize($_COOKIE['data']);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+$data = json_decode($_COOKIE['data'], true);
+'''
+
+[[rule]]
+id = 'SR-PHP-004'
+title = 'SQL query with request superglobals'
+severity = 'critical'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@PHP']
+keywords = ['$_']
+tags = ['injection']
+pattern = '(?:mysql_query|mysqli_query|pg_query|->query|->exec|->prepare)\s*\([^;\n]{0,300}\$_(?:GET|POST|REQUEST|COOKIE|SERVER)'
+description = 'Request superglobals are placed directly into SQL, a textbook SQL injection.'
+recommendation = 'Use PDO/mysqli prepared statements with bound parameters.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+$result = mysqli_query($db, "SELECT * FROM users WHERE id = " . $_GET['id']);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+$stmt = $db->prepare('SELECT * FROM users WHERE id = ?');
+$stmt->execute([1]);
+'''
+
+[[rule]]
+id = 'SR-PHP-005'
+title = 'File inclusion from request data'
+severity = 'critical'
+category = 'Injection'
+cwe = 'CWE-98'
+owasp = 'A03'
+languages = ['@PHP']
+keywords = ['$_']
+tags = ['injection', 'access-control']
+pattern = '\b(?:include|require)(?:_once)?\b[^;\n]{0,200}\$_(?:GET|POST|REQUEST|COOKIE)'
+description = 'include/require with request data enables local and remote file inclusion, frequently escalating to remote code execution.'
+recommendation = 'Map requested pages to a fixed allow-list of files.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+include($_GET['page'] . '.php');
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+include('header.php');
+'''
+
+[[rule]]
+id = 'SR-PHP-006'
+title = 'Reflected output of request data'
+severity = 'high'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@PHP']
+exclude = 'htmlspecialchars|htmlentities|intval|esc_html|esc_attr|strip_tags'
+keywords = ['$_']
+tags = ['xss', 'injection']
+pattern = '\b(?:echo|print)\b[^;\n]{0,200}\$_(?:GET|POST|REQUEST|COOKIE|SERVER)'
+description = 'Echoing request parameters without encoding produces reflected XSS.'
+recommendation = '''Encode output with htmlspecialchars($v, ENT_QUOTES, 'UTF-8').'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+echo 'Hello ' . $_GET['name'];
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+echo 'Hello ' . htmlspecialchars('world');
+'''
+
+[[rule]]
+id = 'SR-PHP-007'
+title = 'Weak password hashing'
+severity = 'high'
+category = 'Cryptography'
+cwe = 'CWE-916'
+owasp = 'A02'
+languages = ['@PHP']
+keywords = ['md5', 'sha1']
+tags = ['crypto']
+pattern = '(?i)\b(?:md5|sha1)\s*\(\s*\$\w*(?:pass|pwd)'
+description = 'Unsalted fast hashes make stolen password databases trivial to crack.'
+recommendation = 'Use password_hash() with PASSWORD_ARGON2ID or PASSWORD_BCRYPT.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+$hash = md5($password);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+$hash = password_hash($password, PASSWORD_DEFAULT);
+'''
+
+[[rule]]
+id = 'SR-PHP-008'
+title = 'cURL TLS verification disabled'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@PHP']
+keywords = ['curlopt_ssl_verify']
+tags = ['transport']
+pattern = 'CURLOPT_SSL_VERIFYPEER\s*,\s*(?:false|0)|CURLOPT_SSL_VERIFYHOST\s*,\s*0'
+description = 'Turning off peer/host verification in cURL allows man-in-the-middle interception.'
+recommendation = 'Keep verification enabled and configure CURLOPT_CAINFO for private CAs.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+'''
+
+[[rule]]
+id = 'SR-PHP-009'
+title = 'Error display enabled'
+severity = 'low'
+category = 'Misconfiguration'
+cwe = 'CWE-209'
+owasp = 'A05'
+languages = ['PHP', 'INI']
+keywords = ['display_errors']
+tags = ['config']
+needs_strings = true
+pattern = '''(?i)ini_set\s*\(\s*['\"]display_errors['\"]\s*,\s*['\"]?(?:1|on|true)|^\s*display_errors\s*=\s*On'''
+description = 'Displaying errors to users reveals paths, queries and stack traces useful to attackers.'
+recommendation = 'Log errors server-side and set display_errors=Off in production.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<?php
+ini_set('display_errors', '1');
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<?php
+ini_set('display_errors', '0');
+'''
+

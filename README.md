@@ -35,9 +35,10 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 13. [Compliance audit](#compliance-audit)
 14. [Privacy & data handling](#privacy--data-handling)
 15. [Suppressing findings](#suppressing-findings)
-16. [Troubleshooting](#troubleshooting)
-17. [Project layout](#project-layout)
-18. [License](#license)
+16. [Limitations and threat model](#limitations-and-threat-model)
+17. [Troubleshooting](#troubleshooting)
+18. [Project layout](#project-layout)
+19. [License](#license)
 
 ---
 
@@ -585,6 +586,19 @@ latest version (deps.dev).
 
 ---
 
+### Support level by language
+
+Not every language gets the same depth of analysis. Rule counts are the rules written *for* that language; the
+43 language-agnostic rules (secrets, TLS, CORS, weak crypto, hardcoded credentials...) apply to every file on top.
+
+| Level | Languages | What it means |
+|---|---|---|
+| **Deep** | Python (25 rules), JavaScript / TypeScript (24 rules) | Syntax-tree analysis with taint tracking from request data to sinks inside a file (Python), data-flow engine (JS/TS), comments and strings masked. Highest precision and the only languages where findings are confirmed by a source-to-sink path. |
+| **Patterns with masking** | Java / Kotlin / Scala / Groovy (10), PHP (9), Go (7), Ruby (7), C# (6), C / C++ (7) | Regular-expression rules that run on comment- and string-masked code. They find known dangerous APIs, not data flow; expect more false positives and misses than in the deep tier. |
+| **Basic** | Rust (3), Swift, Dart, Lua, Perl, Elixir, Solidity | A few rules plus the language-agnostic ones. |
+| **Configuration and infrastructure** | Dockerfile, Docker Compose, Kubernetes, Terraform, CloudFormation, GitHub Actions / GitLab CI / other CI, shell and PowerShell, `.env` / INI / YAML / TOML | Dedicated checks (the Dockerfile analyzer understands stages and `USER`; workflow rules understand `run:` blocks). |
+| **Dependencies** | 30 manifest and lock formats across PyPI, npm, Go, crates.io, RubyGems, Packagist, Maven/Gradle, NuGet, Pub | Advisories from OSV.dev, version resolution for the virtual lockfile, license and supply-chain checks. |
+
 ## Compliance audit
 
 The audit is **optional** - enable it with `--compliance`, from *Settings* in the CLI or with the toggle in the
@@ -700,6 +714,45 @@ or more, the CLI, the GUI and `quality.md` show a *REPOSITORY INFLUENCE* warning
 
 Dependency folders (`node_modules`, `vendor`, virtual environments, build output) are skipped automatically;
 their libraries are still analyzed through the manifests and lockfiles.
+
+---
+
+## Limitations and threat model
+
+Secure Repo is a static analyzer: it reads files and reasons about them. Treat its output as a prioritized list of
+leads to review, not as a verdict.
+
+**What it does not detect**
+
+- Business-logic flaws, broken authorization or authentication at design level, race conditions and anything that
+  only exists at run time (deployed configuration, cloud permissions, network exposure).
+- Data flow across files or through frameworks it does not model: taint tracking is per file, and only for Python
+  and JavaScript/TypeScript. Every other language relies on patterns.
+- Secrets that were removed from the working tree but remain in Git history: only the checked-out files are read.
+- Vulnerabilities in code that is not in the repository (installed packages, base images, generated artifacts).
+- Obfuscated or dynamically generated code.
+
+**What is skipped, always or conditionally** (every skip is listed under "What was NOT analyzed" in the report)
+
+- Always: `.git`, `node_modules`, virtual environments, caches and the report folders themselves.
+- Only with evidence: `build`, `dist`, `target`, `vendor`, `obj`, `coverage`, `Pods`... (listed in `.gitignore`, `vendor/` at
+  the root or beside `go.mod` / `composer.json` / `Gemfile`, or full of build artifacts).
+- Minified JavaScript, TypeScript and CSS: reduced analysis (secrets and critical findings only).
+- Files above the size limit (default 2 MB, `--max-file-size`), binaries, symbolic links, lock files and source maps by type.
+- Dependency manifests with a syntax error are reported as unparsed, not silently treated as empty.
+
+**How the audited repository is treated.** Everything inside the target repository is untrusted input. Its own
+`.securerepo.toml`, shared triage file and `nosec` comments change the result only when you audit a *local* Git
+working tree (your own project); for remote repositories, other branches and plain folders they are ignored and the
+report says so. Custom regular expressions are rejected when they could backtrack catastrophically, and report
+files neutralize spreadsheet formulas.
+
+**What leaves your machine.** Source code never does. In online mode package names and versions are sent to
+`api.osv.dev` and `api.deps.dev` (and to `repo.packagist.org` / `pub.dev` to resolve ranges); the update check contacts
+the GitHub API of this project. `--offline` disables dependency lookups; `--no-update-check` disables the update check.
+
+**Compliance output is evidence, not certification.** A control marked PASS means the analyzer found nothing that
+contradicts it in the code it could read, not that the control is satisfied.
 
 ---
 

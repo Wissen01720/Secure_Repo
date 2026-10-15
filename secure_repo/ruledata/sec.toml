@@ -1,0 +1,592 @@
+# Detection rules with the ID prefix SR-SEC-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-SEC-001'
+title = 'AWS access key ID'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+exclude = 'EXAMPLE'
+keywords = ['akia', 'asia', 'agpa', 'aida', 'aroa', 'anpa', 'anva', 'aipa']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\b((?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[0-9A-Z]{16})\b'
+description = 'An Amazon Web Services access key identifier is embedded in the repository. Anyone with read access to the code (or its history, forks and CI logs) can pair it with the secret key to act on your AWS account, leading to data theft or large unexpected bills.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''AWS_ACCESS_KEY_ID = "AKIA<<upper:16>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-002'
+title = 'AWS secret access key'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+exclude = '(?i)EXAMPLEKEY|[0-9a-f]{40}'
+keywords = ['aws']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '''(?i)aws.{0,25}?['\"]([0-9a-zA-Z/+]{40})['\"]'''
+description = 'A 40-character value assigned near an AWS identifier looks like an AWS secret access key. Secret keys grant full programmatic access with the permissions of the owning IAM identity.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''aws_secret_access_key = "<<alnum:40>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''aws_region = "us-east-1"
+'''
+
+[[rule]]
+id = 'SR-SEC-003'
+title = 'GitHub token'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\b((?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{22,255})\b'
+description = 'A GitHub personal access / OAuth / app token is hardcoded. Tokens can read or modify private repositories, packages and workflows, enabling supply-chain attacks.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''TOKEN = "ghp_<<alnum:36>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-004'
+title = 'GitLab personal access token'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['glpat-']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bglpat-[A-Za-z0-9_\-]{20,}\b'
+description = 'A GitLab personal access token is present in the code. It grants API access with the privileges of the user that created it.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''TOKEN = "glpat-<<alnum:20>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-005'
+title = 'Slack token'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['xox']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bxox[baprs]-[A-Za-z0-9-]{10,}\b'
+description = 'A Slack API token allows reading and posting messages, listing users and exfiltrating conversations from the workspace.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''TOKEN = "xoxb-<<digits:12>>-<<digits:12>>-<<alnum:24>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-006'
+title = 'Slack incoming webhook'
+severity = 'medium'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['hooks.slack.com']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = 'https://hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+'
+description = 'Incoming webhook URLs let anyone post arbitrary messages into a Slack channel, which can be abused for phishing inside your organisation.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''HOOK = "https://hooks.slack.com/services/T<<upper:8>>/B<<upper:8>>/<<alnum:24>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-007'
+title = 'Google API key'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['aiza']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bAIza[0-9A-Za-z\-_]{35}\b'
+description = 'A Google Cloud / Firebase API key is hardcoded. Unrestricted keys can be used to consume paid APIs on your billing account or access project data.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''KEY = "AIza<<b64url:35>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-008'
+title = 'Stripe live secret key'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['_live_']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\b(?:sk|rk)_live_[0-9a-zA-Z]{24,}\b'
+description = 'A live Stripe secret key grants access to payments, refunds and customer payment data. Its exposure is a direct financial and PCI DSS incident.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''KEY = "sk_live_<<alnum:24>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-009'
+title = 'Private key material'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['private key']
+tags = ['secrets']
+scan_comments = true
+pattern = '-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----'
+description = 'A private key (TLS, SSH, PGP or signing key) is stored in the repository. Whoever obtains it can impersonate your servers, decrypt traffic or sign malicious artifacts.'
+recommendation = 'Treat the key as compromised: revoke/replace it, remove it from history, and store keys in a hardware module, key vault or CI secret store.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'notes.txt'
+code = '''-----BEGIN <<lit:RSA >>PRIVATE KEY-----
+<<b64url:64>>
+-----END <<lit:RSA >>PRIVATE KEY-----
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'notes.txt'
+code = '''This file explains how to generate a key pair; it contains no key.
+'''
+
+[[rule]]
+id = 'SR-SEC-010'
+title = 'Hardcoded JSON Web Token'
+severity = 'medium'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+keywords = ['eyj']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+description = 'A signed JWT is embedded in the source. If it is still valid it can be replayed to authenticate as the subject it was issued for.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''JWT = "eyJ<<b64url:20>>.eyJ<<b64url:20>>.<<b64url:20>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-011'
+title = 'Credentials inside a connection string'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+exclude = '(?i)://[^:\s]*:(?:\$\{|\{\{|<|%\(|password@|pass@|passwd@|pwd@|secret@|\*+@|x+@|changeme|example)'
+keywords = ['://']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '''(?i)\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|mariadb|rediss?|amqps?|mssql|sqlserver|ftp|sftp|smtp)://[^:\s/'\"@]+:([^@\s'\"/]{3,})@'''
+description = 'A database / broker URI contains a username and password. The credentials are readable by anyone with access to the repository and usually reach production data stores.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''DATABASE_URL = "postgres://admin:<<alnum:12>>@db.internal:5432/app"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''DATABASE_URL = "postgres://db.internal:5432/app"
+'''
+
+[[rule]]
+id = 'SR-SEC-012'
+title = 'SendGrid API key'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['sg.']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b'
+description = 'SendGrid keys allow sending e-mail as your domain, enabling convincing phishing campaigns.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''KEY = "SG.<<b64url:22>>.<<b64url:43>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-013'
+title = 'AI provider API key'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['sk-']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\b(sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_\-]{80,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_\-]{20,}T3BlbkFJ[A-Za-z0-9_\-]{20,})\b'
+description = 'An API key for a large-language-model provider is hardcoded. It can be abused to run workloads on your account and to access stored data such as files or conversation logs.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''KEY = "sk-ant-api03-<<b64url:90>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-014'
+title = 'npm access token'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['npm_']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bnpm_[A-Za-z0-9]{36}\b'
+description = 'npm tokens can publish new versions of your packages. A leaked token is a classic entry point for supply-chain malware.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''TOKEN = "npm_<<alnum:36>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-015'
+title = 'PyPI upload token'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['pypi-']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b'
+description = 'PyPI API tokens allow uploading packages under your account, enabling supply-chain compromise.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''TOKEN = "pypi-AgEIcHlwaS5vcmc<<b64url:60>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-016'
+title = 'Azure storage account key'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['accountkey=']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = 'DefaultEndpointsProtocol=https?;AccountName=[^;\s]+;AccountKey=[A-Za-z0-9+/=]{40,}'
+description = 'An Azure Storage connection string with the account key grants full read/write access to every blob, queue and table in the account.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''CONN = "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=<<alnum:40>>=="
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-017'
+title = 'Telegram bot token'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = [':aa']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '\b\d{8,10}:AA[0-9A-Za-z_-]{33}\b'
+description = 'Telegram bot tokens allow full control of the bot, including reading every message it receives.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''BOT = "<<digits:9>>:AA<<b64url:33>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+VALUE = os.environ["SECRET_VALUE"]
+'''
+
+[[rule]]
+id = 'SR-SEC-018'
+title = 'Credentials embedded in URL'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+exclude = '(?i)://[^:\s]*:(?:\$\{|\{\{|<|%\(|password@|pass@|token@|\*+@|x+@|changeme)'
+keywords = ['://']
+tags = ['secrets']
+scan_comments = true
+redact = true
+pattern = '''\bhttps?://[^\s:/@'\"]+:([^\s:/@'\"]{3,})@[^\s'\"]+'''
+description = 'HTTP basic-auth credentials are embedded in a URL. URLs are logged by proxies, browsers and CI systems, spreading the credential far beyond the code base.'
+recommendation = 'Revoke and rotate this credential immediately, remove it from the source code and the Git history (e.g. git filter-repo), and load it at runtime from a secret manager or environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''REMOTE = "https://deploy:<<alnum:12>>@git.example.org/repo.git"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''REMOTE = "https://git.example.org/repo.git"
+'''
+
+[[rule]]
+id = 'SR-SEC-019'
+title = 'Hardcoded credential'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+tags = ['secrets']
+redact = true
+description = 'A variable whose name indicates a password, token or secret is assigned a literal value. Hardcoded credentials cannot be rotated without a code change, are shared with everyone who can read the repository and frequently end up in public forks, logs and build artifacts.'
+recommendation = 'Remove the literal, rotate the credential and read it at runtime from environment variables or a secret manager (Vault, AWS/GCP/Azure secret services, Doppler, 1Password, etc.). Add a pre-commit secret scanner to prevent regressions.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''DB_PASSWORD = "<<alnum:16>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+DB_PASSWORD = os.environ["DB_PASSWORD"]
+'''
+
+[[rule]]
+id = 'SR-SEC-020'
+title = 'Sensitive file committed to the repository'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-538'
+owasp = 'A05'
+languages = ["*"]
+source = 'secret'
+tags = ['secrets']
+description = 'A file that typically stores secrets (environment files, private keys, keystores, credential stores, database dumps or infrastructure state) is tracked in the repository. Its contents are exposed to anyone with read access and persist in the Git history even after deletion.'
+recommendation = 'Delete the file from the repository and its history, rotate any secret it contained, add the pattern to .gitignore and distribute a sanitized template (e.g. .env.example) instead.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.env'
+code = '''MODE=production
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.env.example'
+code = '''MODE=production
+'''
+

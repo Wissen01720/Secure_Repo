@@ -1,0 +1,184 @@
+# Detection rules with the ID prefix SR-K8S-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-K8S-001'
+title = 'Privileged container'
+severity = 'high'
+category = 'Misconfiguration'
+cwe = 'CWE-250'
+owasp = 'A05'
+languages = ['YAML', 'JSON']
+keywords = ['privileged']
+tags = ['config', 'container', 'iac']
+pattern = '''\bprivileged['\"]?\s*:\s*true\b'''
+description = 'Privileged containers have all capabilities and device access; a compromise equals host compromise.'
+recommendation = 'Remove privileged: true and grant only the specific capabilities required.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        privileged: true
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        privileged: false
+'''
+
+[[rule]]
+id = 'SR-K8S-002'
+title = 'Privilege escalation or root user allowed'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-250'
+owasp = 'A05'
+languages = ['YAML', 'JSON']
+keywords = ['allowprivilegeescalation', 'runasuser', 'runasnonroot']
+tags = ['config', 'container', 'iac']
+pattern = '''allowPrivilegeEscalation['\"]?\s*:\s*true|runAsUser['\"]?\s*:\s*0\b|runAsNonRoot['\"]?\s*:\s*false'''
+description = 'The workload may run as root or gain more privileges than its parent process.'
+recommendation = 'Set runAsNonRoot: true, allowPrivilegeEscalation: false and a non-zero runAsUser.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        allowPrivilegeEscalation: true
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+'''
+
+[[rule]]
+id = 'SR-K8S-003'
+title = 'Host namespace sharing'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-668'
+owasp = 'A05'
+languages = ['YAML', 'JSON']
+keywords = ['hostnetwork', 'hostpid', 'hostipc', 'network_mode', 'pid']
+tags = ['config', 'container', 'iac']
+pattern = '''\bhost(?:Network|PID|IPC)['\"]?\s*:\s*true|\bnetwork_mode\s*:\s*['\"]?host\b|^\s*pid\s*:\s*['\"]?host\b'''
+description = 'Sharing host network/PID/IPC namespaces breaks container isolation.'
+recommendation = 'Remove host namespace sharing unless strictly required and documented.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  hostNetwork: true
+  containers:
+    - name: app
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  hostNetwork: false
+  containers:
+    - name: app
+'''
+
+[[rule]]
+id = 'SR-K8S-004'
+title = 'Docker socket mounted'
+severity = 'high'
+category = 'Misconfiguration'
+cwe = 'CWE-250'
+owasp = 'A05'
+languages = ['YAML', 'JSON', 'Dockerfile', 'Shell']
+keywords = ['docker.sock']
+tags = ['config', 'container']
+pattern = '/var/run/docker\.sock'
+description = 'Access to the Docker socket is equivalent to root on the host.'
+recommendation = 'Avoid mounting the socket; use rootless builders (Kaniko, BuildKit) instead.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  volumes:
+    - name: docker
+      hostPath:
+        path: /var/run/docker.sock
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  volumes:
+    - name: data
+      emptyDir: {}
+'''
+
+[[rule]]
+id = 'SR-K8S-005'
+title = 'Dangerous Linux capability'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-250'
+owasp = 'A05'
+languages = ['YAML', 'JSON']
+keywords = ['sys_admin', 'sys_ptrace', 'net_admin']
+tags = ['config', 'container', 'iac']
+pattern = '\b(?:CAP_)?(?:SYS_ADMIN|SYS_PTRACE|NET_ADMIN)\b'
+description = 'SYS_ADMIN, SYS_PTRACE and NET_ADMIN grant near-root abilities inside the container.'
+recommendation = 'Drop ALL capabilities and add back only the minimal required set.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        capabilities:
+          add: ["SYS_ADMIN"]
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: app
+      securityContext:
+        capabilities:
+          drop: ["ALL"]
+'''
+

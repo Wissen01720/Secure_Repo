@@ -1,0 +1,197 @@
+# Detection rules with the ID prefix SR-CI-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-CI-001'
+title = 'pull_request_target trigger'
+severity = 'medium'
+category = 'CI/CD'
+cwe = 'CWE-829'
+owasp = 'A08'
+languages = ["*"]
+path = '(^|/)\.github/workflows/[^/]+\.ya?ml$'
+keywords = ['pull_request_target']
+tags = ['supply-chain', 'ci']
+pattern = '\bpull_request_target\b'
+description = '''pull_request_target runs with repository secrets and write permissions; checking out and running the fork's code in it allows secret theft ("pwn request").'''
+recommendation = 'Use pull_request for untrusted code or never check out the PR head in this trigger.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.github/workflows/ci.yml'
+code = '''on: pull_request_target
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.github/workflows/ci.yml'
+code = '''on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+'''
+
+[[rule]]
+id = 'SR-CI-002'
+title = 'Workflow script injection'
+severity = 'high'
+category = 'CI/CD'
+cwe = 'CWE-94'
+owasp = 'A03'
+languages = ["*"]
+path = '(^|/)\.github/workflows/[^/]+\.ya?ml$'
+region = 'ci-scripts'
+keywords = ['github.']
+tags = ['injection', 'ci']
+pattern = '\$\{\{\s*github\.(?:event\.(?:issue\.(?:title|body)|pull_request\.(?:title|body|head\.ref|head\.label)|comment\.body|review\.body|review_comment\.body|pages\.[^}]*page_name|commits\.[^}]*(?:message|author\.(?:email|name))|head_commit\.(?:message|author\.(?:email|name))|workflow_run\.head_branch)|head_ref)\s*\}\}'
+description = 'Attacker-controlled GitHub context values (issue titles, PR bodies, branch names) are expanded directly into the workflow. Inside run: steps they become shell commands.'
+recommendation = 'Pass the value through an environment variable (env: TITLE: ${{ ... }}) and quote it.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.github/workflows/ci.yml'
+code = '''on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event.pull_request.title }}"
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.github/workflows/ci.yml'
+code = '''on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: echo "$TITLE"
+'''
+
+[[rule]]
+id = 'SR-CI-003'
+title = 'Third-party action not pinned to a commit SHA'
+severity = 'low'
+category = 'CI/CD'
+cwe = 'CWE-829'
+owasp = 'A08'
+languages = ["*"]
+path = '(^|/)\.github/workflows/[^/]+\.ya?ml$'
+keywords = ['uses']
+tags = ['supply-chain', 'ci']
+pattern = '''^\s*-?\s*uses\s*:\s*['\"]?(?!\./|docker://)[\w.-]+/[\w./-]+@(?![0-9a-f]{40}\b)[^\s'\"#]+'''
+description = '''Tags and branches are mutable; if the action's repository is compromised the new code runs with your workflow's secrets.'''
+recommendation = 'Pin actions to a full commit SHA and let Dependabot keep them updated.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+'''
+
+[[rule]]
+id = 'SR-CI-004'
+title = 'Workflow grants write-all permissions'
+severity = 'medium'
+category = 'CI/CD'
+cwe = 'CWE-250'
+owasp = 'A01'
+languages = ["*"]
+path = '(^|/)\.github/workflows/[^/]+\.ya?ml$'
+keywords = ['write-all']
+tags = ['access-control', 'ci']
+pattern = 'permissions\s*:\s*write-all'
+description = 'write-all gives the GITHUB_TOKEN write access to every scope.'
+recommendation = 'Declare the minimal permissions per job (e.g. contents: read).'
+
+[[rule.example]]
+kind = 'positive'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+permissions: write-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+'''
+
+[[rule]]
+id = 'SR-CI-005'
+title = 'Secret printed in CI logs'
+severity = 'high'
+category = 'CI/CD'
+cwe = 'CWE-532'
+owasp = 'A09'
+languages = ["*"]
+path = '(^|/)(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|bitbucket-pipelines\.ya?ml|\.circleci/config\.ya?ml|Jenkinsfile)$'
+keywords = ['secrets.']
+tags = ['logging', 'secrets', 'ci']
+pattern = '\becho\b[^\n]*\$\{\{\s*secrets\.'
+description = 'Echoing secrets can expose them in build logs (masking is best-effort and fails for transformed values).'
+recommendation = 'Never print secrets; pass them via environment variables to the tools that need them.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ secrets.DEPLOY_TOKEN }}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.github/workflows/ci.yml'
+code = '''on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: ./deploy.sh
+'''
+

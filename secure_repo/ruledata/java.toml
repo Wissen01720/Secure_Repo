@@ -1,0 +1,257 @@
+# Detection rules with the ID prefix SR-JAVA-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-JAVA-001'
+title = 'OS command execution'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@JVM']
+keywords = ['exec', 'processbuilder']
+tags = ['injection']
+pattern = 'Runtime\.getRuntime\(\)\.exec\s*\(|new\s+ProcessBuilder\s*\([^)\n]{0,200}\+'
+description = 'Runtime.exec()/ProcessBuilder with dynamic strings can run attacker-influenced commands.'
+recommendation = 'Use fixed executables with argument arrays and validate every parameter.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Tool {
+  void run(String name) throws Exception {
+    Runtime.getRuntime().exec("ls " + name);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Tool {
+  int sum(int a, int b) {
+    return a + b;
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-003'
+title = 'Insecure deserialization'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@JVM']
+keywords = ['objectinputstream', 'xmldecoder', 'xstream', 'defaulttyping']
+tags = ['deserialization']
+pattern = 'new\s+ObjectInputStream\s*\(|\bXMLDecoder\s*\(|\bnew\s+XStream\s*\(\s*\)|enableDefaultTyping\s*\(|activateDefaultTyping\s*\('
+description = 'Java native deserialization, XMLDecoder, unrestricted XStream and Jackson default typing can instantiate gadget chains that execute code while reading attacker data.'
+recommendation = 'Avoid native deserialization of untrusted data; use JSON without polymorphic typing or ObjectInputFilter allow-lists.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Loader {
+  Object load(java.io.InputStream in) throws Exception {
+    return new ObjectInputStream(in).readObject();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Loader {
+  String load(java.io.InputStream in) throws Exception {
+    return new String(in.readAllBytes());
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-004'
+title = 'Weak cipher or ECB mode'
+severity = 'high'
+category = 'Cryptography'
+cwe = 'CWE-327'
+owasp = 'A02'
+languages = ['@JVM']
+keywords = ['cipher.getinstance']
+tags = ['crypto']
+needs_strings = true
+pattern = '''Cipher\.getInstance\s*\(\s*['\"](?:DES|DESede|RC2|RC4|Blowfish|AES|AES/ECB[^'\"]*|[^'\"]*/ECB/[^'\"]*)['\"]'''
+description = '''DES/3DES/RC4 are broken and 'AES' alone defaults to ECB mode, which leaks patterns of the plaintext and provides no integrity.'''
+recommendation = 'Use AES/GCM/NoPadding with a unique random IV per message.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Crypto {
+  Object make() throws Exception {
+    return javax.crypto.Cipher.getInstance("DES");
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Crypto {
+  Object make() throws Exception {
+    return javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-005'
+title = 'Weak hash algorithm'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-328'
+owasp = 'A02'
+languages = ['@JVM']
+keywords = ['messagedigest', 'digestutils']
+tags = ['crypto']
+needs_strings = true
+pattern = '''MessageDigest\.getInstance\s*\(\s*['\"](?:MD2|MD4|MD5|SHA-?1)['\"]|DigestUtils\.(?:md5|sha1|shaHex|md5Hex|sha1Hex)\s*\('''
+description = 'MD5 and SHA-1 are vulnerable to collisions and too fast for password hashing.'
+recommendation = 'Use SHA-256+ for integrity and bcrypt/Argon2/PBKDF2 for passwords.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Hash {
+  Object make() throws Exception {
+    return java.security.MessageDigest.getInstance("MD5");
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Hash {
+  Object make() throws Exception {
+    return java.security.MessageDigest.getInstance("SHA-256");
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-006'
+title = 'Certificate or hostname validation bypass'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@JVM']
+keywords = ['hostname', 'trustall', 'getacceptedissuers']
+tags = ['transport']
+pattern = 'ALLOW_ALL_HOSTNAME_VERIFIER|NoopHostnameVerifier|\bTrustAll\w*|setHostnameVerifier\s*\(\s*\([^)]*\)\s*->\s*true|getAcceptedIssuers\s*\(\s*\)\s*\{\s*return\s+null'
+description = 'Trust-all managers and permissive hostname verifiers accept any certificate, removing TLS server authentication.'
+recommendation = 'Use the platform default TrustManager and HostnameVerifier; pin certificates if needed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Client {
+  Object make() {
+    return new org.apache.http.conn.ssl.NoopHostnameVerifier();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Client {
+  Object make() {
+    return javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-008'
+title = 'XML parser factory (XXE review)'
+severity = 'low'
+category = 'Misconfiguration'
+cwe = 'CWE-611'
+owasp = 'A05'
+languages = ['@JVM']
+confidence = 'low'
+keywords = ['factory.newinstance']
+tags = ['injection']
+pattern = '(?:DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory|SchemaFactory)\.newInstance\s*\('
+description = 'Java XML factories resolve external entities by default, enabling XXE (file disclosure, SSRF) when parsing untrusted XML unless hardened.'
+recommendation = 'Enable FEATURE_SECURE_PROCESSING and set disallow-doctype-decl to true.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Xml {
+  Object make() {
+    return javax.xml.parsers.DocumentBuilderFactory.newInstance();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Xml {
+  Object make() {
+    return new StringBuilder();
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-009'
+title = 'CSRF protection disabled (Spring)'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-352'
+owasp = 'A01'
+languages = ['@JVM']
+keywords = ['csrf']
+tags = ['access-control']
+pattern = '\.csrf\s*\(\s*\)\s*\.disable\s*\(\)|csrf\s*\(\s*(?:\w+\s*->\s*\w+\.disable\(\)|AbstractHttpConfigurer::disable)\s*\)'
+description = 'Disabling Spring Security CSRF protection exposes cookie-authenticated endpoints to cross-site request forgery.'
+recommendation = 'Keep CSRF enabled for browser sessions; disable only for stateless token APIs.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Security {
+  void configure(Object http) {
+    http.csrf().disable();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Security {
+  void configure(Object http) {
+    http.authorizeRequests();
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JAVA-010'
+title = 'All actuator endpoints exposed'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-200'
+owasp = 'A05'
+languages = ['Properties', 'YAML']
+keywords = ['exposure']
+tags = ['config']
+pattern = '''management\.endpoints\.web\.exposure\.include\s*[=:]\s*['\"]?\*|^\s*include\s*:\s*['\"]\*['\"]'''
+description = 'Exposing every Spring Boot actuator endpoint can leak environment variables, heap dumps and allow configuration changes.'
+recommendation = 'Expose only health/info publicly and protect the rest with authentication.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'application.properties'
+code = '''management.endpoints.web.exposure.include=*
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'application.properties'
+code = '''management.endpoints.web.exposure.include=health,info
+'''
+

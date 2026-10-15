@@ -16,7 +16,7 @@ dependencies = [
 ]
 keywords = ["security", "sast", "secrets", "sbom", "vulnerability", "compliance", "audit", "git"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
@@ -44,6 +44,7 @@ include = ["secure_repo*"]
 [tool.setuptools.package-data]
 "secure_repo.gui" = ["static/*"]
 "secure_repo.benchmark" = ["corpus/*"]
+"secure_repo.ruledata" = ["*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

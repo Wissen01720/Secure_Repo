@@ -1,0 +1,56 @@
+# Detection rules with the ID prefix SR-PII-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-PII-001'
+title = 'Payment card number in source'
+severity = 'high'
+category = 'Sensitive Data'
+cwe = 'CWE-359'
+owasp = 'A02'
+languages = ["*"]
+source = 'secret'
+tags = ['pii']
+scan_comments = true
+redact = true
+description = 'A number that passes the Luhn checksum and matches a card-brand prefix was found. Storing primary account numbers (PAN) in code or fixtures violates PCI DSS requirement 3 and exposes cardholder data.'
+recommendation = 'Remove real card numbers. Use the official test numbers of your payment provider inside clearly marked test fixtures, and never persist PAN unencrypted.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''CARD = "4111111111111111"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''CARD = "1234567812345678"
+'''
+
+[[rule]]
+id = 'SR-PII-002'
+title = 'Social Security Number in source'
+severity = 'medium'
+category = 'Sensitive Data'
+cwe = 'CWE-359'
+owasp = 'A02'
+languages = ["*"]
+source = 'secret'
+keywords = ['ssn', 'social']
+tags = ['pii']
+scan_comments = true
+redact = true
+pattern = '(?i)\b(?:ssn|social[_ ]?security(?:[_ ]?number)?)\b[^\n]{0,40}?\b(\d{3}-\d{2}-\d{4})\b'
+description = 'A value formatted as a US Social Security Number appears next to an SSN label. Personal identifiers in source code or fixtures are personal data under GDPR/CCPA and HIPAA.'
+recommendation = 'Replace it with synthetic data generated at test time and purge the real value from history.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''ssn = "123-45-6789"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''ssn = "not available"
+'''
+

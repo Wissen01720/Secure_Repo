@@ -1,0 +1,678 @@
+# Detection rules with the ID prefix SR-JS-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-JS-001'
+title = 'Dynamic code execution (eval / Function)'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['@WEB']
+keywords = ['eval', 'function']
+tags = ['injection']
+pattern = '(?<![\w.$])eval\s*\(|\bnew\s+Function\s*\('
+description = 'eval() and new Function() compile strings into code. Any attacker-controlled fragment results in script injection in the browser or remote code execution in Node.js.'
+recommendation = 'Replace with JSON.parse, explicit lookup tables or safe expression libraries.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function run(expr) {
+  return eval(expr);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function run(expr) {
+  return JSON.parse(expr);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-002'
+title = 'Unsafe HTML sink (innerHTML)'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@WEB']
+keywords = ['innerhtml', 'outerhtml', 'insertadjacenthtml']
+tags = ['xss', 'injection']
+pattern = '\.(?:innerHTML|outerHTML)\s*\+?=(?!=)|\.insertAdjacentHTML\s*\('
+description = 'Assigning strings to innerHTML/outerHTML parses them as HTML. If the string contains unescaped user data, attackers can inject scripts (DOM-based XSS).'
+recommendation = 'Use textContent / createElement, or sanitize with DOMPurify before inserting HTML.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function show(name) {
+  document.getElementById('out').innerHTML = name;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function show(name) {
+  document.getElementById('out').textContent = name;
+}
+'''
+
+[[rule]]
+id = 'SR-JS-003'
+title = 'document.write usage'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@WEB']
+keywords = ['document.write']
+tags = ['xss', 'injection']
+pattern = '\bdocument\.(?:write|writeln)\s*\('
+description = 'document.write() injects raw HTML into the page and is a classic DOM XSS sink.'
+recommendation = 'Build DOM nodes explicitly and set text with textContent.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function show(name) {
+  document.write('<b>' + name + '</b>');
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function show(name) {
+  document.body.append(name);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-004'
+title = 'React dangerouslySetInnerHTML'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['dangerouslysetinnerhtml']
+tags = ['xss', 'injection']
+pattern = 'dangerouslySetInnerHTML'
+description = '''dangerouslySetInnerHTML bypasses React's automatic escaping. Unsanitized content leads to stored or reflected XSS.'''
+recommendation = 'Render text normally or sanitize the HTML with DOMPurify before passing it.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'Card.jsx'
+code = '''export function Card({ html }) {
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'Card.jsx'
+code = '''export function Card({ text }) {
+  return <div>{text}</div>;
+}
+'''
+
+[[rule]]
+id = 'SR-JS-005'
+title = 'Vue v-html directive'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['Vue', 'HTML']
+keywords = ['v-html']
+tags = ['xss', 'injection']
+pattern = '\bv-html\s*='
+description = '''v-html renders raw HTML and disables Vue's escaping, enabling XSS with untrusted data.'''
+recommendation = 'Use text interpolation ({{ }}) or sanitize the value before binding it.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''<template>
+  <div v-html="message"></div>
+</template>
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''<template>
+  <div>{{ message }}</div>
+</template>
+'''
+
+[[rule]]
+id = 'SR-JS-006'
+title = 'Angular security bypass'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['bypasssecuritytrust']
+tags = ['xss', 'injection']
+pattern = '\bbypassSecurityTrust(?:Html|Script|Style|Url|ResourceUrl)\s*\('
+description = '''bypassSecurityTrust* disables Angular's built-in sanitization for the given value.'''
+recommendation = 'Avoid the bypass or sanitize the value with a vetted sanitizer first.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'page.ts'
+code = '''import { DomSanitizer } from '@angular/platform-browser';
+
+export class Page {
+  constructor(private s: DomSanitizer) {}
+  render(value: string) {
+    return this.s.bypassSecurityTrustHtml(value);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'page.ts'
+code = '''export class Page {
+  render(value: string) {
+    return value;
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-JS-007'
+title = 'Shell command built dynamically'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['exec', 'spawn']
+tags = ['injection']
+pattern = '\b(?:exec|execSync)\s*\(\s*(?:`[^`]*\$\{|[^,)\n]*\+\s*\w)|\bspawn(?:Sync)?\s*\([^)]{0,300}shell\s*:\s*true'
+description = 'child_process.exec() runs the string through a shell. Interpolating variables into the command allows OS command injection.'
+recommendation = 'Use execFile()/spawn() with an argument array and shell:false, and validate inputs.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''const { exec } = require('child_process');
+
+function ping(host) {
+  exec('ping ' + host);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const { execFile } = require('child_process');
+
+function ping(host) {
+  execFile('ping', [host]);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-008'
+title = 'Request data flows into command execution'
+severity = 'critical'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['req.']
+tags = ['injection']
+pattern = '\b(?:exec|execSync|spawn|spawnSync|execFile)\s*\([^)\n]{0,200}req\.(?:query|params|body|headers|cookies)'
+description = 'HTTP request parameters are passed directly to a process-execution API, giving remote attackers command execution on the server.'
+recommendation = 'Never pass request data to shells. Use strict allow-lists and argument arrays.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''const { exec } = require('child_process');
+
+app.get('/ping', (req, res) => {
+  exec('ping ' + req.query.host);
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const { execFile } = require('child_process');
+
+app.get('/ping', (req, res) => {
+  execFile('ping', ['-c', '1', 'localhost']);
+});
+'''
+
+[[rule]]
+id = 'SR-JS-009'
+title = 'String passed to setTimeout/setInterval'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['settimeout', 'setinterval']
+tags = ['injection']
+pattern = '''\bset(?:Timeout|Interval)\s*\(\s*['\"`]'''
+description = 'Passing a string to setTimeout/setInterval evaluates it like eval().'
+recommendation = 'Pass a function reference instead of a string.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function later(id) {
+  setTimeout('refresh(' + id + ')', 1000);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function later() {
+  setTimeout(() => refresh(), 1000);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-011'
+title = 'SQL query built with concatenation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['query', 'execute', 'raw']
+tags = ['injection']
+pattern = '''\.(?:query|execute|raw|whereRaw)\s*\(\s*(?:`[^`]*\$\{|['\"][^'\"\n]*['\"]\s*\+)|\$(?:queryRawUnsafe|executeRawUnsafe)\s*\('''
+description = 'The SQL text is built with template literals or concatenation, so request data can alter the query (SQL injection).'
+recommendation = '''Use placeholders (? / $1) with parameter arrays, or tagged templates such as Prisma's $queryRaw`...` that bind values safely.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''function find(db, id) {
+  return db.query('SELECT * FROM users WHERE id = ' + id);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function find(db, id) {
+  return db.query('SELECT * FROM users WHERE id = ?', [id]);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-012'
+title = 'Sensitive token stored in Web Storage'
+severity = 'medium'
+category = 'Insecure Design'
+cwe = 'CWE-922'
+owasp = 'A04'
+languages = ['@WEB']
+keywords = ['localstorage', 'sessionstorage']
+tags = ['auth']
+needs_strings = true
+pattern = '''(?i)(?:localStorage|sessionStorage)\.setItem\s*\(\s*['\"`][^'\"`]*(?:token|jwt|secret|password|passwd|auth|session)'''
+description = 'Anything in localStorage/sessionStorage is readable by every script on the origin, so a single XSS bug exfiltrates the stored tokens.'
+recommendation = 'Keep session tokens in HttpOnly, Secure, SameSite cookies.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function save(value) {
+  localStorage.setItem('auth_token', value);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function save(value) {
+  localStorage.setItem('theme', value);
+}
+'''
+
+[[rule]]
+id = 'SR-JS-013'
+title = 'postMessage with wildcard origin'
+severity = 'medium'
+category = 'Integrity'
+cwe = 'CWE-345'
+owasp = 'A08'
+languages = ['@WEB']
+keywords = ['postmessage']
+tags = ['access-control']
+needs_strings = true
+pattern = '''\.postMessage\s*\([^)\n]{0,200},\s*['\"]\*['\"]'''
+description = '''Sending postMessage to '*' delivers the data to whatever origin currently occupies the target window, leaking it to malicious frames.'''
+recommendation = 'Specify the exact target origin and validate event.origin on receipt.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function notify(frame, data) {
+  frame.contentWindow.postMessage(data, '*');
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function notify(frame, data) {
+  frame.contentWindow.postMessage(data, 'https://app.example.org');
+}
+'''
+
+[[rule]]
+id = 'SR-JS-014'
+title = 'Weak hash or cipher in Node.js crypto'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-327'
+owasp = 'A02'
+languages = ['@JS']
+keywords = ['createhash', 'createcipher']
+tags = ['crypto']
+needs_strings = true
+pattern = '''(?i)createHash\s*\(\s*['\"](?:md5|sha1|md4)['\"]|createCipher\s*\(|createCipheriv\s*\(\s*['\"](?:des|des-ede3?|rc4|bf|aes-\d+-ecb)'''
+description = 'MD5/SHA-1 hashes and DES/RC4/ECB ciphers are cryptographically broken, and the deprecated createCipher derives keys insecurely without an IV.'
+recommendation = 'Use SHA-256+, AES-GCM or ChaCha20-Poly1305 with random IVs and crypto.scrypt/argon2 for passwords.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''const crypto = require('crypto');
+
+function digest(value) {
+  return crypto.createHash('md5').update(value).digest('hex');
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const crypto = require('crypto');
+
+function digest(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+'''
+
+[[rule]]
+id = 'SR-JS-015'
+title = 'Math.random used for secrets'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-338'
+owasp = 'A02'
+languages = ['@WEB']
+keywords = ['math.random']
+tags = ['crypto']
+needs_strings = true
+pattern = '(?i)(?:token|secret|password|passwd|salt|nonce|otp|session|apikey)[^\n]{0,40}Math\.random\s*\(|Math\.random\s*\(\s*\)[^\n]{0,40}(?:token|secret|password|salt|nonce|otp)'
+description = 'Math.random() is not cryptographically secure; values used as tokens or passwords can be predicted.'
+recommendation = 'Use crypto.getRandomValues() in browsers or crypto.randomBytes()/randomUUID() in Node.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''function newToken() {
+  const token = Math.random().toString(36);
+  return token;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''function pick(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+'''
+
+[[rule]]
+id = 'SR-JS-016'
+title = 'File path built from request data'
+severity = 'high'
+category = 'Access Control'
+cwe = 'CWE-22'
+owasp = 'A01'
+languages = ['@JS']
+keywords = ['req.']
+tags = ['access-control', 'injection']
+pattern = '\b(?:readFile|readFileSync|createReadStream|sendFile|download|unlink|unlinkSync|writeFile|writeFileSync)\s*\([^)\n]{0,200}req\.(?:query|params|body)'
+description = 'Request parameters are used as filesystem paths, allowing path traversal to read or overwrite arbitrary files.'
+recommendation = '''Resolve against a fixed root, reject '..' and absolute paths, or use an allow-list.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''const fs = require('fs');
+
+app.get('/file', (req, res) => {
+  res.send(fs.readFileSync(req.query.name));
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const fs = require('fs');
+
+app.get('/file', (req, res) => {
+  res.send(fs.readFileSync('public/index.html'));
+});
+'''
+
+[[rule]]
+id = 'SR-JS-017'
+title = 'Server-side request with user-controlled URL'
+severity = 'high'
+category = 'SSRF'
+cwe = 'CWE-918'
+owasp = 'A10'
+languages = ['@JS']
+keywords = ['req.']
+tags = ['ssrf']
+pattern = '\b(?:axios(?:\.\w+)?|fetch|got|needle|superagent\.\w+|https?\.get|https?\.request)\s*\([^)\n]{0,120}req\.(?:query|params|body)'
+description = 'The server issues HTTP requests to URLs taken from the client, enabling SSRF against internal services and cloud metadata endpoints.'
+recommendation = 'Allow-list destinations, block private address ranges and disable redirects.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''const axios = require('axios');
+
+app.get('/proxy', async (req, res) => {
+  res.send(await axios.get(req.query.url));
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const axios = require('axios');
+
+app.get('/proxy', async (req, res) => {
+  res.send(await axios.get('https://api.example.org/status'));
+});
+'''
+
+[[rule]]
+id = 'SR-JS-018'
+title = 'Open redirect'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-601'
+owasp = 'A01'
+languages = ['@JS']
+keywords = ['redirect']
+tags = ['access-control']
+pattern = '\bres\.redirect\s*\([^)\n]{0,120}req\.(?:query|params|body)'
+description = 'Redirecting to a URL supplied in the request lets attackers craft trusted-looking links that forward victims to phishing sites.'
+recommendation = 'Redirect only to relative paths or an allow-list of destinations.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''app.get('/go', (req, res) => {
+  res.redirect(req.query.next);
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''app.get('/go', (req, res) => {
+  res.redirect('/home');
+});
+'''
+
+[[rule]]
+id = 'SR-JS-022'
+title = 'target=_blank without rel=noopener'
+severity = 'info'
+category = 'Misconfiguration'
+cwe = 'CWE-1022'
+owasp = 'A05'
+languages = ['@WEB']
+confidence = 'low'
+keywords = ['_blank']
+tags = ['config']
+needs_strings = true
+pattern = '''target\s*=\s*['\"{]_blank['\"}](?![^>\n]*rel\s*=\s*['\"{][^'\"}]*noopener)'''
+description = '''Links opening a new tab without rel='noopener' give the new page a handle to window.opener (reverse tabnabbing) in older browsers.'''
+recommendation = '''Add rel='noopener noreferrer' to external links.'''
+
+[[rule.example]]
+kind = 'positive'
+file = 'index.html'
+code = '''<a href="https://example.org" target="_blank">partner</a>
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'index.html'
+code = '''<a href="https://example.org" target="_blank" rel="noopener noreferrer">partner</a>
+'''
+
+[[rule]]
+id = 'SR-JS-023'
+title = 'Reflected cross-site scripting (response)'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@JS']
+tags = ['xss', 'injection']
+description = 'Request data is written straight into an HTTP response body, where browsers interpret it as HTML.'
+recommendation = 'Use res.json() for data or render through an escaping template engine; escape any value that must be embedded in HTML.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''app.get('/hi', (req, res) => {
+  res.send('<h1>Hello ' + req.query.name + '</h1>');
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''app.get('/hi', (req, res) => {
+  res.send('<h1>Hello</h1>');
+});
+'''
+
+[[rule]]
+id = 'SR-JS-024'
+title = 'Regular expression built from user input'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-1333'
+owasp = 'A03'
+languages = ['@JS']
+tags = ['injection']
+description = 'new RegExp() compiles attacker-controlled patterns, enabling regular-expression denial of service (catastrophic backtracking) and logic bypasses.'
+recommendation = 'Escape user input before embedding it in a pattern, or use plain string matching.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''app.get('/find', (req, res) => {
+  const re = new RegExp(req.query.q);
+  res.send(String(re.test('abc')));
+});
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''app.get('/find', (req, res) => {
+  const re = new RegExp('^[a-z]+$');
+  res.send(String(re.test(req.query.q)));
+});
+'''
+
+[[rule]]
+id = 'SR-JS-025'
+title = 'Template auto-escaping disabled (JavaScript)'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@JS']
+keywords = ['autoescape', 'noescape', 'escapemarkup']
+tags = ['xss', 'injection']
+pattern = '''(?i)\bautoescape['\"]?\s*:\s*(?:false|0)\b|\bnoEscape['\"]?\s*:\s*true\b|\bescapeMarkup['\"]?\s*:\s*false\b'''
+description = '''Template engines such as swig, nunjucks, dust and Handlebars escape HTML by default. Turning auto-escaping off renders every interpolated value as raw HTML, so user-controlled content executes as script in victims' browsers (XSS).'''
+recommendation = 'Keep auto-escaping enabled (autoescape: true) and mark only constant, reviewed markup as safe in the specific places that need it.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''swig.setDefaults({ autoescape: false });
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''swig.setDefaults({ autoescape: true });
+'''
+
+[[rule]]
+id = 'SR-JS-026'
+title = 'Hardcoded session or cookie secret'
+severity = 'high'
+category = 'Authentication'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ['@JS']
+keywords = ['secret', 'keys']
+tags = ['auth', 'secrets']
+needs_strings = true
+pattern = '''(?i)\b(?:cookie[_-]?secret|session[_-]?secret|secret[_-]?key[_-]?base)['\"]?\s*[:=]\s*['\"][^'\"\n]{4,}['\"]|\b(?:session|cookieSession)\s*\(\s*\{[^}]{0,300}?\b(?:secret|keys)\s*:\s*\[?\s*['\"][^'\"\n]{4,}['\"]'''
+description = 'The secret that signs or encrypts session cookies is a literal in the source code. Anyone who can read the repository can forge session cookies and impersonate users, and the value cannot be rotated without a deployment.'
+recommendation = 'Read the secret from the environment or a secret manager, generate a long random value and rotate the one that was committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''module.exports = {
+  cookieSecret: 'session_cookie_secret_key_here'
+};
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''module.exports = {
+  cookieSecret: process.env.COOKIE_SECRET
+};
+'''
+
+[[rule]]
+id = 'SR-JS-027'
+title = 'Session cookie without Secure/HttpOnly protection'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-614'
+owasp = 'A05'
+languages = ['@JS']
+source = 'structural'
+tags = ['auth', 'session']
+description = 'The cookie that carries the session is created without the Secure flag (so browsers also send it over plain HTTP, where it can be sniffed) or with HttpOnly disabled (so any script on the page can read it). The setting may simply be missing, or commented out.'
+recommendation = '''Set cookie: { secure: true, httpOnly: true, sameSite: 'lax' } (behind a proxy also set app.set('trust proxy', 1)).'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''const session = require('express-session');
+
+app.use(session({ secret: process.env.S, cookie: { httpOnly: true } }));
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const session = require('express-session');
+
+app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true } }));
+'''
+

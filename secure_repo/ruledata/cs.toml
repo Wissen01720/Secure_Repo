@@ -1,0 +1,164 @@
+# Detection rules with the ID prefix SR-CS-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-CS-001'
+title = 'Insecure .NET deserialization'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@CS']
+keywords = ['formatter', 'typenamehandling', 'netdatacontractserializer']
+tags = ['deserialization']
+pattern = '\b(?:BinaryFormatter|NetDataContractSerializer|LosFormatter|SoapFormatter|ObjectStateFormatter)\b|TypeNameHandling\s*=\s*TypeNameHandling\.(?:All|Auto|Objects|Arrays)'
+description = 'BinaryFormatter and similar serializers (or Json.NET TypeNameHandling) deserialize arbitrary types, a well-known remote code execution vector.'
+recommendation = 'Use System.Text.Json or DataContractSerializer with known types only.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Loader {
+  object Load(System.IO.Stream s) {
+    return new BinaryFormatter().Deserialize(s);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Loader {
+  string Load(System.IO.Stream s) {
+    return new System.IO.StreamReader(s).ReadToEnd();
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-CS-002'
+title = 'SQL command built with concatenation'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@CS']
+keywords = ['command', 'sqlraw', 'sqlcommand']
+tags = ['injection']
+pattern = 'new\s+(?:SqlCommand|OleDbCommand|OdbcCommand|MySqlCommand|NpgsqlCommand|SqliteCommand)\s*\(\s*(?:\$@?\"|@?\"[^\"\n]*\"\s*\+)|\.(?:FromSqlRaw|ExecuteSqlRaw|ExecuteSqlCommand)\s*\(\s*(?:\$\"|\"[^\"\n]*\"\s*\+)'
+description = 'Interpolated or concatenated SQL text allows SQL injection.'
+recommendation = 'Use SqlParameter / FromSqlInterpolated / parameterized Dapper queries.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Repo {
+  void Find(string id) {
+    var cmd = new SqlCommand("SELECT * FROM Users WHERE Id = " + id);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Repo {
+  void Find(string id) {
+    var cmd = new SqlCommand("SELECT * FROM Users WHERE Id = @id");
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-CS-003'
+title = 'Certificate validation bypass'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@CS']
+keywords = ['certificatevalidationcallback', 'dangerousacceptany']
+tags = ['transport']
+pattern = 'ServerCertificate(?:Custom)?ValidationCallback\s*\+?=|DangerousAcceptAnyServerCertificateValidator'
+description = 'Custom certificate validation callbacks often return true unconditionally, disabling TLS server authentication.'
+recommendation = 'Remove the callback or validate the chain and thumbprint explicitly.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Net {
+  void Setup() {
+    ServicePointManager.ServerCertificateValidationCallback += (a, b, c, d) => true;
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Net {
+  void Setup() {
+    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls13;
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-CS-004'
+title = 'Weak .NET cryptography'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-327'
+owasp = 'A02'
+languages = ['@CS']
+keywords = ['md5', 'sha1', 'des', 'rc2', 'ecb']
+tags = ['crypto']
+pattern = '\b(?:MD5|SHA1|DES|TripleDES|RC2)(?:CryptoServiceProvider|Managed|\.Create)\b|CipherMode\.ECB'
+description = 'MD5, SHA-1, DES, 3DES, RC2 and ECB mode are deprecated and cryptographically weak.'
+recommendation = 'Use SHA-256+, AesGcm and Rfc2898DeriveBytes/Argon2 for passwords.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Hash {
+  object Make() {
+    return new MD5CryptoServiceProvider();
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Hash {
+  object Make() {
+    return System.Security.Cryptography.SHA256.Create();
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-CS-005'
+title = 'Process started with dynamic arguments'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@CS']
+keywords = ['process']
+tags = ['injection']
+pattern = 'Process\.Start\s*\([^)\n]{0,200}\+|new\s+ProcessStartInfo\s*\([^)\n]{0,200}\+'
+description = 'Building process arguments by concatenation can allow argument or command injection.'
+recommendation = 'Use ProcessStartInfo.ArgumentList and validate each argument.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Tool {
+  void Run(string name) {
+    Process.Start("cmd.exe", "/c dir " + name);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Tool {
+  void Run() {
+    Process.Start("notepad.exe");
+  }
+}
+'''
+

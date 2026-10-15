@@ -1,0 +1,142 @@
+# Detection rules with the ID prefix SR-MOB-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-MOB-001'
+title = 'Risky Android WebView settings'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-749'
+owasp = 'A05'
+languages = ['Java', 'Kotlin']
+keywords = ['setjavascriptenabled', 'setallowfileaccess', 'addjavascriptinterface', 'universalaccess']
+tags = ['config']
+pattern = 'setJavaScriptEnabled\s*\(\s*true|setAllowFileAccess\s*\(\s*true|setAllowUniversalAccessFromFileURLs\s*\(\s*true|addJavascriptInterface\s*\('
+description = 'Enabling JavaScript/file access or exposing Java objects to WebView content allows malicious pages to access local files or invoke native code.'
+recommendation = 'Load only trusted content, disable file access and avoid addJavascriptInterface.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Web {
+  void setup(android.webkit.WebView view) {
+    view.getSettings().setJavaScriptEnabled(true);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Web {
+  void setup(android.webkit.WebView view) {
+    view.getSettings().setJavaScriptEnabled(false);
+  }
+}
+'''
+
+[[rule]]
+id = 'SR-MOB-002'
+title = 'Insecure Android manifest flags'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-489'
+owasp = 'A05'
+languages = ['XML']
+keywords = ['debuggable', 'allowbackup', 'cleartexttraffic']
+tags = ['config']
+pattern = '''android:debuggable\s*=\s*['\"]true|android:allowBackup\s*=\s*['\"]true|android:usesCleartextTraffic\s*=\s*['\"]true'''
+description = 'Debuggable builds, unrestricted backups and cleartext traffic expose app data and network communication.'
+recommendation = 'Set debuggable=false, allowBackup=false (or use backup rules) and disable cleartext.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'AndroidManifest.xml'
+code = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:debuggable="true" />
+</manifest>
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'AndroidManifest.xml'
+code = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:debuggable="false" android:allowBackup="false" />
+</manifest>
+'''
+
+[[rule]]
+id = 'SR-MOB-003'
+title = 'iOS App Transport Security disabled'
+severity = 'medium'
+category = 'Transport Security'
+cwe = 'CWE-319'
+owasp = 'A02'
+languages = ['XML']
+keywords = ['nsallowsarbitraryloads']
+tags = ['transport']
+pattern = '<key>NSAllowsArbitraryLoads</key>\s*<true\s*/>'
+description = 'NSAllowsArbitraryLoads allows plaintext HTTP and weak TLS for all connections.'
+recommendation = 'Remove the global exception and add narrowly-scoped domain exceptions if needed.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'Info.plist'
+code = '''<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
+</dict>
+</plist>
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'Info.plist'
+code = '''<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+  </dict>
+</dict>
+</plist>
+'''
+
+[[rule]]
+id = 'SR-MOB-004'
+title = 'World-readable/writable file mode'
+severity = 'high'
+category = 'Access Control'
+cwe = 'CWE-732'
+owasp = 'A01'
+languages = ['Java', 'Kotlin']
+keywords = ['mode_world']
+tags = ['access-control']
+pattern = 'MODE_WORLD_(?:READABLE|WRITEABLE)'
+description = 'Files created world-readable/writable can be accessed by any other app on the device.'
+recommendation = 'Use MODE_PRIVATE and share data via ContentProviders with permissions.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Store {
+  void save(android.content.Context c) {
+    c.openFileOutput("data", android.content.Context.MODE_WORLD_READABLE);
+  }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Store {
+  void save(android.content.Context c) {
+    c.openFileOutput("data", android.content.Context.MODE_PRIVATE);
+  }
+}
+'''
+

@@ -1,0 +1,56 @@
+# Detection rules with the ID prefix SR-WEB-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-WEB-001'
+title = 'Template output escaping bypassed'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['HTML', 'PHP', 'Ruby', 'Vue']
+keywords = ['safe', '{{{', '<%-', '{!!', 'html.raw', 'utext']
+tags = ['xss', 'injection']
+pattern = '\{\{[^}\n]*\|\s*safe\s*\}\}|\{\{\{[^}\n]+\}\}\}|<%-\s|\{!!\s*[^!\n]+!!\}|@Html\.Raw\s*\(|\bth:utext\s*='
+description = 'Raw/unescaped template output (|safe, {{{ }}}, <%-, {!! !!}, Html.Raw, th:utext) renders data as HTML. Untrusted values become stored or reflected XSS.'
+recommendation = 'Use the escaped form of the output tag and sanitize any HTML that must be rendered.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'page.html'
+code = '''<p>{{ comment|safe }}</p>
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'page.html'
+code = '''<p>{{ comment }}</p>
+'''
+
+[[rule]]
+id = 'SR-WEB-002'
+title = 'Resource loaded over plaintext HTTP'
+severity = 'medium'
+category = 'Transport Security'
+cwe = 'CWE-319'
+owasp = 'A02'
+languages = ['HTML']
+keywords = ['http://']
+tags = ['transport']
+pattern = '''<(?:form|script|iframe|link|img|embed|object)\b[^>\n]{0,200}(?:action|src|href|data)\s*=\s*['\"]http://(?!localhost|127\.0\.0\.1)'''
+description = 'Scripts, forms or frames served over HTTP can be modified in transit, letting a network attacker inject code or capture submitted data.'
+recommendation = 'Serve every resource over HTTPS and enable HSTS.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'index.html'
+code = '''<script src="http://cdn.example.org/lib.js"></script>
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'index.html'
+code = '''<script src="https://cdn.example.org/lib.js"></script>
+'''
+

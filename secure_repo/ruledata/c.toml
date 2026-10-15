@@ -1,0 +1,206 @@
+# Detection rules with the ID prefix SR-C-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-C-001'
+title = 'Use of gets()'
+severity = 'critical'
+category = 'Memory Safety'
+cwe = 'CWE-242'
+owasp = 'OTHER'
+languages = ['@CC']
+keywords = ['gets']
+tags = ['memory']
+pattern = '(?<![\w.>])gets\s*\('
+description = 'gets() cannot limit input length; every call is an exploitable stack buffer overflow.'
+recommendation = 'Use fgets(buf, sizeof buf, stdin) or getline().'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <stdio.h>
+
+int main(void) {
+  char buf[16];
+  gets(buf);
+  return 0;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <stdio.h>
+
+int main(void) {
+  char buf[16];
+  fgets(buf, sizeof buf, stdin);
+  return 0;
+}
+'''
+
+[[rule]]
+id = 'SR-C-002'
+title = 'Unbounded string copy/format'
+severity = 'medium'
+category = 'Memory Safety'
+cwe = 'CWE-120'
+owasp = 'OTHER'
+languages = ['@CC']
+keywords = ['strcpy', 'strcat', 'sprintf', 'wcscpy', 'wcscat']
+tags = ['memory']
+pattern = '(?<![\w.>])(?:strcpy|strcat|sprintf|vsprintf|wcscpy|wcscat|lstrcpy|lstrcat|StrCpy|StrCat)\s*\('
+description = 'These functions do not check destination buffer sizes, causing buffer overflows when the source is longer than expected.'
+recommendation = 'Use snprintf, strlcpy/strlcat or safer C++ std::string APIs.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <string.h>
+
+void copy(char *dst, const char *src) {
+  strcpy(dst, src);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <string.h>
+
+void copy(char *dst, const char *src, size_t n) {
+  strncpy(dst, src, n);
+}
+'''
+
+[[rule]]
+id = 'SR-C-003'
+title = 'Command execution in native code'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@CC']
+keywords = ['system', 'popen', 'winexec', 'shellexecute']
+tags = ['injection']
+pattern = '(?<![\w.>])(?:system|popen|_popen|_wsystem|WinExec|ShellExecuteA|ShellExecuteW|ShellExecute)\s*\('
+description = 'system()/popen() spawn a shell; dynamic arguments allow command injection.'
+recommendation = 'Use execve/posix_spawn/CreateProcess with fixed paths and argument vectors.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <stdlib.h>
+
+void run(const char *cmd) {
+  system(cmd);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <stdlib.h>
+
+void run(void) {
+  exit(0);
+}
+'''
+
+[[rule]]
+id = 'SR-C-004'
+title = 'Format string from variable'
+severity = 'medium'
+category = 'Memory Safety'
+cwe = 'CWE-134'
+owasp = 'OTHER'
+languages = ['@CC']
+keywords = ['printf', 'syslog']
+tags = ['memory']
+pattern = '(?<![\w.>])(?:printf|vprintf)\s*\(\s*[A-Za-z_][\w\->.\[\]]*\s*\)|(?<![\w.>])(?:fprintf|sprintf|syslog|dprintf)\s*\(\s*[^,\n]+,\s*[A-Za-z_][\w\->.\[\]]*\s*\)'
+description = 'Passing a non-literal as the format string lets attackers use %n/%x to read or write memory.'
+recommendation = 'Always use a literal format: printf("%s", value).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <stdio.h>
+
+void show(char *msg) {
+  printf(msg);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <stdio.h>
+
+void show(char *msg) {
+  printf("%s", msg);
+}
+'''
+
+[[rule]]
+id = 'SR-C-005'
+title = 'Unbounded scanf %s'
+severity = 'medium'
+category = 'Memory Safety'
+cwe = 'CWE-120'
+owasp = 'OTHER'
+languages = ['@CC']
+keywords = ['scanf']
+tags = ['memory']
+needs_strings = true
+pattern = '\b(?:scanf|sscanf|fscanf)\s*\([^;\n]*\"[^\"\n]*%s'
+description = '%s without a width reads unlimited input into a fixed buffer.'
+recommendation = 'Specify a maximum width (e.g. %63s) or use fgets.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <stdio.h>
+
+int main(void) {
+  char name[8];
+  scanf("%s", name);
+  return 0;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <stdio.h>
+
+int main(void) {
+  char name[8];
+  scanf("%7s", name);
+  return 0;
+}
+'''
+
+[[rule]]
+id = 'SR-C-006'
+title = 'Predictable rand()'
+severity = 'low'
+category = 'Cryptography'
+cwe = 'CWE-338'
+owasp = 'A02'
+languages = ['@CC']
+confidence = 'low'
+keywords = ['rand']
+tags = ['crypto']
+pattern = '(?<![\w.>])(?:rand|srand)\s*\('
+description = 'rand() is predictable and unsuitable for keys, tokens or nonces.'
+recommendation = 'Use getrandom(), arc4random() or BCryptGenRandom().'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#include <stdlib.h>
+
+int roll(void) {
+  return rand() % 6;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#include <stdlib.h>
+
+int roll(void) {
+  return arc4random_uniform(6);
+}
+'''
+

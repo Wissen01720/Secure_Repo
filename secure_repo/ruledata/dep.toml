@@ -1,0 +1,257 @@
+# Detection rules with the ID prefix SR-DEP-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-DEP-001'
+title = 'Library with known vulnerabilities'
+severity = 'high'
+category = 'Vulnerable Dependency'
+cwe = 'CWE-1395'
+owasp = 'A06'
+languages = ["*"]
+source = 'dependency'
+tags = ['vulnerable-dependency', 'supply-chain']
+description = 'The declared library version is affected by publicly disclosed vulnerabilities (CVE/GHSA/OSV advisories). Attackers actively scan for applications using vulnerable components because exploits are often public.'
+recommendation = 'Upgrade to a version that includes the fix listed in the advisory, then regenerate your lockfile and re-run the tests.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''flask==0.12.2
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six==1.16.0
+'''
+
+[[rule]]
+id = 'SR-DEP-002'
+title = 'Compromised or malicious package'
+severity = 'critical'
+category = 'Vulnerable Dependency'
+cwe = 'CWE-506'
+owasp = 'A08'
+languages = ["*"]
+source = 'dependency'
+tags = ['vulnerable-dependency', 'supply-chain']
+description = 'This package/version is known to have been hijacked, sabotaged or published with malicious code (e.g. credential stealers, cryptominers).'
+recommendation = 'Remove it immediately, rotate credentials available to affected machines and audit build systems that installed it.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"event-stream": "3.3.6"}}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"event-stream": "4.0.1"}}
+'''
+
+[[rule]]
+id = 'SR-DEP-003'
+title = 'Deprecated or unmaintained package'
+severity = 'medium'
+category = 'Vulnerable Dependency'
+cwe = 'CWE-1104'
+owasp = 'A06'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain']
+description = 'The package is deprecated or unmaintained, so newly discovered vulnerabilities will not be fixed.'
+recommendation = 'Migrate to the maintained replacement suggested in the finding.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"request": "2.88.0"}}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"axios": "1.6.0"}}
+'''
+
+[[rule]]
+id = 'SR-DEP-004'
+title = 'Dependencies not locked'
+severity = 'low'
+category = 'Supply Chain'
+cwe = 'CWE-829'
+owasp = 'A08'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain']
+description = 'Dependencies are declared with version ranges and no lockfile pins the exact versions. Builds may silently install newer, untested or compromised releases.'
+recommendation = 'Commit a lockfile (package-lock.json, poetry.lock, Cargo.lock, Gemfile.lock, composer.lock...) or pin exact versions with hashes.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''flask>=2.0
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''flask==2.0.1
+'''
+
+[[rule]]
+id = 'SR-DEP-005'
+title = 'Dependency fetched from VCS or URL'
+severity = 'medium'
+category = 'Supply Chain'
+cwe = 'CWE-829'
+owasp = 'A08'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain']
+description = 'The dependency is installed directly from a Git repository or URL, bypassing registry provenance and vulnerability databases. Mutable references can change without notice.'
+recommendation = 'Consume a released registry version, or pin the VCS reference to an immutable commit hash.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"tool": "git+https://github.com/example/tool.git"}}
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'package.json'
+scope = 'repo'
+code = '''{"dependencies": {"tool": "1.2.3"}}
+'''
+
+[[rule]]
+id = 'SR-DEP-006'
+title = 'Package source over insecure HTTP'
+severity = 'high'
+category = 'Supply Chain'
+cwe = 'CWE-494'
+owasp = 'A08'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain', 'transport']
+description = 'A package index or artifact is downloaded over plaintext HTTP (or with TLS checks disabled), so packages can be replaced in transit.'
+recommendation = 'Use HTTPS package sources exclusively.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''--index-url http://mirror.example.org/simple
+flask==2.0.1
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+code = '''--index-url https://mirror.example.org/simple
+flask==2.0.1
+'''
+
+[[rule]]
+id = 'SR-DEP-007'
+title = 'Outdated library (major version behind)'
+severity = 'info'
+category = 'Vulnerable Dependency'
+cwe = 'CWE-1104'
+owasp = 'A06'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain']
+description = 'A newer major version exists. Older major lines stop receiving security patches first.'
+recommendation = 'Plan an upgrade to the latest major version and review its changelog.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''requests==1.2.3
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six==1.16.0
+'''
+
+[[rule]]
+id = 'SR-DEP-008'
+title = 'License requires legal review'
+severity = 'info'
+category = 'License'
+cwe = ''
+owasp = 'OTHER'
+languages = ["*"]
+source = 'dependency'
+tags = ['license']
+description = 'The library is distributed under a copyleft or non-standard license whose obligations (source disclosure, attribution, network use) may conflict with how the software is distributed.'
+recommendation = 'Have the license reviewed and record the decision in your third-party inventory.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''psycopg2==2.9.9
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six==1.16.0
+'''
+
+[[rule]]
+id = 'SR-DEP-009'
+title = 'Version range admits vulnerable releases'
+severity = 'low'
+category = 'Vulnerable Dependency'
+cwe = 'CWE-1395'
+owasp = 'A06'
+languages = ["*"]
+source = 'dependency'
+tags = ['vulnerable-dependency', 'supply-chain']
+description = 'The version that resolves today is not vulnerable, but the declared range also accepts older releases with known advisories. Environments with stale caches, mirrors or lockfile-less installs may still receive a vulnerable version.'
+recommendation = 'Raise the lower bound of the range to a fixed version and commit a lockfile.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''flask>=0.12
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'requirements.txt'
+scope = 'repo'
+online = true
+code = '''six>=1.16.0
+'''
+

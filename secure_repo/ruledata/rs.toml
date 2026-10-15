@@ -1,0 +1,61 @@
+# Detection rules with the ID prefix SR-RS-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-RS-001'
+title = 'unsafe block'
+severity = 'low'
+category = 'Memory Safety'
+cwe = 'CWE-119'
+owasp = 'OTHER'
+languages = ['@RS']
+confidence = 'low'
+keywords = ['unsafe']
+tags = ['memory']
+pattern = '\bunsafe\s*\{'
+description = '''unsafe blocks opt out of Rust's memory-safety guarantees; bugs inside them can cause memory corruption.'''
+recommendation = 'Minimise unsafe code, document invariants and fuzz/test it (cargo-geiger, Miri).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''fn read(ptr: *const u8) -> u8 {
+    unsafe { *ptr }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''fn double(value: u8) -> u8 {
+    value.wrapping_mul(2)
+}
+'''
+
+[[rule]]
+id = 'SR-RS-002'
+title = 'TLS validation disabled (Rust)'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@RS']
+keywords = ['danger']
+tags = ['transport']
+pattern = 'danger_accept_invalid_certs\s*\(\s*true|danger_accept_invalid_hostnames\s*\(\s*true'
+description = 'Accepting invalid certificates or host names disables TLS authentication.'
+recommendation = 'Remove the danger_* options and add custom root certificates if required.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''fn client() {
+    let _ = reqwest::Client::builder().danger_accept_invalid_certs(true);
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''fn client() {
+    let _ = reqwest::Client::builder().use_rustls_tls();
+}
+'''
+

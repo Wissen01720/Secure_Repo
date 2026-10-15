@@ -1,0 +1,161 @@
+# Detection rules with the ID prefix SR-SH-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-SH-001'
+title = 'Remote script piped into a shell'
+severity = 'high'
+category = 'Supply Chain'
+cwe = 'CWE-494'
+owasp = 'A08'
+languages = ['@SHELLISH']
+keywords = ['curl', 'wget', 'iwr', 'invoke-webrequest', 'irm', 'invoke-restmethod']
+tags = ['supply-chain']
+pattern = '\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b|\b(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^|\n]*\|\s*(?:iex|Invoke-Expression)\b'
+description = 'Downloading and executing a script in one step runs whatever the server (or a network attacker) returns, without integrity verification.'
+recommendation = 'Download to a file, verify a pinned checksum or signature, then execute.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#!/bin/sh
+curl -s https://example.org/install.sh | sh
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#!/bin/sh
+curl -s -o install.sh https://example.org/install.sh
+sha256sum -c install.sh.sha256
+'''
+
+[[rule]]
+id = 'SR-SH-002'
+title = 'World-writable permissions (777)'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-732'
+owasp = 'A01'
+languages = ['Shell', 'Dockerfile', 'YAML', 'Makefile', 'PowerShell', 'Batch', 'Groovy', 'Python', 'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Java', 'Kotlin', 'Scala', 'C#', 'VB.NET', 'F#', 'PHP', 'Go', 'Ruby', 'C', 'C++', 'Objective-C', 'Rust', 'Swift', 'Dart', 'Lua', 'Perl', 'Elixir', 'Solidity']
+keywords = ['777', 'rwx']
+tags = ['access-control']
+pattern = '\bchmod\s+(?:-R\s+)?0?777\b|\bchmod\s+(?:-R\s+)?a\+rwx\b|\bchmod(?:Sync)?\s*\([^)\n]*0o?777\b'
+description = 'Mode 777 lets every local user modify or replace the files, enabling privilege escalation and tampering.'
+recommendation = 'Grant the minimum permissions required (e.g. 750/640) to the owning user/group.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#!/bin/sh
+chmod 777 /var/app/data
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#!/bin/sh
+chmod 750 /var/app/data
+'''
+
+[[rule]]
+id = 'SR-SH-003'
+title = 'TLS verification disabled in tooling'
+severity = 'medium'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@SHELLISH']
+keywords = ['--insecure', '-k', 'no-check-certificate', 'sslverify', 'git_ssl_no_verify', 'trusted-host', 'strict-ssl', 'skipcertificatecheck']
+tags = ['transport']
+pattern = '\bcurl\b[^\n]*\s(?:-k|--insecure)\b|\bwget\b[^\n]*--no-check-certificate|\bgit\s+config\b[^\n]*http\.sslVerify\s+false|GIT_SSL_NO_VERIFY|\bpip3?\b[^\n]*--trusted-host|npm\s+config\s+set\s+strict-ssl\s+false|-SkipCertificateCheck'
+description = 'Build and deployment scripts that skip certificate checks can be fed malicious artifacts by anyone on the network path.'
+recommendation = 'Keep TLS verification on and install the correct CA bundle instead.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#!/bin/sh
+curl -k https://internal.example.org/data
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#!/bin/sh
+curl https://internal.example.org/data
+'''
+
+[[rule]]
+id = 'SR-SH-004'
+title = 'PowerShell dynamic execution / policy bypass'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['PowerShell', 'Batch', 'YAML']
+keywords = ['invoke-expression', 'iex', 'executionpolicy']
+tags = ['injection']
+pattern = '''\b(?:Invoke-Expression|iex)\b\s*[\(\$'\"]|-ExecutionPolicy\s+(?:Bypass|Unrestricted)'''
+description = 'Invoke-Expression evaluates strings as code, and bypassing the execution policy disables a script-signing safeguard.'
+recommendation = 'Call commands directly with parameters and keep a restrictive execution policy.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+'''
+
+[[rule]]
+id = 'SR-SH-005'
+title = 'eval of shell variables'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['Shell']
+keywords = ['eval']
+tags = ['injection']
+pattern = '''(?<![\w.])eval\s+[\"']?\$'''
+description = 'eval on variable content re-parses it as shell code, enabling injection.'
+recommendation = 'Use arrays and direct command invocation instead of eval.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''#!/bin/sh
+eval $USER_INPUT
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''#!/bin/sh
+echo "$USER_INPUT"
+'''
+
+[[rule]]
+id = 'SR-SH-006'
+title = 'Passwordless sudo for all commands'
+severity = 'high'
+category = 'Access Control'
+cwe = 'CWE-250'
+owasp = 'A01'
+languages = ["*"]
+keywords = ['nopasswd']
+tags = ['access-control', 'config']
+pattern = 'NOPASSWD\s*:\s*ALL'
+description = 'Granting passwordless sudo for every command turns any compromise of that account into full root access.'
+recommendation = 'Restrict sudo rules to specific commands and require authentication.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'sudoers.sh'
+code = '''# /etc/sudoers.d/deploy
+deploy ALL=(ALL) NOPASSWD: ALL
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'sudoers.sh'
+code = '''# /etc/sudoers.d/deploy
+deploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart app
+'''
+

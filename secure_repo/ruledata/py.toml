@@ -1,0 +1,727 @@
+# Detection rules with the ID prefix SR-PY-*.
+# Edit here, not in Python. Every rule needs at least one positive and one negative example
+# (tests/test_rules_data.py runs them): a positive must raise the rule, a negative must not.
+
+[[rule]]
+id = 'SR-PY-001'
+title = 'Dynamic code execution (eval/exec)'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-95'
+owasp = 'A03'
+languages = ['@PY']
+keywords = ['eval', 'exec']
+tags = ['injection']
+pattern = '(?<![\w.])(eval|exec)\s*\('
+description = 'eval()/exec() execute arbitrary Python code. If any part of the argument can be influenced by a user, file or network input, an attacker gains remote code execution with the privileges of the process.'
+recommendation = 'Remove dynamic evaluation. Use ast.literal_eval() for literals, json for data, or an explicit dispatch table for dynamic behaviour.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''def run(expr):
+    return eval(expr)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import ast
+
+def run(expr):
+    return ast.literal_eval(expr)
+'''
+
+[[rule]]
+id = 'SR-PY-002'
+title = 'Insecure deserialization (pickle & friends)'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@PY']
+keywords = ['pickle', 'dill', 'marshal', 'shelve']
+tags = ['deserialization']
+pattern = '\b(?:pickle|cPickle|_pickle|dill|marshal|jsonpickle|shelve)\.(?:loads?|Unpickler|decode|open)\s*\('
+description = 'pickle, dill, marshal, shelve and jsonpickle can instantiate arbitrary objects while loading. Deserializing data from an untrusted source leads directly to remote code execution.'
+recommendation = 'Only unpickle data you produced and integrity-protected (e.g. HMAC). Prefer safe formats such as JSON, MessagePack or protobuf for untrusted input.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import pickle
+
+def load(blob):
+    return pickle.loads(blob)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import json
+
+def load(blob):
+    return json.loads(blob)
+'''
+
+[[rule]]
+id = 'SR-PY-003'
+title = 'Unsafe YAML loading'
+severity = 'high'
+category = 'Deserialization'
+cwe = 'CWE-502'
+owasp = 'A08'
+languages = ['@PY']
+keywords = ['yaml.']
+tags = ['deserialization']
+pattern = '\byaml\.(?:unsafe_load|load_all|load)\s*\((?![^)\n]{0,200}(?:Safe|CSafe|Base)Loader)'
+description = 'yaml.load() with the default/full/unsafe loader can construct arbitrary Python objects from tags like !!python/object/apply, allowing code execution from a crafted YAML file.'
+recommendation = 'Use yaml.safe_load() / yaml.safe_load_all() or pass Loader=yaml.SafeLoader.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import yaml
+
+def load(text):
+    return yaml.load(text)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import yaml
+
+def load(text):
+    return yaml.safe_load(text)
+'''
+
+[[rule]]
+id = 'SR-PY-004'
+title = 'subprocess call with shell=True'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@PY']
+keywords = ['shell']
+tags = ['injection']
+pattern = '\bsubprocess\.(?:call|run|Popen|check_output|check_call)\s*\([^)]{0,400}?shell\s*=\s*True'
+description = 'shell=True passes the command through /bin/sh or cmd.exe. Any interpolated value containing shell metacharacters (;, |, &&, $()) results in OS command injection.'
+recommendation = 'Pass the command as a list of arguments with shell=False (the default) and validate inputs. Use shlex.quote() only when a shell is truly unavoidable.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import subprocess
+
+def run(host):
+    subprocess.call('ping ' + host, shell=True)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import subprocess
+
+def run(host):
+    subprocess.call(['ping', host])
+'''
+
+[[rule]]
+id = 'SR-PY-005'
+title = 'OS command execution via os module'
+severity = 'medium'
+category = 'Injection'
+cwe = 'CWE-78'
+owasp = 'A03'
+languages = ['@PY']
+keywords = ['os.']
+tags = ['injection']
+pattern = '\bos\.(?:system|popen|popen2|popen3|spawnl|spawnlp|spawnv|spawnvp|execl|execlp|execv|execvp)\s*\('
+description = 'os.system()/os.popen() always invoke a shell. Building the command from variables enables command injection and makes argument escaping error-prone.'
+recommendation = 'Replace with subprocess.run([...], shell=False, check=True) using an argument list.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import os
+
+def run(name):
+    os.system('cat ' + name)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+def cwd():
+    return os.getcwd()
+'''
+
+[[rule]]
+id = 'SR-PY-006'
+title = 'TLS certificate verification disabled'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@PY']
+keywords = ['verify']
+tags = ['transport']
+pattern = '\bverify\s*=\s*False\b'
+description = 'Disabling certificate verification (requests/httpx verify=False) accepts any certificate, so a network attacker can transparently intercept and modify HTTPS traffic (man-in-the-middle).'
+recommendation = '''Keep verification enabled. For private CAs pass verify='/path/to/ca-bundle.pem'.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''import requests
+
+def fetch(url):
+    return requests.get(url, verify=False)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import requests
+
+def fetch(url):
+    return requests.get(url, timeout=10)
+'''
+
+[[rule]]
+id = 'SR-PY-007'
+title = 'Unverified SSL context'
+severity = 'high'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@PY']
+keywords = ['ssl', 'check_hostname']
+tags = ['transport']
+pattern = 'ssl\._create_unverified_context|ssl\.CERT_NONE|check_hostname\s*=\s*False|_create_default_https_context\s*='
+description = 'The SSL context skips certificate or hostname validation, which removes the authentication guarantee of TLS and enables man-in-the-middle attacks.'
+recommendation = 'Use ssl.create_default_context() and keep CERT_REQUIRED with hostname checking.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import ssl
+
+context = ssl._create_unverified_context()
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import ssl
+
+context = ssl.create_default_context()
+'''
+
+[[rule]]
+id = 'SR-PY-008'
+title = 'Weak hash algorithm (MD5/SHA-1)'
+severity = 'medium'
+category = 'Cryptography'
+cwe = 'CWE-328'
+owasp = 'A02'
+languages = ['@PY']
+keywords = ['md5', 'sha1', 'md4']
+tags = ['crypto']
+needs_strings = true
+pattern = '''\bhashlib\.(?:md5|sha1)\s*\((?![^)\n]*usedforsecurity\s*=\s*False)|\bhashlib\.new\s*\(\s*['\"](?:md5|sha1|md4)['\"]'''
+description = 'MD5 and SHA-1 are broken for collision resistance. Using them for signatures, integrity checks or password storage allows forgeries and fast brute-force attacks.'
+recommendation = 'Use SHA-256/SHA-3 for integrity, HMAC for authentication and Argon2/bcrypt/scrypt for passwords. Mark non-security uses with usedforsecurity=False.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import hashlib
+
+def password_hash(password):
+    return hashlib.md5(password.encode()).hexdigest()
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import hashlib
+
+def password_hash(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+'''
+
+[[rule]]
+id = 'SR-PY-009'
+title = 'Non-cryptographic random generator'
+severity = 'low'
+category = 'Cryptography'
+cwe = 'CWE-338'
+owasp = 'A02'
+languages = ['@PY']
+confidence = 'low'
+keywords = ['random.']
+tags = ['crypto']
+pattern = '\brandom\.(?:random|randint|randrange|choice|choices|getrandbits|sample)\s*\('
+description = 'The random module is a predictable Mersenne Twister. If used for tokens, passwords, session IDs or nonces, attackers can predict future values.'
+recommendation = 'Use the secrets module (secrets.token_urlsafe, secrets.choice) for anything security-sensitive.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import random
+
+def make_token():
+    return str(random.randint(0, 999999))
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import secrets
+
+def make_token():
+    return secrets.token_hex(16)
+'''
+
+[[rule]]
+id = 'SR-PY-010'
+title = 'Debug mode enabled'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-489'
+owasp = 'A05'
+languages = ['@PY']
+keywords = ['debug']
+tags = ['config']
+pattern = '\.run\s*\([^)\n]{0,200}debug\s*=\s*True|^\s*DEBUG\s*=\s*True\b'
+description = 'Debug mode exposes stack traces, configuration and, in Flask/Werkzeug, an interactive console that allows arbitrary code execution if reachable.'
+recommendation = 'Drive debug mode from an environment variable that defaults to False in production.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask
+
+app = Flask(__name__)
+app.run(debug=True)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import Flask
+
+app = Flask(__name__)
+app.run(debug=False)
+'''
+
+[[rule]]
+id = 'SR-PY-011'
+title = 'SQL query built with string formatting'
+severity = 'high'
+category = 'Injection'
+cwe = 'CWE-89'
+owasp = 'A03'
+languages = ['@PY']
+keywords = ['execute', 'raw', 'text(', 'extra']
+tags = ['injection']
+pattern = '''\.(?:execute|executemany|executescript|raw|extra)\s*\(\s*(?:f['\"]|['\"][^'\"\n]*['\"]\s*(?:%(?!\s*\()|\+|\.format\s*\())|\btext\s*\(\s*f['\"]'''
+description = 'The SQL statement is assembled with f-strings, % formatting, .format() or concatenation. Attacker-controlled values can change the query structure (SQL injection), leaking or destroying data.'
+recommendation = '''Use parameterized queries: cursor.execute('... WHERE id = %s', (value,)) or ORM query builders with bound parameters.'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import request
+
+def find(cursor):
+    cursor.execute("SELECT * FROM users WHERE id = " + request.args.get('id'))
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def find(cursor, user_id):
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+'''
+
+[[rule]]
+id = 'SR-PY-012'
+title = 'Insecure temporary file (mktemp)'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-377'
+owasp = 'A01'
+languages = ['@PY']
+keywords = ['mktemp']
+tags = ['access-control']
+pattern = '\btempfile\.mktemp\s*\(|(?<![\w.])mktemp\s*\('
+description = 'tempfile.mktemp() returns a name without creating the file, opening a race window in which an attacker can create a symlink and hijack the file.'
+recommendation = 'Use tempfile.NamedTemporaryFile(), mkstemp() or TemporaryDirectory().'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import tempfile
+
+path = tempfile.mktemp()
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import tempfile
+
+handle = tempfile.NamedTemporaryFile()
+'''
+
+[[rule]]
+id = 'SR-PY-013'
+title = 'Template auto-escaping disabled'
+severity = 'medium'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@PY']
+keywords = ['autoescape', 'mark_safe', 'markup(']
+tags = ['xss', 'injection']
+needs_strings = true
+pattern = '''autoescape\s*=\s*False|\bmark_safe\s*\(|\bMarkup\s*\(\s*f?['\"][^'\"\n]*(?:\{|%s)'''
+description = '''Disabling auto-escaping or marking dynamic strings as safe renders them as raw HTML. User-controlled content then executes as script in victims' browsers (XSS).'''
+recommendation = 'Keep autoescape=True (or select_autoescape()) and only mark_safe() constant, reviewed markup.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from markupsafe import Markup
+
+def page(name):
+    return Markup(f'<b>{name}</b>')
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from markupsafe import escape
+
+def page(name):
+    return '<b>' + str(escape(name)) + '</b>'
+'''
+
+[[rule]]
+id = 'SR-PY-014'
+title = 'XML parser vulnerable to entity attacks'
+severity = 'low'
+category = 'Misconfiguration'
+cwe = 'CWE-611'
+owasp = 'A05'
+languages = ['@PY']
+confidence = 'low'
+keywords = ['xml', 'lxml']
+tags = ['injection']
+pattern = '^\s*(?:from|import)\s+(?:xml\.(?:etree|dom|sax)|lxml)\b'
+description = 'The standard XML parsers can be abused with entity-expansion (billion laughs) and, depending on configuration, external entity (XXE) payloads when parsing untrusted XML.'
+recommendation = 'Parse untrusted XML with defusedxml, or disable DTD/entity resolution explicitly.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import xml.etree.ElementTree as ET
+
+tree = ET.parse('data.xml')
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import json
+
+data = json.load(open('data.json'))
+'''
+
+[[rule]]
+id = 'SR-PY-015'
+title = 'SSH host key verification disabled'
+severity = 'medium'
+category = 'Transport Security'
+cwe = 'CWE-295'
+owasp = 'A07'
+languages = ['@PY']
+keywords = ['autoaddpolicy', 'warningpolicy']
+tags = ['transport']
+pattern = '\b(?:AutoAddPolicy|WarningPolicy)\s*\('
+description = '''Paramiko's AutoAddPolicy/WarningPolicy trust unknown host keys, so a man-in-the-middle can impersonate the SSH server and capture credentials.'''
+recommendation = 'Load known hosts (load_system_host_keys) and use RejectPolicy.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import paramiko
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import paramiko
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.RejectPolicy())
+'''
+
+[[rule]]
+id = 'SR-PY-016'
+title = 'Hardcoded framework secret key'
+severity = 'high'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ['@PY']
+source = 'secret'
+keywords = ['secret_key']
+tags = ['secrets']
+redact = true
+pattern = '''(?:\bSECRET_KEY|\bapp\.secret_key|\bapp\.config\[\s*['\"]SECRET_KEY['\"]\s*\])\s*=\s*['\"]([^'\"]{4,})['\"]'''
+description = 'The Django/Flask SECRET_KEY signs sessions, CSRF tokens and password-reset links. Knowing it lets an attacker forge sessions and, with some serializers, execute code.'
+recommendation = 'Load SECRET_KEY from the environment or a secret manager and rotate the exposed key.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask
+
+app = Flask(__name__)
+app.secret_key = 'super-secret-development-key'
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+from flask import Flask
+
+app = Flask(__name__)
+app.secret_key = os.environ['SECRET_KEY']
+'''
+
+[[rule]]
+id = 'SR-PY-017'
+title = 'Wildcard ALLOWED_HOSTS'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-183'
+owasp = 'A05'
+languages = ['@PY']
+keywords = ['allowed_hosts']
+tags = ['config']
+needs_strings = true
+pattern = '''ALLOWED_HOSTS\s*=\s*\[[^\]]*['\"]\*['\"]'''
+description = '''ALLOWED_HOSTS = ['*'] disables Host header validation, enabling cache poisoning and password-reset poisoning attacks.'''
+recommendation = 'List the exact production host names.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'settings.py'
+code = '''ALLOWED_HOSTS = ['*']
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'settings.py'
+code = '''ALLOWED_HOSTS = ['example.org']
+'''
+
+[[rule]]
+id = 'SR-PY-018'
+title = 'File path built from request data'
+severity = 'high'
+category = 'Access Control'
+cwe = 'CWE-22'
+owasp = 'A01'
+languages = ['@PY']
+keywords = ['request.']
+tags = ['access-control', 'injection']
+pattern = '\b(?:open|send_file|send_from_directory|FileResponse)\s*\([^)\n]{0,200}request\.(?:args|form|values|GET|POST|files|json|data|query_params)'
+description = 'A filesystem path derived from request parameters allows path traversal (../../) to read or overwrite arbitrary files on the server.'
+recommendation = 'Map user input to an allow-list of files, or normalise the path and verify it stays inside the intended base directory (werkzeug.utils.safe_join).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import request, send_file
+
+def download():
+    return send_file(request.args.get('name'))
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import send_file
+
+def download():
+    return send_file('static/report.pdf')
+'''
+
+[[rule]]
+id = 'SR-PY-019'
+title = 'Server-side request with user-controlled URL'
+severity = 'high'
+category = 'SSRF'
+cwe = 'CWE-918'
+owasp = 'A10'
+languages = ['@PY']
+keywords = ['request.']
+tags = ['ssrf']
+pattern = '\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request)\s*\([^)\n]{0,200}request\.(?:args|form|values|GET|POST|json|query_params)|\burlopen\s*\([^)\n]{0,200}request\.(?:args|form|values|GET|POST)'
+description = 'The server fetches a URL taken from the incoming request. Attackers can make it call internal services, cloud metadata endpoints (169.254.169.254) or local files.'
+recommendation = 'Validate URLs against an allow-list of hosts/schemes, resolve and block private IP ranges and disable redirects.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''import requests
+from flask import request
+
+def proxy():
+    return requests.get(request.args.get('url')).text
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import requests
+
+def status():
+    return requests.get('https://api.example.org/status', timeout=5).text
+'''
+
+[[rule]]
+id = 'SR-PY-020'
+title = 'Insecure cookie flags'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-614'
+owasp = 'A05'
+languages = ['@PY']
+keywords = ['secure', 'httponly']
+tags = ['config', 'auth']
+pattern = '\b(?:SESSION_COOKIE_SECURE|CSRF_COOKIE_SECURE|SESSION_COOKIE_HTTPONLY|secure|httponly)\s*=\s*False'
+description = 'Cookies without Secure/HttpOnly can be sent over plaintext HTTP or read by injected JavaScript, enabling session hijacking.'
+recommendation = 'Set Secure, HttpOnly and SameSite on session and CSRF cookies.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'settings.py'
+code = '''SESSION_COOKIE_SECURE = False
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'settings.py'
+code = '''SESSION_COOKIE_SECURE = True
+'''
+
+[[rule]]
+id = 'SR-PY-021'
+title = 'CSRF protection disabled'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-352'
+owasp = 'A01'
+languages = ['@PY']
+keywords = ['csrf']
+tags = ['access-control']
+pattern = '@csrf_exempt\b|WTF_CSRF_ENABLED\s*=\s*False|\bcsrf\s*=\s*False'
+description = '''Endpoints without CSRF protection can be triggered by any web page the victim visits, performing state-changing actions with the victim's session.'''
+recommendation = 'Keep CSRF middleware enabled; exempt only token-authenticated APIs that do not rely on cookies.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from django.views.decorators.csrf import csrf_exempt
+
+@csrf_exempt
+def update(request):
+    return None
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def update(request):
+    return None
+'''
+
+[[rule]]
+id = 'SR-PY-022'
+title = 'Server-side template injection'
+severity = 'critical'
+category = 'Injection'
+cwe = 'CWE-1336'
+owasp = 'A03'
+languages = ['@PY']
+tags = ['injection']
+description = 'User-controlled text is compiled as a Jinja/Flask template. Template expressions can read configuration and secrets and usually escalate to remote code execution.'
+recommendation = '''Never build templates from user input: render a fixed template and pass the data as context variables (render_template('page.html', value=value)).'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask, request, render_template_string
+
+app = Flask(__name__)
+
+@app.route('/hello')
+def hello():
+    return render_template_string('Hello ' + request.args.get('name'))
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import Flask, request, render_template_string
+
+app = Flask(__name__)
+
+@app.route('/hello')
+def hello():
+    return render_template_string('Hello {{ name }}', name=request.args.get('name'))
+'''
+
+[[rule]]
+id = 'SR-PY-023'
+title = 'Open redirect'
+severity = 'medium'
+category = 'Access Control'
+cwe = 'CWE-601'
+owasp = 'A01'
+languages = ['@PY']
+tags = ['access-control']
+description = 'The redirect destination comes from the request, so attackers can craft links on your domain that forward victims to phishing pages.'
+recommendation = 'Redirect only to relative paths or to an allow-list of trusted hosts (e.g. validate with url_has_allowed_host_and_scheme).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask, request, redirect
+
+app = Flask(__name__)
+
+@app.route('/go')
+def go():
+    return redirect(request.args.get('next'))
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import Flask, redirect
+
+app = Flask(__name__)
+
+@app.route('/go')
+def go():
+    return redirect('/home')
+'''
+
+[[rule]]
+id = 'SR-PY-024'
+title = 'Reflected cross-site scripting'
+severity = 'high'
+category = 'Cross-Site Scripting'
+cwe = 'CWE-79'
+owasp = 'A03'
+languages = ['@PY']
+tags = ['xss', 'injection']
+description = '''A route returns a string built from request data. Flask/Django send it as HTML without escaping, so injected markup executes in the victim's browser.'''
+recommendation = 'Render through an auto-escaping template, return JSON, or escape the value with markupsafe.escape().'
+
+[[rule.example]]
+kind = 'positive'
+code = '''from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/hi')
+def hi():
+    return '<h1>Hello ' + request.args.get('name') + '</h1>'
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''from flask import Flask, request
+from markupsafe import escape
+
+app = Flask(__name__)
+
+@app.route('/hi')
+def hi():
+    return '<h1>Hello ' + str(escape(request.args.get('name'))) + '</h1>'
+'''
+
