@@ -22,7 +22,7 @@ import time
 import urllib.error
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from secure_repo import __author__, __version__
 from secure_repo.core import (
@@ -36,7 +36,7 @@ from secure_repo.core import (
 from secure_repo.core import summary as summarymod
 from secure_repo.core.config import ProjectConfig
 from secure_repo.core.events import EventBus
-from secure_repo.core.models import OWASP_TOP10, SEVERITY_RANK, SUPPRESSED_STATUSES
+from secure_repo.core.models import OWASP_2025, OWASP_TOP10, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import PATTERN_RULES, RULES
 from secure_repo.core.scan_analysis import AnalysisMixin
 from secure_repo.core.scan_common import MAX_AUTO_JOBS, ScanCancelled, ScanOptions, load_baseline  # noqa: F401
@@ -45,7 +45,7 @@ from secure_repo.core.scan_quality import QualityMixin
 from secure_repo.core.walker import FileInfo, StructureTree, enumerate_files
 from secure_repo.core.workspace import Target, Workspace, prepare_workspace
 
-_WORKER: Dict[str, Scanner] = {}
+_WORKER: dict[str, Scanner] = {}
 
 
 def _init_worker(options: ScanOptions, config: ProjectConfig, trusted: bool) -> None:
@@ -57,26 +57,26 @@ def _init_worker(options: ScanOptions, config: ProjectConfig, trusted: bool) -> 
     _WORKER["scanner"] = scanner
 
 
-def _worker_process(info: FileInfo) -> Dict:
+def _worker_process(info: FileInfo) -> dict:
     return _WORKER["scanner"]._process_file(info, collect=True)
 
 
 class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
     # ------------------------------------------------------------------ main
-    def run(self, target: Target, interactive: bool = False, write_reports: bool = True) -> Tuple[Dict, Optional[str]]:
+    def run(self, target: Target, interactive: bool = False, write_reports: bool = True) -> tuple[dict, str | None]:
         # Every scan owns its network session (settings, counters, notes): two scans at once never mix them.
         self.network = netio.NetworkSession(netio.NetworkSettings(ca_bundle=self.options.ca_bundle,
                                                                   cache=self.options.cache))
         with netio.active(self.network):
             return self._run(target, interactive, write_reports)
 
-    def _run(self, target: Target, interactive: bool, write_reports: bool) -> Tuple[Dict, Optional[str]]:
+    def _run(self, target: Target, interactive: bool, write_reports: bool) -> tuple[dict, str | None]:
         from secure_repo.report.writer import write_reports as write_all  # local import avoids cycles
 
         started = time.time()
         started_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
         bus = self.bus
-        workspace: Optional[Workspace] = None
+        workspace: Workspace | None = None
         try:
             bus.stage("acquire", "start")
             bus.log(f"Target: {target.location} ({'remote URL' if target.kind == 'remote' else 'local path'})")
@@ -88,7 +88,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             bus.stage("enumerate", "start")
             files = enumerate_files(workspace.path, self.options.exclude + self.config.exclude,
                                     skipped=self.not_analyzed["directories"])
-            excluded_by_config: List[str] = []
+            excluded_by_config: list[str] = []
             if self.config.exclude:  # which files did the configuration take out of the analysis?
                 kept = {f.rel for f in files}
                 excluded_by_config = [f.rel for f in enumerate_files(workspace.path, self.options.exclude)
@@ -158,7 +158,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             hygiene = self._stage_hygiene(files, workspace.path, bool(inventory))
             bus.stage("hygiene", "done", f"{sum(hygiene.values())}/{len(hygiene)} practices present")
 
-            meta: Dict[str, Any] = {
+            meta: dict[str, Any] = {
                 "name": workspace.name, "target": target.location, "target_kind": target.kind,
                 "branch": workspace.branch, "commit": workspace.commit, "mode": workspace.mode,
                 "remote": checks.redact_text(workspace.remote), "started_at": started_iso,
@@ -196,12 +196,12 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             meta["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
             meta["duration_seconds"] = round(finished - started, 2)
             vulnerable_deps = [d for d in inventory if d.vulnerabilities]
-            ecosystems: Dict[str, int] = {}
+            ecosystems: dict[str, int] = {}
             for dep in inventory:
                 ecosystems[dep.ecosystem] = ecosystems.get(dep.ecosystem, 0) + 1
             direct = sum(1 for d in inventory if d.direct)
             inventory.sort(key=lambda d: (not d.vulnerabilities, not d.direct, d.ecosystem, d.name.lower()))
-            report: Dict[str, Any] = {
+            report: dict[str, Any] = {
                 "schema": "secure-repo/report@1",
                 "tool": {"name": "Secure Repo", "version": __version__, "author": __author__, "rules": len(RULES)},
                 "meta": meta,
@@ -210,6 +210,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
                 "findings": findings,
                 "rules": {},
                 "owasp": OWASP_TOP10,
+                "owasp_2025": OWASP_2025,
                 "dependencies": [d.to_dict() for d in inventory],
                 "dependency_summary": {
                     "total": len(inventory), "direct": direct, "transitive": len(inventory) - direct,

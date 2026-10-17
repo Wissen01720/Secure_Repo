@@ -11,7 +11,6 @@ alternation with overlapping branches (``(a|a)*``, ``(a|ab)+``, ``(.|x)*``).
 
 from __future__ import annotations
 
-from typing import Optional
 
 try:  # Python 3.11+
     from re import _constants as _c, _parser as _p  # type: ignore[attr-defined]
@@ -78,7 +77,7 @@ def _overlapping_branch(sub) -> bool:
     return False
 
 
-def _risk(sub) -> Optional[str]:
+def _risk(sub) -> str | None:
     for op, av in _items(sub):
         if op in _REPEATS:
             child = av[2]
@@ -110,7 +109,7 @@ def _risk(sub) -> Optional[str]:
     return None
 
 
-def check_pattern(pattern: str) -> Optional[str]:
+def check_pattern(pattern: str) -> str | None:
     """Return a human readable reason when ``pattern`` is unsafe to run on untrusted input, else None."""
     if len(pattern) > MAX_PATTERN_LENGTH:
         return f"the pattern is longer than {MAX_PATTERN_LENGTH} characters"

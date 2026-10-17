@@ -9,7 +9,6 @@ import sys
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 from rich import box
 from rich.panel import Panel
@@ -35,9 +34,9 @@ class SessionState:
     animate: bool = True
     plain: bool = False
     assume_yes: bool = False
-    authorized: Set[str] = field(default_factory=set)
+    authorized: set[str] = field(default_factory=set)
     # Access tokens per host for private repositories: memory only, never written anywhere.
-    credentials: Dict[str, gitops.GitCredentials] = field(default_factory=dict, repr=False)
+    credentials: dict[str, gitops.GitCredentials] = field(default_factory=dict, repr=False)
 
 
 def ask(prompt: str, **kwargs) -> str:
@@ -121,7 +120,7 @@ def request_credentials(target: Target, state: SessionState, error: gitops.GitAu
     return True
 
 
-def discover_with_auth(target: Target, state: SessionState) -> List[gitops.Branch]:
+def discover_with_auth(target: Target, state: SessionState) -> list[gitops.Branch]:
     """Discover branches; for private remotes ask for an access token and retry (3 attempts)."""
     if target.kind == "remote" and not target.credentials:
         target.credentials = state.credentials.get(gitops.host_of(target.location))
@@ -141,7 +140,7 @@ def discover_with_auth(target: Target, state: SessionState) -> List[gitops.Branc
                 raise
 
 
-def choose_branch(target: Target, state: SessionState) -> Tuple[bool, Optional[str]]:
+def choose_branch(target: Target, state: SessionState) -> tuple[bool, str | None]:
     """Return (ok, branch). branch None means working tree / default branch."""
     section("BRANCH RECON", CYAN)
     try:
@@ -190,7 +189,7 @@ def choose_branch(target: Target, state: SessionState) -> Tuple[bool, Optional[s
         say("Invalid selection, try again.", "warn")
 
 
-def run_scan(target: Target, state: SessionState) -> Tuple[Optional[Dict], Optional[str]]:
+def run_scan(target: Target, state: SessionState) -> tuple[dict | None, str | None]:
     bus = EventBus()
     scanner = Scanner(state.options, bus)
     label = target.location
@@ -221,7 +220,7 @@ def run_scan(target: Target, state: SessionState) -> Tuple[Optional[Dict], Optio
 
 
 # ---------------------------------------------------------------------- post scan
-def browse_findings(report: Dict) -> None:
+def browse_findings(report: dict) -> None:
     findings = report["findings"]
     if not findings:
         say("There are no findings to browse.", "ok")
@@ -251,7 +250,7 @@ def browse_findings(report: Dict) -> None:
         say("Type a finding ID to read why it is insecure and how to fix it.", "info")
 
 
-def post_scan_menu(report: Dict, report_dir: Optional[str], state: SessionState) -> None:
+def post_scan_menu(report: dict, report_dir: str | None, state: SessionState) -> None:
     if not console.is_terminal:
         return
     while True:
@@ -375,7 +374,7 @@ def choose_frameworks(state: SessionState) -> None:
     if raw == "all":
         state.options.frameworks = ["all"]
         return
-    picked: List[str] = []
+    picked: list[str] = []
     for part in raw.split(","):
         part = part.strip()
         if part.isdigit() and 1 <= int(part) <= len(frameworks):
@@ -385,7 +384,7 @@ def choose_frameworks(state: SessionState) -> None:
 
 
 # ---------------------------------------------------------------------- main menu
-def _print_menu(items: List[Tuple[str, str]], highlight: Optional[str] = None) -> None:
+def _print_menu(items: list[tuple[str, str]], highlight: str | None = None) -> None:
     for key, label in items:
         line = Text("  ")
         if key == highlight:
@@ -433,7 +432,7 @@ def main_menu(state: SessionState) -> int:
     current = gitops.current_branch(repo_root) if repo_root else None
     while True:
         section("MAIN CONSOLE", NEON)
-        items: List[Tuple[str, str]] = []
+        items: list[tuple[str, str]] = []
         if repo_root:
             items.append(("1", f"Audit THIS repository  →  {repo_root}  @ {current or 'detached'}"))
         else:

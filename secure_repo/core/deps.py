@@ -10,7 +10,7 @@ import configparser
 import json
 import os
 import re
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 try:  # prefer the hardened parser when available
     import defusedxml.ElementTree as ET  # type: ignore
@@ -54,7 +54,7 @@ def normalize_name(ecosystem: str, name: str) -> str:
     return name
 
 
-def _find_line(lines: List[str], needle: str) -> int:
+def _find_line(lines: list[str], needle: str) -> int:
     if not needle:
         return 0
     pattern = re.compile(r"(?<![\w.\-/@])" + re.escape(needle) + r"(?![\w\-])", re.IGNORECASE)
@@ -64,7 +64,7 @@ def _find_line(lines: List[str], needle: str) -> int:
     return 0
 
 
-def _load_toml(text: str) -> Dict:
+def _load_toml(text: str) -> dict:
     if _toml is None:
         return {}
     try:
@@ -80,7 +80,7 @@ def _load_json(text: str):
         return None
 
 
-def _safe_xml(text: str) -> Optional[ET.Element]:
+def _safe_xml(text: str) -> ET.Element | None:
     cleaned = re.sub(r"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", "", text, flags=re.S | re.I)
     cleaned = re.sub(r"<!ENTITY[^>]*>", "", cleaned, flags=re.I)
     try:
@@ -100,7 +100,7 @@ _TOML_FILES = {"pyproject.toml", "pipfile", "poetry.lock", "uv.lock", "pdm.lock"
 _XML_FILES = {"pom.xml", "packages.config", "directory.packages.props"}
 
 
-def syntax_error(rel_path: str, text: str) -> Optional[str]:
+def syntax_error(rel_path: str, text: str) -> str | None:
     """Why a manifest cannot be parsed (broken JSON / TOML / XML), or None.
 
     The parsers deliberately tolerate bad input and return what they can, so a damaged manifest used to look like
@@ -140,7 +140,7 @@ def _is_exact(spec: str) -> bool:
 _PEP508 = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*(\[[^\]]*\])?\s*(.*)$")
 
 
-def _pep508(requirement: str, manifest: str, line: int, scope: str = "runtime") -> Optional[Dependency]:
+def _pep508(requirement: str, manifest: str, line: int, scope: str = "runtime") -> Dependency | None:
     requirement = requirement.split(";", 1)[0].strip()
     if not requirement:
         return None
@@ -166,7 +166,7 @@ def _pep508(requirement: str, manifest: str, line: int, scope: str = "runtime") 
                       scope=scope, locked=bool(version))
 
 
-def parse_requirements(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_requirements(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     scope = "dev" if re.search(r"dev|test|lint|doc", os.path.basename(manifest), re.I) else "runtime"
     for number, raw in enumerate(text.splitlines(), 1):
@@ -195,10 +195,10 @@ def parse_requirements(text: str, manifest: str, issues: List[ParseIssue]) -> Li
     return deps
 
 
-def parse_pyproject(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pyproject(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_toml(text)
     lines = text.splitlines()
-    deps: List[Dependency] = []
+    deps: list[Dependency] = []
 
     def add_pep(req: str, scope: str) -> None:
         name = _PEP508.match(req)
@@ -248,7 +248,7 @@ def _poetry_dep(name: str, spec, manifest: str, line: int, scope: str) -> Depend
                       scope=scope, source=source, locked=bool(version))
 
 
-def parse_pipfile(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pipfile(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_toml(text)
     lines = text.splitlines()
     deps = []
@@ -266,7 +266,7 @@ def parse_pipfile(text: str, manifest: str, issues: List[ParseIssue]) -> List[De
     return deps
 
 
-def parse_pipfile_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pipfile_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text) or {}
     deps = []
     for section, scope in (("default", "runtime"), ("develop", "dev")):
@@ -278,7 +278,7 @@ def parse_pipfile_lock(text: str, manifest: str, issues: List[ParseIssue]) -> Li
 
 
 def parse_toml_lock(ecosystem: str) -> Callable:
-    def parser(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+    def parser(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
         data = _load_toml(text)
         deps = []
         for package in data.get("package", []) or []:
@@ -299,7 +299,7 @@ def parse_toml_lock(ecosystem: str) -> Callable:
     return parser
 
 
-def parse_setup_py(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_setup_py(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     lines = text.splitlines()
     for block in re.findall(r"install_requires\s*=\s*\[(.*?)\]", text, flags=re.S):
@@ -311,7 +311,7 @@ def parse_setup_py(text: str, manifest: str, issues: List[ParseIssue]) -> List[D
     return deps
 
 
-def parse_setup_cfg(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_setup_cfg(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read_string(text)
@@ -345,7 +345,7 @@ def _npm_source(spec: str) -> str:
     return "registry"
 
 
-def parse_package_json(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_package_json(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text)
     if not isinstance(data, dict):
         return []
@@ -369,7 +369,7 @@ def parse_package_json(text: str, manifest: str, issues: List[ParseIssue]) -> Li
     return deps
 
 
-def parse_package_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_package_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text)
     if not isinstance(data, dict):
         return []
@@ -392,7 +392,7 @@ def parse_package_lock(text: str, manifest: str, issues: List[ParseIssue]) -> Li
                                    direct=False, scope="dev" if info.get("dev") else "runtime", locked=True))
         return deps
 
-    def walk(tree: Dict) -> None:
+    def walk(tree: dict) -> None:
         for name, info in (tree or {}).items():
             if isinstance(info, dict) and info.get("version"):
                 deps.append(Dependency(name=name, ecosystem="npm", version=info["version"], spec=info["version"],
@@ -404,9 +404,9 @@ def parse_package_lock(text: str, manifest: str, issues: List[ParseIssue]) -> Li
     return deps
 
 
-def parse_yarn_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_yarn_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
-    current: Optional[str] = None
+    current: str | None = None
     for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -426,7 +426,7 @@ def parse_yarn_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[
     return deps
 
 
-def parse_pnpm_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pnpm_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     seen = set()
     in_packages = False
@@ -452,7 +452,7 @@ def parse_pnpm_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[
 # Go / Rust / Ruby / PHP / Dart
 # ---------------------------------------------------------------------------
 
-def parse_go_mod(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_go_mod(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     in_block = False
     for number, raw in enumerate(text.splitlines(), 1):
@@ -479,7 +479,7 @@ def parse_go_mod(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dep
     return deps
 
 
-def parse_cargo_toml(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_cargo_toml(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_toml(text)
     lines = text.splitlines()
     tables = []
@@ -510,7 +510,7 @@ def parse_cargo_toml(text: str, manifest: str, issues: List[ParseIssue]) -> List
     return deps
 
 
-def parse_gemfile(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_gemfile(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     gem = re.compile(r"""^\s*gem\s+['"]([^'"]+)['"]\s*((?:,\s*['"][^'"]+['"]\s*)*)(.*)$""")
     for number, line in enumerate(text.splitlines(), 1):
@@ -532,7 +532,7 @@ def parse_gemfile(text: str, manifest: str, issues: List[ParseIssue]) -> List[De
     return deps
 
 
-def parse_gemfile_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_gemfile_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     section = ""
     for number, line in enumerate(text.splitlines(), 1):
@@ -550,7 +550,7 @@ def parse_gemfile_lock(text: str, manifest: str, issues: List[ParseIssue]) -> Li
     return deps
 
 
-def parse_composer_json(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_composer_json(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text)
     if not isinstance(data, dict):
         return []
@@ -572,7 +572,7 @@ def parse_composer_json(text: str, manifest: str, issues: List[ParseIssue]) -> L
     return deps
 
 
-def parse_composer_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_composer_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text) or {}
     deps = []
     for section, scope in (("packages", "runtime"), ("packages-dev", "dev")):
@@ -584,7 +584,7 @@ def parse_composer_lock(text: str, manifest: str, issues: List[ParseIssue]) -> L
     return deps
 
 
-def parse_pubspec(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pubspec(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     section = None
     lines = text.splitlines()
@@ -615,7 +615,7 @@ def parse_pubspec(text: str, manifest: str, issues: List[ParseIssue]) -> List[De
     return deps
 
 
-def parse_pubspec_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pubspec_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     name = None
     for line in text.splitlines():
@@ -635,12 +635,12 @@ def parse_pubspec_lock(text: str, manifest: str, issues: List[ParseIssue]) -> Li
 # JVM / .NET
 # ---------------------------------------------------------------------------
 
-def parse_pom(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_pom(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     root = _safe_xml(text)
     if root is None:
         return []
     lines = text.splitlines()
-    props: Dict[str, str] = {}
+    props: dict[str, str] = {}
     properties = root.find("properties")
     if properties is not None:
         for prop in properties:
@@ -670,7 +670,7 @@ def parse_pom(text: str, manifest: str, issues: List[ParseIssue]) -> List[Depend
     return deps
 
 
-def parse_gradle(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_gradle(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     deps = []
     pattern = re.compile(
         r"\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|androidTestImplementation|"
@@ -687,7 +687,7 @@ def parse_gradle(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dep
     return deps
 
 
-def parse_version_catalog(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_version_catalog(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_toml(text)
     versions = data.get("versions", {}) or {}
     lines = text.splitlines()
@@ -710,7 +710,7 @@ def parse_version_catalog(text: str, manifest: str, issues: List[ParseIssue]) ->
     return deps
 
 
-def parse_dotnet_project(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_dotnet_project(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     root = _safe_xml(text)
     if root is None:
         return []
@@ -729,7 +729,7 @@ def parse_dotnet_project(text: str, manifest: str, issues: List[ParseIssue]) -> 
     return deps
 
 
-def parse_nuget_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List[Dependency]:
+def parse_nuget_lock(text: str, manifest: str, issues: list[ParseIssue]) -> list[Dependency]:
     data = _load_json(text) or {}
     deps = []
     for framework in (data.get("dependencies") or {}).values():
@@ -744,17 +744,17 @@ def parse_nuget_lock(text: str, manifest: str, issues: List[ParseIssue]) -> List
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
-Parser = Callable[[str, str, List[ParseIssue]], List[Dependency]]
+Parser = Callable[[str, str, list[ParseIssue]], list[Dependency]]
 
 
-def parser_for(rel_path: str) -> Optional[Tuple[Parser, bool]]:
+def parser_for(rel_path: str) -> tuple[Parser, bool] | None:
     """Return (parser, is_lockfile) for a manifest path."""
     name = os.path.basename(rel_path)
     lower = name.lower()
     if re.fullmatch(r"(.*[-_.])?requirements([-_.][\w.-]*)?\.(txt|in)", lower) or (
             "/requirements/" in "/" + rel_path.lower() and lower.endswith(".txt")):
         return parse_requirements, False
-    table: Dict[str, Tuple[Parser, bool]] = {
+    table: dict[str, tuple[Parser, bool]] = {
         "pyproject.toml": (parse_pyproject, False), "pipfile": (parse_pipfile, False),
         "pipfile.lock": (parse_pipfile_lock, True), "poetry.lock": (parse_toml_lock("PyPI"), True),
         "uv.lock": (parse_toml_lock("PyPI"), True), "pdm.lock": (parse_toml_lock("PyPI"), True),

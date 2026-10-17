@@ -16,7 +16,6 @@ from __future__ import annotations
 import bisect
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 SERVER_SOURCE = r"\b(?:req|request)\.(?:query|params|body|headers|cookies|originalUrl|url|path|files?)\b|" \
                 r"\bctx\.(?:query|params|request\.(?:body|query))\b|\bprocess\.argv\b"
@@ -74,8 +73,8 @@ class Origin:
     label: str
     line: int
     server: bool
-    steps: List[Tuple[int, str]] = field(default_factory=list)
-    scope: Tuple[int, int] = (0, 1 << 60)   # function body where the tainted variable lives
+    steps: list[tuple[int, str]] = field(default_factory=list)
+    scope: tuple[int, int] = (0, 1 << 60)   # function body where the tainted variable lives
 
 
 @dataclass
@@ -83,8 +82,8 @@ class Decision:
     kind: str                 # constant | tainted | dynamic
     rule_id: str
     line: int
-    severity: Optional[str] = None
-    flow: List[Dict] = field(default_factory=list)
+    severity: str | None = None
+    flow: list[dict] = field(default_factory=list)
     detail: str = ""
 
 
@@ -94,15 +93,15 @@ class JsFlowAnalyzer:
         self.code = code
         self.lines = original.split("\n")
         self.newlines = [m.start() for m in re.finditer("\n", code)]
-        self.tainted: Dict[str, List[Origin]] = {}
+        self.tainted: dict[str, list[Origin]] = {}
         self.uses_child_process = bool(CHILD_PROCESS_RE.search(original))
-        self.suppressed: Dict[str, int] = {}
+        self.suppressed: dict[str, int] = {}
         self.functions = self._function_bodies()
 
-    def _function_bodies(self) -> List[Tuple[int, int]]:
+    def _function_bodies(self) -> list[tuple[int, int]]:
         """Spans of function bodies ({...} preceded by ')' or '=>'), used as variable scopes."""
-        spans: List[Tuple[int, int]] = []
-        stack: List[Tuple[int, bool]] = []
+        spans: list[tuple[int, int]] = []
+        stack: list[tuple[int, bool]] = []
         for index, char in enumerate(self.code):
             if char == "{":
                 before = self.code[max(0, index - 40):index].rstrip()
@@ -113,7 +112,7 @@ class JsFlowAnalyzer:
                     spans.append((start, index))
         return spans
 
-    def _scope_of(self, offset: int) -> Tuple[int, int]:
+    def _scope_of(self, offset: int) -> tuple[int, int]:
         best = (0, 1 << 60)
         for start, end in self.functions:
             if start <= offset <= end and (end - start) < (best[1] - best[0]):
@@ -144,9 +143,9 @@ class JsFlowAnalyzer:
             index += 1
         return index
 
-    def _call_args(self, open_paren: int) -> List[str]:
+    def _call_args(self, open_paren: int) -> list[str]:
         depth = 0
-        args: List[str] = []
+        args: list[str] = []
         current = open_paren + 1
         index = open_paren
         limit = min(len(self.code), open_paren + 1500)
@@ -167,7 +166,7 @@ class JsFlowAnalyzer:
         return args
 
     # ------------------------------------------------------------------ taint
-    def _refs_taint(self, expression: str, position: int) -> Optional[Origin]:
+    def _refs_taint(self, expression: str, position: int) -> Origin | None:
         match = SOURCE_RE.search(expression)
         if match:
             label = re.sub(r"\s+", " ", match.group(0).strip().rstrip("("))
@@ -179,7 +178,7 @@ class JsFlowAnalyzer:
         return None
 
     def _collect_taint(self) -> None:
-        assignments: List[Tuple[List[str], str, int, int]] = []
+        assignments: list[tuple[list[str], str, int, int]] = []
         for match in DECL_RE.finditer(self.code):
             end = self._statement_end(match.end())
             assignments.append(([match.group(1)], self.code[match.end():end], self._line(match.start()), match.start()))
@@ -217,9 +216,9 @@ class JsFlowAnalyzer:
                 break
 
     # ------------------------------------------------------------------ sinks
-    def analyze(self) -> List[Decision]:
+    def analyze(self) -> list[Decision]:
         self._collect_taint()
-        decisions: List[Decision] = []
+        decisions: list[Decision] = []
         for rule_id, regex, mode, server_only in SINKS:
             for match in regex.finditer(self.code):
                 if rule_id == "SR-JS-007" and not self.uses_child_process:
@@ -271,6 +270,6 @@ class JsFlowAnalyzer:
         return decisions
 
 
-def analyze_js(original: str, code_view: str) -> Tuple[List[Decision], Dict[str, int]]:
+def analyze_js(original: str, code_view: str) -> tuple[list[Decision], dict[str, int]]:
     analyzer = JsFlowAnalyzer(original, code_view)
     return analyzer.analyze(), analyzer.suppressed

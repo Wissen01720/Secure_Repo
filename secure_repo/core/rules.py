@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Pattern, Tuple
+from re import Pattern
 
 try:  # Python 3.11+
     import tomllib as _toml
@@ -49,9 +49,9 @@ class RuleExample:
     code: str
     file: str = ""                 # file name used for the language and path rules (default: derived from the rule)
     scope: str = "file"            # "repo": scanned as a whole repository (hygiene, dependency and CI rules)
-    extra: Dict[str, str] = field(default_factory=dict)   # additional files of the example repository
+    extra: dict[str, str] = field(default_factory=dict)   # additional files of the example repository
     online: bool = False           # needs OSV.dev / deps.dev: skipped unless the examples are run online
-    options: Dict[str, object] = field(default_factory=dict)  # scan options for this example (e.g. private patterns)
+    options: dict[str, object] = field(default_factory=dict)  # scan options for this example (e.g. private patterns)
 
 
 @dataclass
@@ -65,33 +65,33 @@ class Rule:
     description: str
     recommendation: str
     pattern: str = ""
-    languages: Tuple[str, ...] = ANY
+    languages: tuple[str, ...] = ANY
     path: str = ""
     exclude: str = ""
-    keywords: Tuple[str, ...] = ()
-    tags: Tuple[str, ...] = ()
+    keywords: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
     confidence: str = "medium"
     scan_comments: bool = False
     redact: bool = False
     source: str = "code"
-    references: Tuple[str, ...] = ()
+    references: tuple[str, ...] = ()
     flags: int = 0
     needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
     region: str = ""             # only report matches inside this structural region (see core/regions.py)
     skip_in_tests: bool = False  # not applied to test code (e.g. plain-HTTP URLs of local test servers)
-    examples: List[RuleExample] = field(default_factory=list, compare=False, repr=False)
-    _regex: Optional[Pattern] = field(default=None, repr=False, compare=False)
-    _path_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
-    _exclude_re: Optional[Pattern] = field(default=None, repr=False, compare=False)
+    examples: list[RuleExample] = field(default_factory=list, compare=False, repr=False)
+    _regex: Pattern | None = field(default=None, repr=False, compare=False)
+    _path_re: Pattern | None = field(default=None, repr=False, compare=False)
+    _exclude_re: Pattern | None = field(default=None, repr=False, compare=False)
 
     @property
-    def regex(self) -> Optional[Pattern]:
+    def regex(self) -> Pattern | None:
         if self.pattern and self._regex is None:
             self._regex = re.compile(self.pattern, re.MULTILINE | self.flags)
         return self._regex
 
     @property
-    def exclude_re(self) -> Optional[Pattern]:
+    def exclude_re(self) -> Pattern | None:
         if self.exclude and self._exclude_re is None:
             self._exclude_re = re.compile(self.exclude)
         return self._exclude_re
@@ -111,7 +111,7 @@ class Rule:
                 return False
         return "*" in self.languages or language in self.languages
 
-    def reference_links(self) -> List[str]:
+    def reference_links(self) -> list[str]:
         links = list(self.references)
         if self.cwe.startswith("CWE-"):
             links.insert(0, f"https://cwe.mitre.org/data/definitions/{self.cwe[4:]}.html")
@@ -119,7 +119,7 @@ class Rule:
             links.append(f"https://owasp.org/Top10/{OWASP_SLUGS.get(self.owasp, '')}")
         return links
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "id": self.id, "title": self.title, "severity": self.severity, "category": self.category,
             "cwe": self.cwe, "owasp": self.owasp, "description": self.description,
@@ -158,8 +158,8 @@ class RuleDataError(ValueError):
     """A rule data file is malformed (the message names the file and the rule)."""
 
 
-def _languages(values: List[str], where: str) -> Tuple[str, ...]:
-    expanded: List[str] = []
+def _languages(values: list[str], where: str) -> tuple[str, ...]:
+    expanded: list[str] = []
     for value in values:
         if value.startswith("@"):
             if value[1:] not in _LANGUAGE_GROUPS:
@@ -170,7 +170,7 @@ def _languages(values: List[str], where: str) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(expanded))
 
 
-def _rule_from_table(table: Dict, origin: str) -> Rule:
+def _rule_from_table(table: dict, origin: str) -> Rule:
     where = f"{origin}: rule {table.get('id', '?')}"
     unknown = set(table) - _RULE_KEYS
     if unknown:
@@ -210,11 +210,11 @@ def _rule_from_table(table: Dict, origin: str) -> Rule:
     return rule
 
 
-def load_rules(directory: str = RULE_DATA_DIR) -> List[Rule]:
+def load_rules(directory: str = RULE_DATA_DIR) -> list[Rule]:
     """Read every ``*.toml`` file of the rule data directory; rules are ordered by ID."""
     if _toml is None:  # pragma: no cover - Python < 3.11 without tomli
         raise RuleDataError("TOML support is missing: install 'tomli' (pip install tomli)")
-    loaded: List[Rule] = []
+    loaded: list[Rule] = []
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".toml"):
             continue
@@ -232,16 +232,16 @@ def load_rules(directory: str = RULE_DATA_DIR) -> List[Rule]:
     return sorted(loaded, key=lambda rule: rule.id)
 
 
-RULES: List[Rule] = load_rules()
+RULES: list[Rule] = load_rules()
 
 # Rules whose ID used to carry a language prefix that did not match where they apply (the JWT rule was "SR-JS-021"
 # but fired on Python too). Old IDs keep working everywhere a user wrote one: .securerepo.toml, nosec comments, the
 # triage knowledge base and shared triage files. Fingerprints keep using the legacy ID, so past decisions still match.
-RULE_ALIASES: Dict[str, str] = {
+RULE_ALIASES: dict[str, str] = {
     "SR-JS-010": "SR-GEN-008", "SR-JS-019": "SR-GEN-009", "SR-JS-020": "SR-GEN-010", "SR-JS-021": "SR-GEN-011",
     "SR-JAVA-002": "SR-GEN-012", "SR-JAVA-007": "SR-GEN-013",
 }
-LEGACY_IDS: Dict[str, str] = {new: old for old, new in RULE_ALIASES.items()}
+LEGACY_IDS: dict[str, str] = {new: old for old, new in RULE_ALIASES.items()}
 
 
 def canonical_rule_id(rule_id: str) -> str:
@@ -249,9 +249,9 @@ def canonical_rule_id(rule_id: str) -> str:
     return RULE_ALIASES.get(rule_id, rule_id)
 
 
-RULES_BY_ID: Dict[str, Rule] = {rule.id: rule for rule in RULES}
-PATTERN_RULES: List[Rule] = [rule for rule in RULES if rule.pattern]
-TOKEN_RULES: List[Rule] = [rule for rule in PATTERN_RULES if rule.source == "secret" and rule.redact]
+RULES_BY_ID: dict[str, Rule] = {rule.id: rule for rule in RULES}
+PATTERN_RULES: list[Rule] = [rule for rule in RULES if rule.pattern]
+TOKEN_RULES: list[Rule] = [rule for rule in PATTERN_RULES if rule.source == "secret" and rule.redact]
 
 
 def get_rule(rule_id: str) -> Rule:

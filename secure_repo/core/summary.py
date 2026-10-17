@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
 
 from secure_repo.core import compliance
 from secure_repo.core.languages import DOCUMENTATION
@@ -11,15 +10,15 @@ from secure_repo.core.rules import RULES_BY_ID
 from secure_repo.core.scoring import compute_score
 
 
-def reportable(finding: Dict) -> bool:
+def reportable(finding: dict) -> bool:
     return finding.get("status", "open") not in SUPPRESSED_STATUSES
 
 
-def annotate_structure(structure: Dict, findings: List[Dict]) -> None:
-    index: Dict[str, Dict] = {}
-    parents: Dict[str, List[Dict]] = {}
+def annotate_structure(structure: dict, findings: list[dict]) -> None:
+    index: dict[str, dict] = {}
+    parents: dict[str, list[dict]] = {}
 
-    def walk(node: Dict, chain: List[Dict]) -> None:
+    def walk(node: dict, chain: list[dict]) -> None:
         node["findings"], node["risk"], node["severity"] = 0, None, {}
         index[node["path"]] = node
         parents[node["path"]] = chain
@@ -48,11 +47,11 @@ def annotate_structure(structure: Dict, findings: List[Dict]) -> None:
                 target["risk"] = severity
 
 
-def _brief(score: Dict) -> Dict:
+def _brief(score: dict) -> dict:
     return {"score": score["score"], "grade": score["grade"], "cap": score["cap"]}
 
 
-def split_scores(report: Dict, findings: List[Dict]) -> Dict:
+def split_scores(report: dict, findings: list[dict]) -> dict:
     """Three numbers instead of one: production code, test code, and findings per thousand lines of code.
 
     The headline score mixes everything (tests count half). On its own it saturates on big projects and cannot tell a
@@ -74,15 +73,15 @@ def split_scores(report: Dict, findings: List[Dict]) -> Dict:
     }
 
 
-def build_summary(report: Dict) -> None:
+def build_summary(report: dict) -> None:
     findings = report["findings"]
     active = [f for f in findings if reportable(f)]
     by_severity = {s: 0 for s in SEVERITIES}
-    by_category: Dict[str, int] = {}
-    by_owasp: Dict[str, int] = {}
-    by_status: Dict[str, int] = {}
-    by_engine: Dict[str, int] = {}
-    per_file: Dict[str, Dict] = {}
+    by_category: dict[str, int] = {}
+    by_owasp: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    by_engine: dict[str, int] = {}
+    per_file: dict[str, dict] = {}
     for finding in findings:
         by_status[finding.get("status", "open")] = by_status.get(finding.get("status", "open"), 0) + 1
     for finding in active:
@@ -139,7 +138,7 @@ def build_summary(report: Dict) -> None:
     })
 
 
-def finalize(report: Dict, custom_rules: Dict[str, Dict] = None) -> None:
+def finalize(report: dict, custom_rules: dict[str, dict] = None) -> None:
     """Recompute everything derived from the findings list (used after scanning and after triage)."""
     build_summary(report)
     annotate_structure(report["structure"], report["findings"])

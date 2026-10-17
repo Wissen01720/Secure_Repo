@@ -7,14 +7,17 @@ obligations; it is not a certification and never replaces a qualified auditor.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from collections.abc import Sequence
 
 from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_RANK
 
 DISCLAIMER = (
     "This automated assessment produces technical evidence to support compliance efforts. It is not a "
     "certification, attestation or legal opinion, and it does not replace an audit performed by a qualified, "
-    "independent assessor. Controls marked MANUAL require human verification of processes and documentation. "
+    "independent assessor. NO ISSUE FOUND means that nothing the static analysis could read contradicts the "
+    "control; it does not show that the control is satisfied (processes, configuration at run time and "
+    "anything outside the repository are invisible to it). Controls marked MANUAL require human verification "
+    "of processes and documentation. "
     "The analysis was read-only: no code from the target was executed, detected secrets are redacted in every "
     "report, and (in online mode) only package names and versions were sent to public vulnerability databases."
 )
@@ -50,10 +53,10 @@ class Framework:
     name: str
     version: str
     description: str
-    controls: List[Control] = field(default_factory=list)
+    controls: list[Control] = field(default_factory=list)
 
 
-FRAMEWORKS: Dict[str, Framework] = {}
+FRAMEWORKS: dict[str, Framework] = {}
 
 
 def _register(framework: Framework) -> None:
@@ -222,12 +225,12 @@ _register(Framework("nist-ssdf", "NIST SSDF", "SP 800-218 v1.1",
 ]))
 
 
-def list_frameworks() -> List[Dict]:
+def list_frameworks() -> list[dict]:
     return [{"id": f.id, "name": f.name, "version": f.version, "description": f.description,
              "controls": len(f.controls)} for f in FRAMEWORKS.values()]
 
 
-def resolve_frameworks(selection: Optional[Sequence[str]]) -> List[str]:
+def resolve_frameworks(selection: Sequence[str] | None) -> list[str]:
     if not selection or "all" in selection:
         return list(FRAMEWORKS)
     chosen = []
@@ -244,7 +247,7 @@ def resolve_frameworks(selection: Optional[Sequence[str]]) -> List[str]:
     return chosen
 
 
-def _describe(findings: List[Dict]) -> str:
+def _describe(findings: list[dict]) -> str:
     counts = {}
     for finding in findings:
         counts[finding["severity"]] = counts.get(finding["severity"], 0) + 1
@@ -252,7 +255,7 @@ def _describe(findings: List[Dict]) -> str:
     return f"{len(findings)} related finding(s): " + ", ".join(parts)
 
 
-def evaluate(findings: List[Dict], hygiene: Dict[str, bool], selection: Optional[Sequence[str]]) -> Dict:
+def evaluate(findings: list[dict], hygiene: dict[str, bool], selection: Sequence[str] | None) -> dict:
     results = []
     for framework_id in resolve_frameworks(selection):
         framework = FRAMEWORKS[framework_id]
@@ -263,7 +266,7 @@ def evaluate(findings: List[Dict], hygiene: Dict[str, bool], selection: Optional
                        if (control.tags and set(control.tags) & set(f.get("tags", [])))
                        or (control.owasp and f.get("owasp") in control.owasp)]
             related.sort(key=lambda f: SEVERITY_RANK.get(f["severity"], 9))
-            evidence: List[str] = []
+            evidence: list[str] = []
             status = "pass"
             significant = [f for f in related if f["severity"] != "info"]
             if significant:

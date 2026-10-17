@@ -12,7 +12,7 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from secure_repo.core.events import EventBus
 from secure_repo.core.rules import RULES, Rule, RuleExample
@@ -56,7 +56,7 @@ def expand(code: str) -> str:
             raise ValueError(f"unknown example placeholder <<{kind}:...>>")
         counter[0] += 1
         alphabet, block = _ALPHABETS[kind], 0
-        produced: List[str] = []
+        produced: list[str] = []
         while len(produced) < int(argument):
             digest = hashlib.sha256(f"{counter[0]}:{kind}:{argument}:{block}".encode()).digest()
             produced.extend(alphabet[b % len(alphabet)] for b in digest)
@@ -94,14 +94,14 @@ def _write(root: str, rel: str, content: str) -> None:
         handle.write(content)
 
 
-def _scan(root: str, online: bool = False, extra: Optional[Dict] = None) -> List[Dict]:
+def _scan(root: str, online: bool = False, extra: dict | None = None) -> list[dict]:
     options = ScanOptions(offline=not online, trust_repo_config=False, learning=False, resolve_versions=online,
                           enrich=online, **(extra or {}))
     report, _ = Scanner(options, EventBus()).run(Target.parse(root), write_reports=False)
     return report["findings"]
 
 
-def _verdict(rule_id: str, example: RuleExample, findings: Iterable[Dict], prefix: str) -> Tuple[bool, str]:
+def _verdict(rule_id: str, example: RuleExample, findings: Iterable[dict], prefix: str) -> tuple[bool, str]:
     own = [f for f in findings if f["rule_id"] == rule_id and (prefix == "" or f["file"].startswith(prefix))]
     if example.kind == "positive":
         fired = [f for f in own if f["status"] == "open"]
@@ -110,17 +110,17 @@ def _verdict(rule_id: str, example: RuleExample, findings: Iterable[Dict], prefi
     return (True, "") if not own else (False, f"the rule fired at {own[0]['file']}:{own[0]['line']}: {own[0]['snippet'][:80]}")
 
 
-def run_examples(rules: Optional[List[Rule]] = None, online: bool = False) -> List[ExampleResult]:
+def run_examples(rules: list[Rule] | None = None, online: bool = False) -> list[ExampleResult]:
     """Scan every example (file-scope ones together, repository-scope ones each in their own folder).
 
     Examples that need the vulnerability databases (``online = true``) run only with ``online=True``.
     """
     rules = RULES if rules is None else rules
-    results: List[ExampleResult] = []
+    results: list[ExampleResult] = []
     workdir = tempfile.mkdtemp(prefix="sr-examples-")
     try:
         batch_root = os.path.join(workdir, "batch")
-        batch: List[Tuple[Rule, RuleExample, int, str]] = []
+        batch: list[tuple[Rule, RuleExample, int, str]] = []
         for rule in rules:
             for index, example in enumerate(rule.examples):
                 if example.scope == "repo" or example.online:
@@ -152,7 +152,7 @@ def run_examples(rules: Optional[List[Rule]] = None, online: bool = False) -> Li
     return results
 
 
-def coverage(rules: Optional[List[Rule]] = None) -> Dict[str, object]:
+def coverage(rules: list[Rule] | None = None) -> dict[str, object]:
     """How many rules carry both a positive and a negative example."""
     rules = RULES if rules is None else rules
     both = [r.id for r in rules if any(e.kind == "positive" for e in r.examples)

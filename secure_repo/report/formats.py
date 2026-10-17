@@ -5,9 +5,8 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from typing import Dict, List
 
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES
+from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES, owasp_2025_label
 
 SEVERITY_ICON = {"critical": "🟥", "high": "🟧", "medium": "🟨", "low": "🟦", "info": "⬜"}
 SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
@@ -18,13 +17,13 @@ def _md_escape(text: str) -> str:
     return str(text).replace("|", "\\|").replace("\n", " ").replace("`", "'")
 
 
-def _where(finding: Dict) -> str:
+def _where(finding: dict) -> str:
     if finding["file"] in ("", "."):
         return "(repository)"
     return finding["file"] + (f":{finding['line']}" if finding.get("line") else "")
 
 
-def split_score_lines(summary: Dict) -> List[str]:
+def split_score_lines(summary: dict) -> list[str]:
     """Production / tests / density, as a small table under the headline score."""
     scores = summary.get("scores")
     if not scores:
@@ -42,7 +41,7 @@ def split_score_lines(summary: Dict) -> List[str]:
             f"| Critical + high in production code | {density['serious']} ({serious}) |", ""]
 
 
-def markdown_summary(report: Dict) -> str:
+def markdown_summary(report: dict) -> str:
     meta, summary = report["meta"], report["summary"]
     dep = report["dependency_summary"]
     lines = [
@@ -95,7 +94,7 @@ def markdown_summary(report: Dict) -> str:
         lines.append(f"- {SEVERITY_ICON[finding['severity']]} **{finding['id']} {_md_escape(finding['title'])}** "
                      f"- `{_md_escape(_where(finding))}`")
     if report["compliance"].get("enabled"):
-        lines += ["", "## Compliance overview", "", "| Framework | Score | Pass | Warning | Fail | Manual |",
+        lines += ["", "## Compliance overview", "", "| Framework | Evidence score | No issue found | Review | Issue found | Manual |",
                   "|---|---:|---:|---:|---:|---:|"]
         for fw in report["compliance"]["frameworks"]:
             s = fw["summary"]
@@ -107,7 +106,7 @@ def markdown_summary(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_findings(report: Dict, findings: List[Dict], title: str) -> str:
+def markdown_findings(report: dict, findings: list[dict], title: str) -> str:
     rules = report["rules"]
     lines = [f"# {title}", "", f"{len(findings)} finding(s).", ""]
     for finding in findings:
@@ -120,7 +119,8 @@ def markdown_findings(report: Dict, findings: List[Dict], title: str) -> str:
             f"**Status:** {finding.get('status', 'open')}{'  |  in test code' if finding.get('in_test') else ''}",
             f"- **Location:** `{_md_escape(_where(finding))}`",
             f"- **Rule:** {finding['rule_id']}  |  **Category:** {finding['category']}  |  "
-            f"**CWE:** {finding.get('cwe') or '-'}  |  **OWASP:** {finding.get('owasp') or '-'}",
+            f"**CWE:** {finding.get('cwe') or '-'}  |  **OWASP:** {finding.get('owasp') or '-'}:2021"
+            + (f" ({owasp_2025_label(finding['owasp'])})" if owasp_2025_label(finding.get('owasp') or '') else ""),
         ]
         if finding.get("snippet"):
             lines += ["", "```", finding["snippet"].replace("```", "'''"), "```"]
@@ -141,7 +141,7 @@ def markdown_findings(report: Dict, findings: List[Dict], title: str) -> str:
     return "\n".join(lines)
 
 
-def markdown_dependencies(report: Dict) -> str:
+def markdown_dependencies(report: dict) -> str:
     dep = report["dependency_summary"]
     lines = ["# Library & dependency analysis", "",
              f"- Libraries: **{dep['total']}** ({dep['direct']} direct / {dep['transitive']} transitive)",
@@ -171,7 +171,7 @@ def markdown_dependencies(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_quality(report: Dict) -> str:
+def markdown_quality(report: dict) -> str:
     analysis = report.get("analysis") or {}
     summary = report["summary"]
     engines = analysis.get("engines") or {}
@@ -205,7 +205,7 @@ def markdown_quality(report: Dict) -> str:
     return "\n".join(lines) + "\n" + markdown_not_analyzed(report) + markdown_repo_influence(report)
 
 
-def markdown_not_analyzed(report: Dict) -> str:
+def markdown_not_analyzed(report: dict) -> str:
     skipped = (report.get("analysis") or {}).get("not_analyzed")
     if not skipped:
         return ""
@@ -242,7 +242,7 @@ def markdown_not_analyzed(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_repo_influence(report: Dict) -> str:
+def markdown_repo_influence(report: dict) -> str:
     influence = (report.get("analysis") or {}).get("repo_influence")
     if not influence:
         return ""
@@ -282,7 +282,7 @@ def markdown_repo_influence(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_suppressed(report: Dict) -> str:
+def markdown_suppressed(report: dict) -> str:
     suppressed = [f for f in report["findings"] if f.get("status") in SUPPRESSED_STATUSES]
     lines = ["# Suppressed findings (audit trail)", "",
              f"{len(suppressed)} finding(s) are excluded from the score and the compliance audit.", "",
@@ -295,7 +295,7 @@ def markdown_suppressed(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_lockfile_guide(report: Dict) -> str:
+def markdown_lockfile_guide(report: dict) -> str:
     from secure_repo.core.resolver import pinned_snippet
 
     lock = report.get("lockfile") or {}
@@ -330,13 +330,14 @@ def markdown_lockfile_guide(report: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def markdown_compliance(report: Dict, framework: Dict) -> str:
-    icons = {"pass": "✅ PASS", "warning": "⚠️ WARNING", "fail": "❌ FAIL", "manual": "📝 MANUAL"}
+def markdown_compliance(report: dict, framework: dict) -> str:
+    icons = {"pass": "✅ NO ISSUE FOUND", "warning": "⚠️ REVIEW", "fail": "❌ ISSUE FOUND", "manual": "📝 MANUAL"}
     s = framework["summary"]
     lines = [f"# {framework['name']} ({framework['version']}) - compliance evidence", "",
              framework["description"], "",
-             f"**Automated score:** {framework['score']}%  -  pass {s['pass']} | warning {s['warning']} | "
-             f"fail {s['fail']} | manual {s['manual']}", "",
+             f"**Evidence score:** {framework['score']}% (share of automatable controls with no issue found; "
+             f"it is not a compliance percentage)  -  no issue found {s['pass']} | review {s['warning']} | "
+             f"issue found {s['fail']} | manual {s['manual']}", "",
              f"Target `{report['meta']['target']}` @ `{report['meta'].get('branch') or 'n/a'}` "
              f"commit `{report['meta'].get('commit') or 'n/a'}` - assessed {report['meta']['started_at']} "
              f"by {report['meta'].get('auditor')}", ""]
@@ -368,7 +369,7 @@ def _csv_row(writer, row) -> None:
     writer.writerow([csv_safe(cell) for cell in row])
 
 
-def findings_csv(report: Dict) -> str:
+def findings_csv(report: dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     _csv_row(writer, ["id", "severity", "title", "rule_id", "category", "cwe", "owasp", "file", "line", "confidence",
@@ -382,7 +383,7 @@ def findings_csv(report: Dict) -> str:
     return buffer.getvalue()
 
 
-def dependencies_csv(report: Dict) -> str:
+def dependencies_csv(report: dict) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     _csv_row(writer, ["name", "version", "spec", "ecosystem", "direct", "scope", "source", "locked", "manifests",
@@ -396,7 +397,7 @@ def dependencies_csv(report: Dict) -> str:
     return buffer.getvalue()
 
 
-def sarif(report: Dict) -> Dict:
+def sarif(report: dict) -> dict:
     rules = []
     for rule_id, rule in report["rules"].items():
         rules.append({
@@ -449,7 +450,7 @@ PURL_TYPE = {"PyPI": "pypi", "npm": "npm", "Go": "golang", "crates.io": "cargo",
              "Packagist": "composer", "Maven": "maven", "NuGet": "nuget", "Pub": "pub", "Hex": "hex"}
 
 
-def _purl(dep: Dict) -> str:
+def _purl(dep: dict) -> str:
     kind = PURL_TYPE.get(dep["ecosystem"], "generic")
     name = dep["name"]
     if kind == "maven" and ":" in name:
@@ -460,7 +461,7 @@ def _purl(dep: Dict) -> str:
     return f"pkg:{kind}/{name}" + (f"@{dep['version']}" if dep.get("version") else "")
 
 
-def cyclonedx(report: Dict) -> Dict:
+def cyclonedx(report: dict) -> dict:
     components, vulnerabilities = [], []
     for dep in report["dependencies"]:
         ref = _purl(dep)
@@ -488,7 +489,7 @@ def cyclonedx(report: Dict) -> Dict:
     }
 
 
-def languages_markdown(report: Dict) -> str:
+def languages_markdown(report: dict) -> str:
     lines = ["# Languages", "", "| Language | Files | Lines | Size (KB) |", "|---|---:|---:|---:|"]
     for name, info in report["languages"].items():
         lines.append(f"| {name} | {info['files']} | {info['lines']:,} | {info['bytes'] / 1024:.1f} |")

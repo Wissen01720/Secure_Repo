@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional
 
 from rich import box
 from rich.columns import Columns
@@ -17,12 +16,13 @@ from rich.tree import Tree
 from secure_repo.cli.banner import big_status, section
 from secure_repo.cli.theme import (CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, SEVERITY_TAG, STATUS_STYLE, VIOLET,
                                    bar, console, sev_badge)
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES
+from secure_repo.core.models import (OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES,
+                                     owasp_2025_label)
 
 GRADE_COLOR = {"A": NEON, "B": "#7ee787", "C": "#ffd23f", "D": "#ff8a00", "F": "#ff2e63"}
 
 
-def _where(finding: Dict) -> str:
+def _where(finding: dict) -> str:
     if finding["file"] in ("", "."):
         return "(repository)"
     return finding["file"] + (f":{finding['line']}" if finding.get("line") else "")
@@ -36,7 +36,7 @@ def _human(size: float) -> str:
     return f"{size:.1f} TB"
 
 
-def render_summary(report: Dict, report_dir: Optional[str]) -> None:
+def render_summary(report: dict, report_dir: str | None) -> None:
     summary, meta, deps = report["summary"], report["meta"], report["dependency_summary"]
     counts = summary["by_severity"]
     section("MISSION REPORT")
@@ -116,7 +116,7 @@ def render_summary(report: Dict, report_dir: Optional[str]) -> None:
         render_output_tree(report_dir)
 
 
-def render_findings_table(findings: List[Dict], limit: Optional[int] = None, title: str = "FINDINGS") -> None:
+def render_findings_table(findings: list[dict], limit: int | None = None, title: str = "FINDINGS") -> None:
     section(title, MAGENTA)
     if not findings:
         console.print(Text("  No findings for this selection.", style=DIM))
@@ -149,7 +149,7 @@ def render_findings_table(findings: List[Dict], limit: Optional[int] = None, tit
                            f"(or use the post-scan menu to browse them).", style=DIM))
 
 
-def render_finding_detail(report: Dict, finding: Dict, root: Optional[str] = None) -> None:
+def render_finding_detail(report: dict, finding: dict, root: str | None = None) -> None:
     rule = report["rules"].get(finding["rule_id"], {})
     style = SEVERITY_STYLE[finding["severity"]]
     header = Text()
@@ -168,7 +168,8 @@ def render_finding_detail(report: Dict, finding: Dict, root: Optional[str] = Non
         triage_info = finding.get("triage") or {}
         meta.add_row("Status", Text(f"{finding['status']} - {triage_info.get('reason', '')}", style=NEON))
     meta.add_row("Standards", f"{finding.get('cwe') or '-'} · OWASP {finding.get('owasp') or '-'} "
-                              f"{OWASP_TOP10.get(finding.get('owasp') or '', {}).get('name', '')}")
+                              f"{OWASP_TOP10.get(finding.get('owasp') or '', {}).get('name', '')}"
+                              + (f" (2025: {owasp_2025_label(finding['owasp'])})" if owasp_2025_label(finding.get('owasp') or '') else ""))
     parts = [header, Text(""), meta]
     if finding.get("snippet"):
         parts += [Text(""), Panel(Text(finding["snippet"], style="#e6edf3"), title="evidence (secrets redacted)",
@@ -206,7 +207,7 @@ def render_finding_detail(report: Dict, finding: Dict, root: Optional[str] = Non
     console.print(Panel(Group(*parts), border_style=style.replace("bold ", ""), box=box.ROUNDED, padding=(1, 2)))
 
 
-def render_dependencies(report: Dict, only_vulnerable: bool = False, limit: Optional[int] = None) -> None:
+def render_dependencies(report: dict, only_vulnerable: bool = False, limit: int | None = None) -> None:
     deps = report["dependencies"]
     summary = report["dependency_summary"]
     section("LIBRARIES & SUPPLY CHAIN", CYAN)
@@ -245,14 +246,17 @@ def render_dependencies(report: Dict, only_vulnerable: bool = False, limit: Opti
         console.print(Text(f"  ... {len(rows) - limit} more - see dependencies/inventory.csv", style=DIM))
 
 
-def render_compliance(report: Dict, detailed: bool = False) -> None:
+STATUS_WORDS = {"pass": "NO ISSUE FOUND", "warning": "REVIEW", "fail": "ISSUE FOUND", "manual": "MANUAL"}
+
+
+def render_compliance(report: dict, detailed: bool = False) -> None:
     section("COMPLIANCE AUDIT", VIOLET)
     table = Table(box=box.SIMPLE_HEAVY, header_style=f"bold {VIOLET}", expand=True)
     table.add_column("Framework", ratio=3)
     table.add_column("Score", ratio=3)
-    table.add_column("PASS", justify="right", style=STATUS_STYLE["pass"])
-    table.add_column("WARN", justify="right", style=STATUS_STYLE["warning"])
-    table.add_column("FAIL", justify="right", style=STATUS_STYLE["fail"])
+    table.add_column("NO ISSUE", justify="right", style=STATUS_STYLE["pass"])
+    table.add_column("REVIEW", justify="right", style=STATUS_STYLE["warning"])
+    table.add_column("ISSUE", justify="right", style=STATUS_STYLE["fail"])
     table.add_column("MANUAL", justify="right", style=STATUS_STYLE["manual"])
     for fw in report["compliance"]["frameworks"]:
         color = NEON if fw["score"] >= 80 else "#ffd23f" if fw["score"] >= 50 else "#ff2e63"
@@ -272,13 +276,13 @@ def render_compliance(report: Dict, detailed: bool = False) -> None:
                 evidence = Text(control["title"], style="white")
                 for line in control["evidence"][:3]:
                     evidence.append("\n  · " + line, style=DIM)
-                controls.add_row(Text(control["status"].upper(), style=STATUS_STYLE[control["status"]]),
+                controls.add_row(Text(STATUS_WORDS[control["status"]], style=STATUS_STYLE[control["status"]]),
                                  control["id"], evidence)
             console.print(controls)
     console.print(Text("  " + report["compliance"]["disclaimer"], style="italic grey50"))
 
 
-def render_structure_boxes(tree: Dict, max_boxes: int = 12) -> None:
+def render_structure_boxes(tree: dict, max_boxes: int = 12) -> None:
     section("REPOSITORY STRUCTURE MAP", CYAN)
     children = tree.get("children", [])
     dirs = [c for c in children if c["type"] == "dir"]
@@ -323,10 +327,10 @@ def render_structure_boxes(tree: Dict, max_boxes: int = 12) -> None:
     console.print(legend)
 
 
-def render_structure_tree(tree: Dict, max_depth: int = 4, max_children: int = 14) -> None:
+def render_structure_tree(tree: dict, max_depth: int = 4, max_children: int = 14) -> None:
     section("REPOSITORY TREE", CYAN)
 
-    def label(node: Dict) -> Text:
+    def label(node: dict) -> Text:
         is_dir = node["type"] == "dir"
         text = Text(("▣ " if is_dir else "· ") + node["name"] + ("/" if is_dir else ""),
                     style=("bold " if is_dir else "") + ("white" if node["findings"] else "grey62"))
@@ -341,7 +345,7 @@ def render_structure_tree(tree: Dict, max_depth: int = 4, max_children: int = 14
     root = Tree(Text(f"{tree['name']}/  ({tree['files']} files, {tree['lines']:,} lines)", style=f"bold {NEON}"),
                 guide_style="grey30")
 
-    def walk(node: Dict, branch: Tree, depth: int) -> None:
+    def walk(node: dict, branch: Tree, depth: int) -> None:
         children = node.get("children", [])
         for child in children[:max_children]:
             sub = branch.add(label(child))
@@ -373,7 +377,7 @@ def render_output_tree(report_dir: str) -> None:
                                 (" in a browser for the interactive neural map and structure boxes.", DIM)))
 
 
-def render_rules(rules: List, search: str = "") -> None:
+def render_rules(rules: list, search: str = "") -> None:
     table = Table(box=box.SIMPLE_HEAVY, header_style=f"bold {CYAN}", expand=True)
     table.add_column("Rule", no_wrap=True, style="grey62")
     table.add_column("SEV", no_wrap=True)
@@ -393,7 +397,7 @@ def render_rules(rules: List, search: str = "") -> None:
     console.print(table)
 
 
-def render_quality(report: Dict, detailed: bool = False) -> None:
+def render_quality(report: dict, detailed: bool = False) -> None:
     analysis = report.get("analysis") or {}
     if not analysis:
         return
@@ -460,7 +464,7 @@ def render_quality(report: Dict, detailed: bool = False) -> None:
             console.print(table)
 
 
-def render_lockfile(report: Dict) -> None:
+def render_lockfile(report: dict) -> None:
     lock = report.get("lockfile") or {}
     resolution = report["dependency_summary"].get("resolution") or {}
     section("VIRTUAL LOCKFILE", VIOLET)
@@ -491,7 +495,7 @@ def render_lockfile(report: Dict) -> None:
     console.print(Text("  full guide: dependencies/lockfile-guide.md", style=DIM))
 
 
-def render_repo_influence(influence: Dict) -> None:
+def render_repo_influence(influence: dict) -> None:
     """Warn the analyst about everything the audited repository did to shape its own result."""
     lines = []
     if influence["ignored"]:

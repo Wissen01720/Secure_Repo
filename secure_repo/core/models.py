@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 SEVERITIES = ("critical", "high", "medium", "low", "info")
 SEVERITY_RANK = {name: index for index, name in enumerate(SEVERITIES)}  # 0 = most severe
@@ -17,7 +17,7 @@ SEVERITY_DESCRIPTIONS = {
     "info": "Informational observation that supports security governance.",
 }
 
-OWASP_TOP10: Dict[str, Dict[str, str]] = {
+OWASP_TOP10: dict[str, dict[str, str]] = {
     "A01": {
         "name": "Broken Access Control",
         "description": "Restrictions on what authenticated users are allowed to do are not properly "
@@ -76,11 +76,33 @@ OWASP_TOP10: Dict[str, Dict[str, str]] = {
 }
 
 
+# OWASP Top 10:2025 (published late 2025). The rules keep their 2021 codes, which many teams still track; this table
+# gives the 2025 equivalent of each 2021 category so reports can show both. SSRF (A10:2021) became part of A01:2025.
+OWASP_2025: dict[str, dict[str, str]] = {
+    "A01": {"code": "A01", "name": "Broken Access Control"},
+    "A02": {"code": "A04", "name": "Cryptographic Failures"},
+    "A03": {"code": "A05", "name": "Injection"},
+    "A04": {"code": "A06", "name": "Insecure Design"},
+    "A05": {"code": "A02", "name": "Security Misconfiguration"},
+    "A06": {"code": "A03", "name": "Software Supply Chain Failures"},
+    "A07": {"code": "A07", "name": "Authentication Failures"},
+    "A08": {"code": "A08", "name": "Software or Data Integrity Failures"},
+    "A09": {"code": "A09", "name": "Security Logging & Alerting Failures"},
+    "A10": {"code": "A01", "name": "Broken Access Control"},
+}
+
+
+def owasp_2025_label(code_2021: str) -> str:
+    """'A03:2025 Injection' style label of the 2025 category that corresponds to a 2021 code ('' when none)."""
+    entry = OWASP_2025.get(code_2021)
+    return f"{entry['code']}:2025 {entry['name']}" if entry else ""
+
+
 def owasp_key(code: str) -> str:
     return code if code in OWASP_TOP10 else "OTHER"
 
 
-def worst_severity(severities) -> Optional[str]:
+def worst_severity(severities) -> str | None:
     best = None
     for sev in severities:
         if sev not in SEVERITY_RANK:
@@ -102,21 +124,21 @@ class Finding:
     detail: str = ""
     cwe: str = ""
     owasp: str = ""
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     confidence: str = "medium"
     source: str = "code"
     in_test: bool = False
     id: str = ""
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
     # Analysis quality metadata ------------------------------------------------
     engine: str = "pattern"          # pattern | lexical | ast | taint | dependency | hygiene | custom
-    flow: List[Dict[str, Any]] = field(default_factory=list)   # data-flow trace: source -> ... -> sink
+    flow: list[dict[str, Any]] = field(default_factory=list)   # data-flow trace: source -> ... -> sink
     confidence_score: int = 0        # 0-100, computed by the confidence model
     fingerprint: str = ""            # stable identity used by triage (survives line shifts)
     status: str = "open"             # open | confirmed | accepted_risk | false_positive | filtered
-    triage: Dict[str, Any] = field(default_factory=dict)
+    triage: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -133,30 +155,30 @@ TRIAGE_STATUSES = ("open", "confirmed", "accepted_risk", "false_positive")
 class Dependency:
     name: str
     ecosystem: str
-    version: Optional[str]
+    version: str | None
     spec: str
     manifest: str
     direct: bool = True
     scope: str = "runtime"
     source: str = "registry"
     line: int = 0
-    manifests: List[str] = field(default_factory=list)
+    manifests: list[str] = field(default_factory=list)
     locked: bool = False
-    vulnerabilities: List[Dict[str, Any]] = field(default_factory=list)
-    licenses: List[str] = field(default_factory=list)
-    latest: Optional[str] = None
-    issues: List[str] = field(default_factory=list)
+    vulnerabilities: list[dict[str, Any]] = field(default_factory=list)
+    licenses: list[str] = field(default_factory=list)
+    latest: str | None = None
+    issues: list[str] = field(default_factory=list)
     # How the concrete version was obtained: manifest | lockfile | environment | registry | registry-graph
-    resolved_by: Optional[str] = None
-    range_lowest: Optional[str] = None   # lowest version admitted by the declared range (registry resolution)
-    parent: Optional[str] = None         # direct dependency that pulls this one in (virtual graph)
+    resolved_by: str | None = None
+    range_lowest: str | None = None   # lowest version admitted by the declared range (registry resolution)
+    parent: str | None = None         # direct dependency that pulls this one in (virtual graph)
     private: bool = False                # matches an [intel] private pattern: its name is never sent to any service
 
     @property
     def key(self) -> str:
         return f"{self.ecosystem}:{self.name}@{self.version or self.spec or '*'}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["key"] = self.key
         data["max_severity"] = worst_severity(v.get("severity") for v in self.vulnerabilities)

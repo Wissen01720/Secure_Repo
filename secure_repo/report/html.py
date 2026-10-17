@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import re
-from typing import Dict
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gui", "static")
 # Scripts are allowed by SHA-256 hash only: anything injected later (an escaping bug, an edited file) will not run.
@@ -33,13 +32,13 @@ def _read(name: str) -> str:
         return handle.read()
 
 
-def safe_json_for_script(data: Dict) -> str:
+def safe_json_for_script(data: dict) -> str:
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     return text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026") \
         .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
-def build_html_report(report: Dict) -> str:
+def build_html_report(report: dict) -> str:
     html = _read("index.html")
     css = _read("app.css")
     html = html.replace('<link rel="stylesheet" href="/static/app.css">', f"<style>\n{css}\n</style>")

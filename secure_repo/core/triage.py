@@ -22,7 +22,6 @@ import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core.models import TRIAGE_STATUSES
 from secure_repo.core.rules import LEGACY_IDS, canonical_rule_id
@@ -71,7 +70,7 @@ def code_shape(snippet: str) -> str:
     return re.sub(r"\s+", " ", text.strip())[:300]
 
 
-def migrate_rule_ids(payload: Dict) -> Dict:
+def migrate_rule_ids(payload: dict) -> dict:
     """Rewrite legacy rule IDs (see RULE_ALIASES) in a knowledge base or shared triage payload, in place."""
     for project in (payload.get("projects") or {}).values():
         for decision in (project.get("decisions") or {}).values():
@@ -85,7 +84,7 @@ def migrate_rule_ids(payload: Dict) -> Dict:
             pattern["rule_id"] = canonical_rule_id(pattern["rule_id"])
     stats = payload.get("rule_stats")
     if isinstance(stats, dict):
-        merged: Dict = {}
+        merged: dict = {}
         for rule_id, counters in stats.items():
             target = merged.setdefault(canonical_rule_id(rule_id), {})
             for status, value in (counters or {}).items():
@@ -94,12 +93,12 @@ def migrate_rule_ids(payload: Dict) -> Dict:
     return payload
 
 
-def stable_snippet(finding: Dict) -> str:
+def stable_snippet(finding: dict) -> str:
     """The snippet that identifies a finding across versions (multi-line evidence keeps its first line here)."""
     return (finding.get("extra") or {}).get("fp_snippet") or finding.get("snippet", "")
 
 
-def fingerprint(finding: Dict) -> str:
+def fingerprint(finding: dict) -> str:
     extra = finding.get("extra") or {}
     # Renamed rules keep hashing their legacy ID so decisions recorded before the rename still match.
     rule_id = LEGACY_IDS.get(finding["rule_id"], finding["rule_id"])
@@ -113,7 +112,7 @@ def fingerprint(finding: Dict) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:20]
 
 
-def project_key(meta: Dict) -> Tuple[str, str]:
+def project_key(meta: dict) -> tuple[str, str]:
     """Stable project identity: remote URL when known (shared by clones), else the local path."""
     remote = (meta.get("remote") or "").strip()
     if not remote and meta.get("target_kind") == "remote":
@@ -129,7 +128,7 @@ def project_key(meta: Dict) -> Tuple[str, str]:
 
 # ---------------------------------------------------------------------- knowledge base
 class KnowledgeBase:
-    def __init__(self, path: Optional[str] = None):
+    def __init__(self, path: str | None = None):
         self.path = path or os.path.join(data_dir(), "knowledge.json")
         self.data = {"version": 1, "projects": {}, "patterns": [], "rule_stats": {}}
         self.load()
@@ -156,7 +155,7 @@ class KnowledgeBase:
             os.replace(temp, self.path)
 
     # decisions ------------------------------------------------------------------
-    def project(self, key: str, name: str = "") -> Dict:
+    def project(self, key: str, name: str = "") -> dict:
         projects = self.data["projects"]
         if key not in projects:
             projects[key] = {"name": name or key, "decisions": {}}
@@ -164,8 +163,8 @@ class KnowledgeBase:
             projects[key]["name"] = name
         return projects[key]
 
-    def record(self, key: str, name: str, finding: Dict, status: str, reason: str = "", scope: str = "finding",
-               author: str = "") -> Dict:
+    def record(self, key: str, name: str, finding: dict, status: str, reason: str = "", scope: str = "finding",
+               author: str = "") -> dict:
         if status not in TRIAGE_STATUSES:
             raise ValueError(f"Unknown status {status!r}. Use one of: {', '.join(TRIAGE_STATUSES)}")
         fp = finding.get("fingerprint") or fingerprint(finding)
@@ -211,7 +210,7 @@ class KnowledgeBase:
         self.save()
 
     # learning ---------------------------------------------------------------------
-    def rule_quality(self, rule_id: str) -> Tuple[int, float]:
+    def rule_quality(self, rule_id: str) -> tuple[int, float]:
         """Return (feedback count, false-positive ratio) for a rule."""
         stats = self.data["rule_stats"].get(rule_id, {})
         false_positive = stats.get("false_positive", 0)
@@ -219,7 +218,7 @@ class KnowledgeBase:
         total = false_positive + positive
         return total, (false_positive / total if total else 0.0)
 
-    def stats(self) -> List[Dict]:
+    def stats(self) -> list[dict]:
         rows = []
         for rule_id, stats in sorted(self.data["rule_stats"].items()):
             total, ratio = self.rule_quality(rule_id)
@@ -232,7 +231,7 @@ class KnowledgeBase:
                          "patterns": sum(1 for p in self.data["patterns"] if p["rule_id"] == rule_id)})
         return rows
 
-    def apply(self, findings: List[Dict], key: str, repo_payload: Optional[Dict] = None) -> Dict[str, int]:
+    def apply(self, findings: list[dict], key: str, repo_payload: dict | None = None) -> dict[str, int]:
         """Apply stored decisions and learned patterns to a list of finding dicts."""
         counts = {"decisions": 0, "learned_patterns": 0, "repo_decisions": 0, "repo_patterns": 0}
         repo_payload = repo_payload or {}
@@ -271,7 +270,7 @@ class KnowledgeBase:
         return counts
 
     # sharing ----------------------------------------------------------------------
-    def export(self, path: str, key: Optional[str] = None) -> int:
+    def export(self, path: str, key: str | None = None) -> int:
         payload = {"version": 1, "exported": _now(), "patterns": self.data["patterns"],
                    "rule_stats": self.data["rule_stats"], "projects": self.data["projects"]}
         if key is not None:
@@ -283,7 +282,7 @@ class KnowledgeBase:
             json.dump(payload, handle, indent=2, ensure_ascii=False)
         return len(payload.get("decisions", {})) + len(payload.get("patterns", []))
 
-    def import_file(self, path: str, key: Optional[str] = None) -> int:
+    def import_file(self, path: str, key: str | None = None) -> int:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
         imported = 0
@@ -328,7 +327,7 @@ class KnowledgeBase:
         return written
 
 
-def load_repo_triage(root: str) -> Dict:
+def load_repo_triage(root: str) -> dict:
     """Team-shared decisions and patterns committed in the audited repository (.securerepo/triage.json)."""
     path = os.path.join(root, REPO_TRIAGE_FILE)
     if not os.path.isfile(path):

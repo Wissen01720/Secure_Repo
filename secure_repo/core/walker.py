@@ -6,7 +6,7 @@ import fnmatch
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from collections.abc import Iterable
 
 from secure_repo.core.languages import detect_language
 from secure_repo.core.models import SEVERITIES, SEVERITY_RANK
@@ -59,7 +59,7 @@ class FileInfo:
         return not any(name.endswith(ext) for ext in SKIP_CONTENT_EXT)
 
 
-def _gitignored_names(directory: str, cache: Dict[str, set]) -> set:
+def _gitignored_names(directory: str, cache: dict[str, set]) -> set:
     """Plain directory names (``build/``, ``/dist``, ``**/target``) listed in the .gitignore of ``directory``."""
     if directory in cache:
         return cache[directory]
@@ -106,7 +106,7 @@ def _has_artifacts(directory: str) -> bool:
     return False
 
 
-def contextual_exclusion(name: str, full: str, rel: str, root: str, cache: Dict[str, set]) -> Optional[str]:
+def contextual_exclusion(name: str, full: str, rel: str, root: str, cache: dict[str, set]) -> str | None:
     """Why a CONTEXTUAL_DIRS folder is skipped (None = it looks like real source, analyze it)."""
     parent = os.path.dirname(full)
     if name in _gitignored_names(root, cache) or name in _gitignored_names(parent, cache):
@@ -132,15 +132,15 @@ def _count_files(directory: str) -> int:
     return total
 
 
-def enumerate_files(root: str, exclude_globs: Optional[Iterable[str]] = None,
-                    skipped: Optional[List[Dict]] = None) -> List[FileInfo]:
+def enumerate_files(root: str, exclude_globs: Iterable[str] | None = None,
+                    skipped: list[dict] | None = None) -> list[FileInfo]:
     """List the files to analyze. ``skipped`` (optional) receives every folder that was NOT entered, with the reason."""
     exclude_globs = list(exclude_globs or [])
-    files: List[FileInfo] = []
+    files: list[FileInfo] = []
     root = os.path.abspath(root)
-    gitignore_cache: Dict[str, set] = {}
+    gitignore_cache: dict[str, set] = {}
 
-    def note(rel: str, reason: str, kind: str, full: Optional[str] = None) -> None:
+    def note(rel: str, reason: str, kind: str, full: str | None = None) -> None:
         if skipped is None:
             return
         entry = {"path": rel, "reason": reason, "kind": kind, "files": None}
@@ -187,7 +187,7 @@ def enumerate_files(root: str, exclude_globs: Optional[Iterable[str]] = None,
     return files
 
 
-def read_text(info: FileInfo, max_bytes: int) -> Optional[str]:
+def read_text(info: FileInfo, max_bytes: int) -> str | None:
     """Return decoded text, or None for binary / oversized / unreadable files."""
     if info.is_symlink or info.size > max_bytes:
         return None
@@ -207,9 +207,9 @@ def read_text(info: FileInfo, max_bytes: int) -> Optional[str]:
 class StructureTree:
     """Hierarchical view of the repository used for the box map and tree views."""
 
-    def __init__(self, name: str, files: List[FileInfo], max_file_nodes: int = 25000):
-        self.root: Dict = self._dir(name, "")
-        self.index: Dict[str, Dict] = {"": self.root}
+    def __init__(self, name: str, files: list[FileInfo], max_file_nodes: int = 25000):
+        self.root: dict = self._dir(name, "")
+        self.index: dict[str, dict] = {"": self.root}
         collapse = len(files) > max_file_nodes
         for info in files:
             parts = info.rel.split("/")
@@ -233,11 +233,11 @@ class StructureTree:
             self.index[info.rel] = leaf
 
     @staticmethod
-    def _dir(name: str, path: str) -> Dict:
+    def _dir(name: str, path: str) -> dict:
         return {"name": name, "path": path, "type": "dir", "size": 0, "lines": 0, "files": 0, "findings": 0,
                 "risk": None, "severity": {}, "children": []}
 
-    def _ancestors(self, rel: str) -> List[Dict]:
+    def _ancestors(self, rel: str) -> list[dict]:
         parts = rel.split("/")[:-1]
         nodes = [self.root]
         for depth in range(len(parts)):
@@ -264,8 +264,8 @@ class StructureTree:
             if node["risk"] is None or SEVERITY_RANK[severity] < SEVERITY_RANK[node["risk"]]:
                 node["risk"] = severity
 
-    def to_dict(self) -> Dict:
-        def _sort(node: Dict) -> Dict:
+    def to_dict(self) -> dict:
+        def _sort(node: dict) -> dict:
             if node["type"] == "dir":
                 node["children"].sort(key=lambda c: (c["type"] != "dir", -c["size"], c["name"].lower()))
                 for child in node["children"]:
@@ -278,11 +278,11 @@ class StructureTree:
         return render_structure_text(self.to_dict(), max_depth)
 
 
-def render_structure_text(root: Dict, max_depth: int = 6) -> str:
+def render_structure_text(root: dict, max_depth: int = 6) -> str:
     """Plain-text tree of a structure dictionary annotated with finding counts."""
     lines = [f"{root['name']}/  ({root['files']} files)"]
 
-    def _walk(node: Dict, prefix: str, depth: int) -> None:
+    def _walk(node: dict, prefix: str, depth: int) -> None:
         children = node.get("children", [])
         for index, child in enumerate(children):
             last = index == len(children) - 1

@@ -1,15 +1,16 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-repo"
-version = "1.2.5"
+version = "1.3.0"
 description = "Repository security auditor with a hacker-style CLI and a neural-map GUI: static analysis, secrets, library vulnerabilities, supply chain and optional compliance evidence."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "LicenseRef-SecureRepo-Ethical-Source-Available"
+license-files = ["LICENSE"]
 authors = [{ name = "Wissen01720" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "rich>=13.0",
     "tomli>=1.1; python_version < '3.11'",
@@ -21,11 +22,14 @@ classifiers = [
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: Other/Proprietary License",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -36,7 +40,6 @@ hardened = ["defusedxml>=0.7"]
 
 [project.scripts]
 secure-repo = "secure_repo.cli.main:main"
-securerepo = "secure_repo.cli.main:main"
 
 [tool.setuptools.packages.find]
 include = ["secure_repo*"]
@@ -54,14 +57,13 @@ testpaths = ["tests"]
 # ---------------------------------------------------------------------------------------------- lint
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"
 extend-exclude = ["secure_repo/benchmark/corpus"]   # deliberately vulnerable / false-positive samples
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "S"]
 ignore = [
     "E501",                       # long lines: the rule tables are one-liners on purpose
-    "UP006", "UP035", "UP045",    # typing.Dict/Optional: kept for Python 3.9 compatibility
     "S603", "S607",               # git / pip are started with argument lists, never through a shell
     "S310",                       # urlopen is only used with fixed https endpoints
 ]

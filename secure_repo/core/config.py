@@ -10,7 +10,6 @@ import fnmatch
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import redos
 from secure_repo.core.models import SEVERITIES
@@ -74,26 +73,26 @@ values = []
 
 @dataclass
 class ProjectConfig:
-    source: Optional[str] = None
-    exclude: List[str] = field(default_factory=list)
+    source: str | None = None
+    exclude: list[str] = field(default_factory=list)
     min_confidence: str = "low"
-    disable: List[str] = field(default_factory=list)
-    severity: Dict[str, str] = field(default_factory=dict)
-    allow_paths: List[str] = field(default_factory=list)
-    allow_values: List[re.Pattern] = field(default_factory=list)
-    custom_rules: List[Rule] = field(default_factory=list)
-    intel_private: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    disable: list[str] = field(default_factory=list)
+    severity: dict[str, str] = field(default_factory=dict)
+    allow_paths: list[str] = field(default_factory=list)
+    allow_values: list[re.Pattern] = field(default_factory=list)
+    custom_rules: list[Rule] = field(default_factory=list)
+    intel_private: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     # Provenance: which entries came from the audited repository (as opposed to the analyst's own configuration).
-    ignored_source: Optional[str] = None       # repository config found but NOT applied (untrusted target)
-    repo_exclude: List[str] = field(default_factory=list)
-    repo_disable: List[str] = field(default_factory=list)
-    repo_severity: Dict[str, str] = field(default_factory=dict)
-    repo_allow_paths: List[str] = field(default_factory=list)
-    repo_allow_values: List[re.Pattern] = field(default_factory=list)
+    ignored_source: str | None = None       # repository config found but NOT applied (untrusted target)
+    repo_exclude: list[str] = field(default_factory=list)
+    repo_disable: list[str] = field(default_factory=list)
+    repo_severity: dict[str, str] = field(default_factory=dict)
+    repo_allow_paths: list[str] = field(default_factory=list)
+    repo_allow_values: list[re.Pattern] = field(default_factory=list)
     repo_min_confidence: bool = False
 
-    def allowlisted(self, finding: Dict) -> Optional[Tuple[str, bool]]:
+    def allowlisted(self, finding: dict) -> tuple[str, bool] | None:
         """Return (reason, comes_from_repository_config) when the finding is allow-listed."""
         path = finding.get("file") or ""
         where = os.path.basename(self.source or ".securerepo.toml")
@@ -115,7 +114,7 @@ def is_within(path: str, root: str) -> bool:
         return False
 
 
-def _custom_rule(raw: Dict, errors: List[str], origin: str) -> Optional[Rule]:
+def _custom_rule(raw: dict, errors: list[str], origin: str) -> Rule | None:
     rule_id = str(raw.get("id", "")).strip()
     if not rule_id or not raw.get("pattern"):
         errors.append(f"{origin}: custom rule without 'id' or 'pattern' ignored")
@@ -153,7 +152,7 @@ def _custom_rule(raw: Dict, errors: List[str], origin: str) -> Optional[Rule]:
     )
 
 
-def _read(path: str, errors: List[str]) -> Dict:
+def _read(path: str, errors: list[str]) -> dict:
     try:
         with open(path, "rb") as handle:
             return _toml.load(handle)
@@ -162,7 +161,7 @@ def _read(path: str, errors: List[str]) -> Dict:
         return {}
 
 
-def load_config(root: str, user_dir: Optional[str] = None, trust_repo: bool = True) -> ProjectConfig:
+def load_config(root: str, user_dir: str | None = None, trust_repo: bool = True) -> ProjectConfig:
     """Load the analyst's configuration and, only when ``trust_repo`` is set, the one stored in the audited repo.
 
     A repository under audit is untrusted input: its own ``.securerepo.toml`` must not be able to disable rules,

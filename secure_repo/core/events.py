@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Callable, Dict, List
+from typing import Any
+from collections.abc import Callable
 
-Event = Dict[str, Any]
+Event = dict[str, Any]
 Subscriber = Callable[[Event], None]
 
 STAGES = [
@@ -26,7 +27,7 @@ STAGE_TITLES = dict(STAGES)
 
 class EventBus:
     def __init__(self) -> None:
-        self._subscribers: List[Subscriber] = []
+        self._subscribers: list[Subscriber] = []
         self._lock = threading.Lock()
 
     def subscribe(self, callback: Subscriber) -> None:

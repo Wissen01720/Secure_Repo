@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from secure_repo.core.rules import TOKEN_RULES
 
@@ -110,7 +110,7 @@ def is_placeholder_value(value: str) -> bool:
     return _is_placeholder("password", value)
 
 
-def find_generic_credentials(text: str, language: str) -> List[Tuple[int, str, str, float]]:
+def find_generic_credentials(text: str, language: str) -> list[tuple[int, str, str, float]]:
     """Return (offset, key, value, entropy) tuples of probable hardcoded credentials."""
     results = []
     seen_offsets = set()
@@ -158,7 +158,7 @@ def luhn_ok(number: str) -> bool:
     return total % 10 == 0
 
 
-def find_card_numbers(text: str) -> List[Tuple[int, str, bool]]:
+def find_card_numbers(text: str) -> list[tuple[int, str, bool]]:
     results = []
     for match in _CARD_RE.finditer(text):
         digits = re.sub(r"[ -]", "", match.group(0))
@@ -201,7 +201,7 @@ _NAMED_TOOL_FILES = re.compile(r"(Dockerfile|Containerfile|Makefile|GNUmakefile|
                                r"Gemfile|Rakefile|Brewfile|Podfile)(\.[\w.-]+)?$", re.I)
 
 
-def match_sensitive_file(rel_path: str) -> Optional[Tuple[str, str, Optional[re.Pattern]]]:
+def match_sensitive_file(rel_path: str) -> tuple[str, str, re.Pattern | None] | None:
     if _NAMED_TOOL_FILES.fullmatch(rel_path.rsplit("/", 1)[-1]):
         return None
     for pattern, label, severity, exclude in SENSITIVE_FILE_PATTERNS:
@@ -222,12 +222,12 @@ _FROM_RE = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(?P<image>\S+)(?:\s+AS\
 _USER_RE = re.compile(r"^\s*USER\s+(?P<user>\S+)", re.I)
 
 
-def analyze_dockerfile(text: str) -> Iterable[Tuple[str, int, str, str]]:
+def analyze_dockerfile(text: str) -> Iterable[tuple[str, int, str, str]]:
     """Yield (rule_id, line_number, snippet, detail)."""
     stages = set()
     last_from_line = 0
     last_from_text = ""
-    users: List[Tuple[int, str]] = []
+    users: list[tuple[int, str]] = []
     for number, line in enumerate(text.splitlines(), 1):
         match = _FROM_RE.match(line)
         if match:

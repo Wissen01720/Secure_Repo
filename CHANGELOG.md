@@ -2,6 +2,32 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.3.0] - 2026-10-16
+
+### Added
+- **New rules (175 in total):** `SR-JS-028` (Express app with sessions but no CSRF protection, project level),
+  `SR-PY-025` (Django without `CsrfViewMiddleware`), SSRF through a variable in `got`/`needle` calls (`SR-JS-017`),
+  and hardcoded session, cookie or encryption keys (`SR-JS-026`). External benchmark recall is now 93 %.
+- **`--theme plain`** (or `SECURE_REPO_THEME=plain`): a sober console without the staged titles and glyphs.
+- **OWASP Top 10:2025** shown next to the 2021 category in reports and in the GUI finding drawer.
+- **Documentation restructure:** a short `README.md`, a Spanish `README.es.md` and a `docs/` folder (installation,
+  CLI guide, analysis, reference, GUI, security model, troubleshooting, development, releasing).
+- **Release tooling:** `.github/workflows/publish.yml` (PyPI Trusted Publishing, no stored token),
+  `tools/release_notes.py`, ESLint check of the GUI scripts and a package build step in CI.
+
+### Changed
+- **Python 3.10 or newer** is required (3.9 is end of life).
+- **Compliance wording is cautious:** NO ISSUE FOUND / REVIEW / ISSUE FOUND / MANUAL instead of PASS/FAIL; the
+  disclaimer states that absence of findings does not show a control is satisfied. JSON keys are unchanged.
+- **Package metadata:** the licence is declared as `LicenseRef-SecureRepo-Ethical-Source-Available` with the
+  `LICENSE` file shipped; the single console command is `secure-repo` (the `securerepo` alias was removed).
+- `scanner.py` is split into focused modules (`scan_common`, `scan_base`, `scan_analysis`, `scan_dependencies`,
+  `scan_quality`) and the GUI `app.js` into `app-*.js` modules.
+
+### Fixed
+- Two scans running at the same time in the GUI no longer share network counters: each scan owns a network session
+  bound to its context, so intelligence notes and statistics cannot mix.
+
 ## [1.2.5] - 2026-10-15
 
 ### Added

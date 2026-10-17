@@ -24,7 +24,6 @@ import uuid
 import webbrowser
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from rich.panel import Panel
@@ -62,19 +61,19 @@ MAX_BODY = 1024 * 1024
 
 
 class ScanJob:
-    def __init__(self, job_id: str, target: Optional[Target] = None):
+    def __init__(self, job_id: str, target: Target | None = None):
         self.id = job_id
         self.target = target
-        self.events: List[str] = []
+        self.events: list[str] = []
         self.cond = threading.Condition()
         self.status = "running"
-        self.report: Optional[Dict] = None
-        self.report_dir: Optional[str] = None
-        self.error: Optional[str] = None
-        self.scanner: Optional[Scanner] = None
+        self.report: dict | None = None
+        self.report_dir: str | None = None
+        self.error: str | None = None
+        self.scanner: Scanner | None = None
         self.created = time.time()
 
-    def push(self, event: Dict) -> None:
+    def push(self, event: dict) -> None:
         data = json.dumps(event, default=str, ensure_ascii=False)
         with self.cond:
             self.events.append(data)
@@ -90,10 +89,10 @@ class AppState:
     def __init__(self, options: ScanOptions, token: str):
         self.options = options
         self.token = token
-        self.jobs: Dict[str, ScanJob] = {}
+        self.jobs: dict[str, ScanJob] = {}
         self.port = 0
         self.cwd = os.getcwd()
-        self.preload: Optional[str] = None
+        self.preload: str | None = None
         self.lock = threading.Lock()
         self.update_installed = False
         self.post_update_notice = updater.pop_post_update_notice()
@@ -155,7 +154,7 @@ def make_handler(state: AppState):
             if content_type.startswith("text/html"):
                 self.send_header("Content-Security-Policy", CSP)
 
-        def _send(self, status: int, body: bytes, content_type: str, extra: Optional[Dict[str, str]] = None) -> None:
+        def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -176,12 +175,12 @@ def make_handler(state: AppState):
             host = (self.headers.get("Host") or "").lower()
             return host in {f"127.0.0.1:{state.port}", f"localhost:{state.port}"}
 
-        def _token_ok(self, query: Dict) -> bool:
+        def _token_ok(self, query: dict) -> bool:
             # Header only: a token in the URL would end up in browser history, extensions and proxy logs.
             supplied = self.headers.get("X-SR-Token") or ""
             return bool(supplied) and hmac.compare_digest(supplied, state.token)
 
-        def _body(self) -> Dict:
+        def _body(self) -> dict:
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
                 raise ValueError("Request too large")
@@ -191,7 +190,7 @@ def make_handler(state: AppState):
                 raise ValueError("JSON object expected")
             return data
 
-        def _job(self, job_id: str) -> Optional[ScanJob]:
+        def _job(self, job_id: str) -> ScanJob | None:
             return state.jobs.get(job_id)
 
         # ---------------------------------------------------------------- routing
@@ -242,7 +241,7 @@ def make_handler(state: AppState):
                 body = handle.read()
             self._send(200, body, MIME.get(os.path.splitext(name)[1], "application/octet-stream"))
 
-        def _api(self, method: str, path: str, query: Dict) -> None:
+        def _api(self, method: str, path: str, query: dict) -> None:
             parts = [p for p in path.split("/") if p][1:]  # drop "api"
             if method == "GET" and parts == ["context"]:
                 return self._json(self._context())
@@ -297,7 +296,7 @@ def make_handler(state: AppState):
             return self._error(404, "Unknown endpoint")
 
         # ---------------------------------------------------------------- endpoints
-        def _context(self) -> Dict:
+        def _context(self) -> dict:
             root = gitops.find_repo_root(state.cwd)
             return {
                 "version": __version__, "author": __author__, "cwd": state.cwd, "repo_root": root,
@@ -315,7 +314,7 @@ def make_handler(state: AppState):
                 "output_dir": os.path.abspath(state.options.output_dir), "preload": state.preload,
             }
 
-        def _target_from(self, data: Dict) -> Target:
+        def _target_from(self, data: dict) -> Target:
             kind = data.get("kind")
             location = str(data.get("location") or "").strip()
             if kind == "remote":
@@ -334,7 +333,7 @@ def make_handler(state: AppState):
                 return Target("local", location)
             raise ValueError("Unknown target kind")
 
-        def _branches(self, data: Dict) -> None:
+        def _branches(self, data: dict) -> None:
             try:
                 target = self._target_from(data)
                 branches = discover_branches(target, interactive=False)
@@ -348,7 +347,7 @@ def make_handler(state: AppState):
             return self._json({"target": target.location, "kind": target.kind, "git": bool(branches),
                                "branches": [b.to_dict() for b in branches]})
 
-        def _start_scan(self, data: Dict) -> None:
+        def _start_scan(self, data: dict) -> None:
             if data.get("authorized") is not True:
                 return self._error(400, "You must confirm that you are authorized to audit this repository.")
             try:
@@ -431,7 +430,7 @@ def make_handler(state: AppState):
             filename = f"{base}_{os.path.basename(rel)}"
             return self._send(200, body, mime, {"Content-Disposition": f'attachment; filename="{filename}"'})
 
-        def _triage(self, job: ScanJob, data: Dict) -> None:
+        def _triage(self, job: ScanJob, data: dict) -> None:
             if not job.report:
                 return self._error(409, "Report not ready")
             ids = [str(i) for i in (data.get("finding_ids") or [])][:500]
@@ -459,8 +458,8 @@ def make_handler(state: AppState):
     return Handler
 
 
-def serve(options: ScanOptions, port: int = 0, open_browser: bool = True, preload_report: Optional[Dict] = None,
-          preload_dir: Optional[str] = None) -> None:
+def serve(options: ScanOptions, port: int = 0, open_browser: bool = True, preload_report: dict | None = None,
+          preload_dir: str | None = None) -> None:
     ensure_output_root(options.output_dir)
     token = secrets.token_urlsafe(32)
     state = AppState(options, token)

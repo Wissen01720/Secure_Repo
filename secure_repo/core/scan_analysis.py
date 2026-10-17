@@ -9,7 +9,6 @@ import re
 import time
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import checks, jsflow, lexer, pyast, regions, thirdparty, webchecks
 from secure_repo.core.languages import DOCUMENTATION
@@ -33,7 +32,7 @@ from secure_repo.core.walker import FileInfo, StructureTree, read_text
 
 
 class AnalysisMixin(ScannerBase):
-    def _rules_for(self, info: FileInfo) -> List[Rule]:
+    def _rules_for(self, info: FileInfo) -> list[Rule]:
         path_signature = tuple(rule.id for rule in self.path_rules if rule.applies_to(info.language, info.rel))
         key = (info.language, path_signature)
         cached = self._rule_cache.get(key)
@@ -72,7 +71,7 @@ class AnalysisMixin(ScannerBase):
         return checks.redact_text(stripped)
 
     # ------------------------------------------------------------------ analysis
-    def analyze_text(self, info: FileInfo, text: str, minified: bool = False) -> List[Finding]:
+    def analyze_text(self, info: FileInfo, text: str, minified: bool = False) -> list[Finding]:
         """Analyze one file with every applicable engine; returns (and registers) its findings.
 
         ``minified`` (JS/CSS bundles only) runs a reduced analysis: no syntax-aware engines, and only secrets and
@@ -81,7 +80,7 @@ class AnalysisMixin(ScannerBase):
         newlines = [m.start() for m in re.finditer("\n", text)]
         lines = text.split("\n")
 
-        def locate(offset: int) -> Tuple[int, str, int]:
+        def locate(offset: int) -> tuple[int, str, int]:
             index = bisect.bisect_right(newlines, offset - 1) if offset else 0
             line_start = newlines[index - 1] + 1 if index > 0 else 0
             return index + 1, lines[index] if index < len(lines) else "", offset - line_start
@@ -89,8 +88,8 @@ class AnalysisMixin(ScannerBase):
         def line_text_of(line_no: int) -> str:
             return lines[line_no - 1] if 0 < line_no <= len(lines) else ""
 
-        comment_cache: Dict[int, str] = {}
-        masked_lines: List[str] = []
+        comment_cache: dict[int, str] = {}
+        masked_lines: list[str] = []
 
         def comment_of(line_no: int) -> str:
             """Text of the real comment on a line (strings and code are excluded)."""
@@ -103,7 +102,7 @@ class AnalysisMixin(ScannerBase):
                     if not masked_lines:
                         masked_lines.extend(views["no_comments"].split("\n"))
                     masked = masked_lines[line_no - 1] if line_no - 1 < len(masked_lines) else original
-                    changed = [i for i, (o, m) in enumerate(zip(original, masked)) if o != m]
+                    changed = [i for i, (o, m) in enumerate(zip(original, masked, strict=False)) if o != m]
                     comment = original[changed[0]:changed[-1] + 1] if changed else ""
                 else:
                     start = COMMENT_START_RE.search(original)
@@ -111,7 +110,7 @@ class AnalysisMixin(ScannerBase):
             comment_cache[line_no] = comment
             return comment
 
-        def inline_suppression(line_no: int, rule_id: str) -> Optional[Dict]:
+        def inline_suppression(line_no: int, rule_id: str) -> dict | None:
             comment = comment_of(line_no)
             directive = DIRECTIVE_RE.search(comment) if comment else None
             if not directive:
@@ -130,7 +129,7 @@ class AnalysisMixin(ScannerBase):
         if views is not None:
             self.engine_stats["masked_files"] += 1
         lower = text.lower()
-        file_findings: List[Finding] = []
+        file_findings: list[Finding] = []
         secret_lines = set()
 
         # Layer 2a - Python syntax tree + taint -------------------------------------
@@ -247,12 +246,12 @@ class AnalysisMixin(ScannerBase):
             decisions, suppressed = jsflow.analyze_js(text, views["code"])
             for reason, amount in suppressed.items():
                 self._count_noise(f"javascript: {reason}", amount)
-            by_key: Dict[Tuple[str, int], jsflow.Decision] = {}
+            by_key: dict[tuple[str, int], jsflow.Decision] = {}
             for decision in decisions:
                 current = by_key.get((decision.rule_id, decision.line))
                 if current is None or decision.kind == "tainted":
                     by_key[(decision.rule_id, decision.line)] = decision
-            kept: List[Finding] = []
+            kept: list[Finding] = []
             covered = set()
             for finding in file_findings:
                 chosen = by_key.get((finding.rule_id, finding.line))
@@ -346,7 +345,7 @@ class AnalysisMixin(ScannerBase):
         return file_findings
 
     # ------------------------------------------------------------------ stages
-    def _process_file(self, info: FileInfo, collect: bool = False) -> Dict:
+    def _process_file(self, info: FileInfo, collect: bool = False) -> dict:
         """Everything that is done to one file, without touching the report-wide statistics.
 
         Runs in the main process (findings go straight to ``self.findings``) or in a worker process with
@@ -354,7 +353,7 @@ class AnalysisMixin(ScannerBase):
         """
         findings_before, facts_before = len(self.findings), len(self.web_facts)
         noise_before, engines_before, inline_before = dict(self.noise), dict(self.engine_stats), self.inline_ignored
-        outcome: Dict = {"rel": info.rel, "language": info.language, "size": info.size, "lines": None, "skip": None,
+        outcome: dict = {"rel": info.rel, "language": info.language, "size": info.size, "lines": None, "skip": None,
                          "minified": False, "marker": False, "scanned": False}
         sensitive = checks.match_sensitive_file(info.rel)
         text = None
@@ -397,7 +396,7 @@ class AnalysisMixin(ScannerBase):
             return 1
         return min(jobs, total)
 
-    def _outcomes(self, files: List[FileInfo], workers: int):
+    def _outcomes(self, files: list[FileInfo], workers: int):
         """Per-file outcomes in file order: from a pool of worker processes when it pays off, else in this process."""
         from secure_repo.core import scanner as scanner_module  # late import: scanner imports this module
 
@@ -423,7 +422,7 @@ class AnalysisMixin(ScannerBase):
         for info in files[done:]:
             yield self._process_file(info)
 
-    def _merge_worker(self, outcome: Dict) -> None:
+    def _merge_worker(self, outcome: dict) -> None:
         self.web_facts.extend(outcome.pop("web_facts", []))
         for finding in outcome.pop("findings", []):
             self._add(finding)
@@ -433,11 +432,11 @@ class AnalysisMixin(ScannerBase):
             self.engine_stats[engine] = self.engine_stats.get(engine, 0) + amount
         self.inline_ignored += outcome.pop("inline_ignored", 0)
 
-    def _stage_analyze(self, files: List[FileInfo], tree: StructureTree, stats: Dict) -> None:
+    def _stage_analyze(self, files: list[FileInfo], tree: StructureTree, stats: dict) -> None:
         total = len(files)
-        batch: List[str] = []
+        batch: list[str] = []
         last_emit = time.time()
-        languages: Dict[str, Dict[str, int]] = {}
+        languages: dict[str, dict[str, int]] = {}
         for index, outcome in enumerate(self._outcomes(files, self._worker_count(total)), 1):
             self._check_cancel()
             skip = outcome["skip"]

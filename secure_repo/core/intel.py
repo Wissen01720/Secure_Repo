@@ -14,7 +14,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import netio
 from secure_repo.core.events import EventBus
@@ -31,7 +30,7 @@ USER_AGENT = netio.USER_AGENT
 PACKAGE_DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "packages.json")
 
 
-def load_package_data(path: str = PACKAGE_DATA_FILE) -> Dict:
+def load_package_data(path: str = PACKAGE_DATA_FILE) -> dict:
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -39,10 +38,10 @@ def load_package_data(path: str = PACKAGE_DATA_FILE) -> Dict:
 # Fallback lists (the OSV malicious-package advisories, MAL-*, take precedence): see data/packages.json for the
 # source and date of every entry.
 PACKAGE_DATA = load_package_data()
-COMPROMISED: Dict[str, Dict[str, set]] = {
+COMPROMISED: dict[str, dict[str, set]] = {
     ecosystem: {name: set(entry.get("versions", [])) for name, entry in names.items()}
     for ecosystem, names in PACKAGE_DATA["compromised"].items()}
-DEPRECATED: Dict[str, Dict[str, str]] = {
+DEPRECATED: dict[str, dict[str, str]] = {
     ecosystem: {name: entry["hint"] for name, entry in names.items()}
     for ecosystem, names in PACKAGE_DATA["deprecated"].items()}
 MAX_OSV_PAGES = 10
@@ -50,7 +49,7 @@ OSV_CHUNK = 500
 COPYLEFT_RE = re.compile(r"(?i)\b(?:A?GPL|LGPL|SSPL|EUPL|OSL|CC-BY-SA|CPAL|RPL|MS-RL|Commons-Clause|BUSL)")
 
 
-def _http_json(url: str, payload: Optional[Dict] = None, timeout: int = 20, cache: bool = False):
+def _http_json(url: str, payload: dict | None = None, timeout: int = 20, cache: bool = False):
     """JSON over HTTPS with size limits, retries, disk cache and CA selection (see core/netio.py)."""
     return netio.http_json(url, payload, timeout=timeout, cache=cache)
 
@@ -62,7 +61,7 @@ def _roundup(value: float) -> float:
     return (math.floor(integer / 10000) + 1) / 10.0
 
 
-def cvss3_score(vector: str) -> Optional[float]:
+def cvss3_score(vector: str) -> float | None:
     try:
         metrics = dict(part.split(":", 1) for part in vector.split("/")[1:])
         av = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}[metrics["AV"]]
@@ -83,7 +82,7 @@ def cvss3_score(vector: str) -> Optional[float]:
     return _roundup(min(impact + exploitability, 10))
 
 
-def score_to_severity(score: Optional[float]) -> str:
+def score_to_severity(score: float | None) -> str:
     if score is None:
         return "medium"
     if score >= 9.0:
@@ -100,7 +99,7 @@ def score_to_severity(score: Optional[float]) -> str:
 _LABEL_SEVERITY = {"CRITICAL": "critical", "HIGH": "high", "MODERATE": "medium", "MEDIUM": "medium", "LOW": "low"}
 
 
-def normalize_vulnerability(raw: Dict, package: str) -> Dict:
+def normalize_vulnerability(raw: dict, package: str) -> dict:
     vuln_id = raw.get("id", "")
     aliases = raw.get("aliases", []) or []
     score, vector = None, ""
@@ -111,7 +110,7 @@ def normalize_vulnerability(raw: Dict, package: str) -> Dict:
         elif entry.get("type") == "CVSS_V4" and not vector:
             vector = entry.get("score", "")
     label = (raw.get("database_specific") or {}).get("severity")
-    fixed: List[str] = []
+    fixed: list[str] = []
     for affected in raw.get("affected", []) or []:
         pkg = (affected.get("package") or {}).get("name", "")
         if pkg.lower() != package.lower():
@@ -138,17 +137,17 @@ def normalize_vulnerability(raw: Dict, package: str) -> Dict:
     }
 
 
-def _osv_query(keys: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], List[str]]:
+def _osv_query(keys: list[tuple[str, str, str]]) -> dict[tuple[str, str, str], list[str]]:
     """Advisory IDs of every (ecosystem, name, version), following OSV's ``next_page_token`` pagination.
 
     A batch that keeps failing (after the retries of netio) is recorded as a note and the other batches carry on;
     only when *every* batch fails is the error raised, so the caller can report that the intelligence is missing.
     """
-    found: Dict[Tuple[str, str, str], List[str]] = {}
+    found: dict[tuple[str, str, str], list[str]] = {}
     failed, first_error, truncated = 0, None, 0
     chunks = [keys[start:start + OSV_CHUNK] for start in range(0, len(keys), OSV_CHUNK)]
     for number, chunk in enumerate(chunks, 1):
-        pending: List[Tuple[Tuple[str, str, str], Optional[str]]] = [(key, None) for key in chunk]
+        pending: list[tuple[tuple[str, str, str], str | None]] = [(key, None) for key in chunk]
         pages = 0
         try:
             while pending and pages < MAX_OSV_PAGES:
@@ -159,8 +158,8 @@ def _osv_query(keys: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], L
                         query["page_token"] = token
                     queries.append(query)
                 response = _http_json(OSV_BATCH_URL, {"queries": queries}, timeout=60)
-                following: List[Tuple[Tuple[str, str, str], Optional[str]]] = []
-                for (key, _token), result in zip(pending, response.get("results", [])):
+                following: list[tuple[tuple[str, str, str], str | None]] = []
+                for (key, _token), result in zip(pending, response.get("results", []), strict=False):
                     result = result or {}
                     for vuln in result.get("vulns", []) or []:
                         ids = found.setdefault(key, [])
@@ -183,9 +182,9 @@ def _osv_query(keys: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], L
     return found
 
 
-def osv_lookup(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Tuple[int, int]:
+def osv_lookup(deps: list[Dependency], bus: EventBus, workers: int = 8) -> tuple[int, int]:
     """Attach OSV advisories to dependencies. Returns (queried, vulnerable)."""
-    candidates: Dict[Tuple[str, str, str], List[Dependency]] = {}
+    candidates: dict[tuple[str, str, str], list[Dependency]] = {}
     for dep in deps:
         if dep.version and dep.source == "registry" and dep.ecosystem in OSV_ECOSYSTEMS and not dep.private:
             candidates.setdefault((dep.ecosystem, dep.name, dep.version), []).append(dep)
@@ -198,7 +197,7 @@ def osv_lookup(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Tuple
     bus.progress("intel", len(keys), len(keys), "OSV batch query")
     unique_ids = sorted({vid for ids in ids_per_key.values() for vid in ids})
     bus.log(f"{len(unique_ids)} advisories matched - downloading details")
-    details: Dict[str, Dict] = {}
+    details: dict[str, dict] = {}
 
     def fetch(vuln_id: str):
         try:
@@ -228,12 +227,12 @@ def osv_lookup(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Tuple
     return len(keys), vulnerable
 
 
-def osv_vulnerability_ids(keys: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], List[str]]:
+def osv_vulnerability_ids(keys: list[tuple[str, str, str]]) -> dict[tuple[str, str, str], list[str]]:
     """Advisory IDs affecting each (ecosystem, name, version) - no details downloaded."""
     return _osv_query([k for k in keys if k[0] in OSV_ECOSYSTEMS])
 
 
-def depsdev_enrich(deps: List[Dependency], bus: EventBus, limit: int = 250, workers: int = 12) -> int:
+def depsdev_enrich(deps: list[Dependency], bus: EventBus, limit: int = 250, workers: int = 12) -> int:
     """Fetch license and latest-version metadata for direct dependencies."""
     eligible = [d for d in deps if d.direct and d.source == "registry" and d.ecosystem in DEPSDEV_SYSTEMS
                 and not d.private]
@@ -269,7 +268,7 @@ def depsdev_enrich(deps: List[Dependency], bus: EventBus, limit: int = 250, work
     return done
 
 
-def exists_publicly(dep: Dependency) -> Optional[bool]:
+def exists_publicly(dep: Dependency) -> bool | None:
     """Does a package with this name exist in the public registry? (None = could not tell). Sends the name."""
     system = DEPSDEV_SYSTEMS.get(dep.ecosystem)
     if not system:
@@ -284,14 +283,14 @@ def exists_publicly(dep: Dependency) -> Optional[bool]:
         return None
 
 
-def major(version: Optional[str]) -> Optional[int]:
+def major(version: str | None) -> int | None:
     if not version:
         return None
     match = re.match(r"^v?(\d+)", version)
     return int(match.group(1)) if match else None
 
 
-def known_bad(dep: Dependency) -> Optional[Tuple[str, str]]:
+def known_bad(dep: Dependency) -> tuple[str, str] | None:
     """Return (rule_id, detail) for compromised or deprecated packages."""
     name = dep.name.lower()
     versions = COMPROMISED.get(dep.ecosystem, {}).get(name)

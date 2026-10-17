@@ -22,7 +22,6 @@ import re
 import urllib.error
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import netio
 from secure_repo.core import versions as vmod
@@ -49,8 +48,8 @@ LOCK_COMMANDS = {
 
 
 # ---------------------------------------------------------------------- environment
-def _python_environment(root: str) -> Dict[str, str]:
-    installed: Dict[str, str] = {}
+def _python_environment(root: str) -> dict[str, str]:
+    installed: dict[str, str] = {}
     for env in (".venv", "venv", "env", ".env", ".tox"):
         base = os.path.join(root, env)
         if not os.path.isdir(base):
@@ -72,14 +71,14 @@ def _read_json(path: str):
         return None
 
 
-def _composer_environment(directory: str) -> Dict[str, str]:
+def _composer_environment(directory: str) -> dict[str, str]:
     data = _read_json(os.path.join(directory, "vendor", "composer", "installed.json"))
     packages = data.get("packages", []) if isinstance(data, dict) else (data or [])
     return {p["name"].lower(): str(p.get("version", "")).lstrip("v") for p in packages if isinstance(p, dict) and p.get("name")}
 
 
-def _gem_environment(directory: str) -> Dict[str, str]:
-    installed: Dict[str, str] = {}
+def _gem_environment(directory: str) -> dict[str, str]:
+    installed: dict[str, str] = {}
     for spec in glob.glob(os.path.join(directory, "vendor", "bundle", "ruby", "*", "specifications", "*.gemspec")):
         name, _, version = os.path.basename(spec)[:-len(".gemspec")].rpartition("-")
         if name:
@@ -87,9 +86,9 @@ def _gem_environment(directory: str) -> Dict[str, str]:
     return installed
 
 
-def resolve_from_environment(deps: List[Dependency], root: str) -> int:
-    python_env: Optional[Dict[str, str]] = None
-    cache: Dict[Tuple[str, str], Dict[str, str]] = {}
+def resolve_from_environment(deps: list[Dependency], root: str) -> int:
+    python_env: dict[str, str] | None = None
+    cache: dict[tuple[str, str], dict[str, str]] = {}
     count = 0
     for dep in deps:
         if dep.version or dep.source != "registry":
@@ -116,7 +115,7 @@ def resolve_from_environment(deps: List[Dependency], root: str) -> int:
 
 
 # ---------------------------------------------------------------------- registry
-def registry_versions(ecosystem: str, name: str) -> List[str]:
+def registry_versions(ecosystem: str, name: str) -> list[str]:
     if ecosystem in DEPSDEV_SYSTEMS:
         lookup = normalize_name("PyPI", name) if ecosystem == "PyPI" else name
         data = _http_json(DEPSDEV_URL + DEPSDEV_SYSTEMS[ecosystem] + "/packages/" + urllib.parse.quote(lookup, safe=""),
@@ -141,7 +140,7 @@ def _spec_for_resolution(dep: Dependency) -> str:
     return spec or "*"
 
 
-def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 12, limit: int = MAX_REGISTRY) -> int:
+def resolve_from_registry(deps: list[Dependency], bus: EventBus, workers: int = 12, limit: int = MAX_REGISTRY) -> int:
     eligible = [d for d in deps if not d.version and d.source == "registry" and d.direct and d.spec != "managed"
                 and not d.private]
     targets = eligible[:limit]
@@ -172,7 +171,7 @@ def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 
     return resolved
 
 
-def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit: int = MAX_GRAPH) -> List[Dependency]:
+def resolve_graph(deps: list[Dependency], bus: EventBus, workers: int = 8, limit: int = MAX_GRAPH) -> list[Dependency]:
     """Expand transitive dependencies of registry-resolved direct libraries (no lockfile available)."""
     eligible = [d for d in deps if d.direct and d.version and d.resolved_by in ("registry", "environment", "manifest")
                 and not d.locked and d.ecosystem in GRAPH_SYSTEMS and not d.private]
@@ -185,7 +184,7 @@ def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit
         return []
     bus.log(f"Building the virtual dependency graph for {len(roots)} direct librar{'y' if len(roots) == 1 else 'ies'}")
 
-    def work(dep: Dependency) -> List[Tuple[str, str]]:
+    def work(dep: Dependency) -> list[tuple[str, str]]:
         name = normalize_name("PyPI", dep.name) if dep.ecosystem == "PyPI" else dep.name
         url = (DEPSDEV_URL + DEPSDEV_SYSTEMS[dep.ecosystem] + "/packages/" + urllib.parse.quote(name, safe="") +
                "/versions/" + urllib.parse.quote(dep.version or "", safe="") + ":dependencies")
@@ -203,9 +202,9 @@ def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit
         return found
 
     existing = {(d.ecosystem, normalize_name(d.ecosystem, d.name), d.version) for d in deps}
-    added: List[Dependency] = []
+    added: list[Dependency] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for index, (root, nodes) in enumerate(zip(roots, pool.map(netio.in_context(work), roots)), 1):
+        for index, (root, nodes) in enumerate(zip(roots, pool.map(netio.in_context(work), roots), strict=False), 1):
             for name, version in nodes:
                 identity = (root.ecosystem, normalize_name(root.ecosystem, name), version)
                 if identity in existing:
@@ -220,9 +219,9 @@ def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit
 
 
 # ---------------------------------------------------------------------- virtual lockfile
-def virtual_lockfile(deps: List[Dependency]) -> Dict:
+def virtual_lockfile(deps: list[Dependency]) -> dict:
     """Machine-readable lock proposal + guidance, grouped by manifest."""
-    manifests: Dict[str, Dict] = {}
+    manifests: dict[str, dict] = {}
     for dep in deps:
         if dep.resolved_by not in ("environment", "registry", "registry-graph"):
             continue
@@ -240,7 +239,7 @@ def virtual_lockfile(deps: List[Dependency]) -> Dict:
     return {"manifests": list(manifests.values()), "unresolved": unresolved}
 
 
-def pinned_snippet(entry: Dict) -> str:
+def pinned_snippet(entry: dict) -> str:
     direct = [p for p in entry["packages"] if p["direct"]]
     ecosystem = entry["ecosystem"]
     if ecosystem == "PyPI":
@@ -263,8 +262,8 @@ def pinned_snippet(entry: Dict) -> str:
     return "\n".join(f"{p['name']} {p['resolved']}" for p in direct)
 
 
-def summarize(deps: List[Dependency]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def summarize(deps: list[Dependency]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for dep in deps:
         key = dep.resolved_by or ("unresolved" if dep.source == "registry" else dep.source)
         counts[key] = counts.get(key, 0) + 1

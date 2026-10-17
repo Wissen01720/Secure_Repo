@@ -10,7 +10,7 @@ import re
 import shutil
 import zipfile
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from secure_repo.core.events import EventBus
 from secure_repo.core.models import SEVERITIES
@@ -118,7 +118,7 @@ def ensure_output_root(output_dir: str) -> str:
     return base
 
 
-def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[str],
+def _write_contents(report: dict, folder: str, tree_text: str, log_lines: list[str],
                     emit: Callable[[str], None]) -> None:
     meta = report["meta"]
 
@@ -138,7 +138,7 @@ def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[s
     for severity in SEVERITIES:
         subset = [f for f in active if f["severity"] == severity]
         out(f"findings/{severity}.md", formats.markdown_findings(report, subset, f"{severity.title()} findings"))
-    categories: Dict[str, List[Dict]] = {}
+    categories: dict[str, list[dict]] = {}
     for finding in active:
         categories.setdefault(finding["category"], []).append(finding)
     shutil.rmtree(os.path.join(folder, "findings", "by-category"), ignore_errors=True)
@@ -185,8 +185,8 @@ def _write_contents(report: Dict, folder: str, tree_text: str, log_lines: List[s
     emit("MANIFEST.sha256")
 
 
-def write_reports(report: Dict, output_dir: str, bus: Optional[EventBus] = None, tree_text: str = "",
-                  log_lines: Optional[List[str]] = None) -> str:
+def write_reports(report: dict, output_dir: str, bus: EventBus | None = None, tree_text: str = "",
+                  log_lines: list[str] | None = None) -> str:
     base = ensure_output_root(output_dir)
     meta = report["meta"]
     now = datetime.now()
@@ -206,7 +206,7 @@ def write_reports(report: Dict, output_dir: str, bus: Optional[EventBus] = None,
     return folder
 
 
-def refresh_reports(report: Dict, folder: str, log_entry: str = "") -> None:
+def refresh_reports(report: dict, folder: str, log_entry: str = "") -> None:
     """Regenerate every artifact of an existing report folder (after triage decisions)."""
     def read(rel: str) -> str:
         try:

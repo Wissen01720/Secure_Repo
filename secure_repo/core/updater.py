@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from secure_repo import __version__
 from secure_repo.core import gitops, versions
@@ -42,8 +42,8 @@ _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
 @dataclass
 class InstallInfo:
     mode: str                     # "git" or "pip"
-    root: Optional[str] = None    # clone root (git mode)
-    branch: Optional[str] = None
+    root: str | None = None    # clone root (git mode)
+    branch: str | None = None
     remote: str = ""
 
 
@@ -55,14 +55,14 @@ class UpdateInfo:
     current_commit: str = ""
     latest_commit: str = ""
     commits_behind: int = 0
-    changes: List[str] = field(default_factory=list)
+    changes: list[str] = field(default_factory=list)
     notes: str = ""
     mode: str = ""
     source: str = ""
     checked_at: float = 0.0
     error: str = ""
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return asdict(self)
 
     @property
@@ -82,9 +82,9 @@ class UpdateResult:
     deferred: bool = False
     from_version: str = __version__
     to_version: str = ""
-    log: List[str] = field(default_factory=list)
+    log: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return asdict(self)
 
 
@@ -93,7 +93,7 @@ def _state_path() -> str:
     return os.path.join(data_dir(), "update.json")
 
 
-def load_state() -> Dict:
+def load_state() -> dict:
     try:
         with open(_state_path(), encoding="utf-8") as handle:
             data = json.load(handle)
@@ -102,7 +102,7 @@ def load_state() -> Dict:
         return {}
 
 
-def save_state(data: Dict) -> None:
+def save_state(data: dict) -> None:
     path = _state_path()
     temp = path + ".tmp"
     with open(temp, "w", encoding="utf-8") as handle:
@@ -235,7 +235,7 @@ def check(force: bool = False, project_dir: str = PROJECT_DIR) -> UpdateInfo:
 
 
 # ---------------------------------------------------------------------- background check
-_background: Dict[str, object] = {}
+_background: dict[str, object] = {}
 
 
 def start_background_check(force: bool = False) -> None:
@@ -253,7 +253,7 @@ def start_background_check(force: bool = False) -> None:
     thread.start()
 
 
-def background_result(timeout: float = 0.0) -> Optional[UpdateInfo]:
+def background_result(timeout: float = 0.0) -> UpdateInfo | None:
     thread = _background.get("thread")
     if thread is None:
         return None
@@ -261,7 +261,7 @@ def background_result(timeout: float = 0.0) -> Optional[UpdateInfo]:
     return _background.get("info")  # type: ignore[return-value]
 
 
-def pop_post_update_notice() -> Optional[Dict]:
+def pop_post_update_notice() -> dict | None:
     """Return (once) the information about an update installed in a previous session."""
     state = load_state()
     notice = state.pop("just_updated", None)
@@ -271,26 +271,26 @@ def pop_post_update_notice() -> Optional[Dict]:
 
 
 # ---------------------------------------------------------------------- installation
-def _pip(args: List[str], log: Callable[[str], None]) -> subprocess.CompletedProcess:
+def _pip(args: list[str], log: Callable[[str], None]) -> subprocess.CompletedProcess:
     command = [sys.executable, "-m", "pip"] + args + ["--disable-pip-version-check"]
     log("$ python -m pip " + " ".join(args))
     return subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
                           stdin=subprocess.DEVNULL, timeout=900)
 
 
-def _record_success(state: Dict, result: UpdateResult, info: UpdateInfo) -> None:
+def _record_success(state: dict, result: UpdateResult, info: UpdateInfo) -> None:
     state["just_updated"] = {"from": result.from_version, "to": result.to_version, "changes": info.changes[:15],
                              "date": time.strftime("%Y-%m-%d %H:%M")}
     state.pop("last_check", None)
     save_state(state)
 
 
-def apply_update(info: Optional[UpdateInfo] = None, log: Callable[[str], None] = lambda _m: None,
+def apply_update(info: UpdateInfo | None = None, log: Callable[[str], None] = lambda _m: None,
                  project_dir: str = PROJECT_DIR) -> UpdateResult:
     install = detect_install(project_dir)
     info = info or check(force=True, project_dir=project_dir)
     result = UpdateResult(ok=False, message="", to_version=info.latest_version or "")
-    lines: List[str] = []
+    lines: list[str] = []
 
     def note(message: str) -> None:
         lines.append(message)

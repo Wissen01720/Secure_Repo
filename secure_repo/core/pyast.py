@@ -18,7 +18,7 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from collections.abc import Sequence
 
 # Rules produced by this engine (their regular-expression versions are skipped for Python).
 OWNED_RULES = {"SR-PY-001", "SR-PY-002", "SR-PY-003", "SR-PY-004", "SR-PY-005", "SR-PY-006", "SR-PY-008",
@@ -77,7 +77,7 @@ SETTINGS_FILE = re.compile(r"(?i)(^|/)(settings|config|conf|production|prod)[\w.
 @dataclass
 class Taint:
     origin: str
-    steps: List[Tuple[int, str]] = field(default_factory=list)
+    steps: list[tuple[int, str]] = field(default_factory=list)
 
     def extend(self, line: int, label: str) -> Taint:
         steps = self.steps + [(line, label)]
@@ -89,21 +89,21 @@ class PyFinding:
     rule_id: str
     line: int
     col: int
-    severity: Optional[str] = None
+    severity: str | None = None
     confidence: str = "high"
     detail: str = ""
     engine: str = "ast"
-    flow: List[Dict] = field(default_factory=list)
-    title: Optional[str] = None
+    flow: list[dict] = field(default_factory=list)
+    title: str | None = None
     end_line: int = 0                                   # last line of the offending expression (multi-line calls)
-    extra: Dict = field(default_factory=dict)           # signals for the confidence model
+    extra: dict = field(default_factory=dict)           # signals for the confidence model
 
 
 class _Scope:
-    def __init__(self, tainted: Optional[Dict[str, Taint]] = None, route: bool = False, name: str = ""):
-        self.tainted: Dict[str, Taint] = dict(tainted or {})
-        self.dynamic: Set[str] = set()   # names holding dynamically built strings (SQL building)
-        self.dynamic_src: Dict[str, List[ast.AST]] = {}   # ...and the expressions that built them
+    def __init__(self, tainted: dict[str, Taint] | None = None, route: bool = False, name: str = ""):
+        self.tainted: dict[str, Taint] = dict(tainted or {})
+        self.dynamic: set[str] = set()   # names holding dynamically built strings (SQL building)
+        self.dynamic_src: dict[str, list[ast.AST]] = {}   # ...and the expressions that built them
         self.route = route
         self.name = name
 
@@ -113,13 +113,13 @@ class PythonAnalyzer:
         self.text = text
         self.rel = rel_path
         self.lines = text.splitlines()
-        self.aliases: Dict[str, str] = {}
-        self.findings: List[PyFinding] = []
-        self.suppressed: Dict[str, int] = {}
-        self._seen: Set[Tuple[str, int]] = set()
+        self.aliases: dict[str, str] = {}
+        self.findings: list[PyFinding] = []
+        self.suppressed: dict[str, int] = {}
+        self._seen: set[tuple[str, int]] = set()
 
     # ------------------------------------------------------------------ public
-    def run(self) -> List[PyFinding]:
+    def run(self) -> list[PyFinding]:
         tree = ast.parse(self.text)
         self._collect_imports(tree)
         module_scope = _Scope(name="<module>")
@@ -144,7 +144,7 @@ class PythonAnalyzer:
                     self.aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
     def _qualname(self, node: ast.AST) -> str:
-        parts: List[str] = []
+        parts: list[str] = []
         while isinstance(node, ast.Attribute):
             parts.append(node.attr)
             node = node.value
@@ -159,15 +159,15 @@ class PythonAnalyzer:
     def _line_text(self, line: int) -> str:
         return self.lines[line - 1].strip() if 0 < line <= len(self.lines) else ""
 
-    def _emit(self, rule_id: str, node: ast.AST, severity: Optional[str] = None, confidence: str = "high",
-              detail: str = "", taint: Optional[Taint] = None, sink: str = "", title: Optional[str] = None,
-              extra: Optional[Dict] = None) -> None:
+    def _emit(self, rule_id: str, node: ast.AST, severity: str | None = None, confidence: str = "high",
+              detail: str = "", taint: Taint | None = None, sink: str = "", title: str | None = None,
+              extra: dict | None = None) -> None:
         line = getattr(node, "lineno", 0)
         key = (rule_id, line)
         if key in self._seen:
             return
         self._seen.add(key)
-        flow: List[Dict] = []
+        flow: list[dict] = []
         engine = "ast"
         if taint is not None:
             engine = "taint"
@@ -186,7 +186,7 @@ class PythonAnalyzer:
         self.suppressed[reason] = self.suppressed.get(reason, 0) + 1
 
     # ------------------------------------------------------------------ expressions
-    def _is_source(self, node: ast.AST) -> Optional[str]:
+    def _is_source(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Attribute):
             root = node.value
             if isinstance(root, ast.Name) and root.id in REQUEST_ROOTS and node.attr in SOURCE_ATTRS:
@@ -200,7 +200,7 @@ class PythonAnalyzer:
             return "input()"
         return None
 
-    def taint(self, node: Optional[ast.AST], scope: _Scope) -> Optional[Taint]:
+    def taint(self, node: ast.AST | None, scope: _Scope) -> Taint | None:
         if node is None:
             return None
         source = self._is_source(node)
@@ -261,7 +261,7 @@ class PythonAnalyzer:
         return None
 
     @staticmethod
-    def is_constant(node: Optional[ast.AST]) -> bool:
+    def is_constant(node: ast.AST | None) -> bool:
         if node is None:
             return True
         if isinstance(node, ast.Constant):
@@ -274,7 +274,7 @@ class PythonAnalyzer:
             return all(PythonAnalyzer.is_constant(e) for e in node.elts)
         return False
 
-    def is_dynamic_string(self, node: Optional[ast.AST], scope: _Scope) -> bool:
+    def is_dynamic_string(self, node: ast.AST | None, scope: _Scope) -> bool:
         if node is None:
             return False
         if isinstance(node, ast.JoinedStr):
@@ -298,7 +298,7 @@ class PythonAnalyzer:
     _QUOTERS = {"qn", "quote_name", "quote_ident", "quote_identifier", "escape_identifier", "identifier"}
     _NUMERIC = {"len", "int", "float", "range", "bool", "abs", "min", "max", "round", "sum", "enumerate"}
 
-    def _leaves(self, node: ast.AST, scope: _Scope, depth: int = 0) -> List[ast.AST]:
+    def _leaves(self, node: ast.AST, scope: _Scope, depth: int = 0) -> list[ast.AST]:
         """The non-constant expressions that end up inside a dynamically built string."""
         if depth > 6 or isinstance(node, ast.Constant):
             return []
@@ -361,18 +361,18 @@ class PythonAnalyzer:
         return (isinstance(node, ast.Constant) and isinstance(node.value, str)) or isinstance(node, ast.JoinedStr)
 
     @staticmethod
-    def _kw(call: ast.Call, name: str) -> Optional[ast.AST]:
+    def _kw(call: ast.Call, name: str) -> ast.AST | None:
         for keyword in call.keywords:
             if keyword.arg == name:
                 return keyword.value
         return None
 
     @staticmethod
-    def _is_true(node: Optional[ast.AST]) -> bool:
+    def _is_true(node: ast.AST | None) -> bool:
         return isinstance(node, ast.Constant) and node.value is True
 
     @staticmethod
-    def _is_false(node: Optional[ast.AST]) -> bool:
+    def _is_false(node: ast.AST | None) -> bool:
         return isinstance(node, ast.Constant) and node.value is False
 
     # ------------------------------------------------------------------ statements
@@ -383,11 +383,11 @@ class PythonAnalyzer:
             name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
             if name in ROUTE_DECORATORS:
                 route = True
-        tainted: Dict[str, Taint] = {}
+        tainted: dict[str, Taint] = {}
         if route:
             args = node.args
             defaults = [None] * (len(args.args) - len(args.defaults)) + list(args.defaults)
-            for arg, default in zip(args.args, defaults):
+            for arg, default in zip(args.args, defaults, strict=False):
                 if arg.arg in ("self", "cls", "request", "db", "session", "background_tasks", "response"):
                     continue
                 if isinstance(default, ast.Call) and self._qualname(default.func).endswith("Depends"):
@@ -401,11 +401,11 @@ class PythonAnalyzer:
         for statement in statements:
             self._statement(statement, scope)
 
-    def _assign_names(self, target: ast.AST) -> List[str]:
+    def _assign_names(self, target: ast.AST) -> list[str]:
         if isinstance(target, ast.Name):
             return [target.id]
         if isinstance(target, (ast.Tuple, ast.List)):
-            names: List[str] = []
+            names: list[str] = []
             for element in target.elts:
                 names.extend(self._assign_names(element))
             return names
@@ -490,14 +490,14 @@ class PythonAnalyzer:
             if isinstance(child, ast.expr):
                 self._scan_calls(child, scope)
 
-    def _settings_checks(self, stmt: ast.stmt, names: List[str]) -> None:
+    def _settings_checks(self, stmt: ast.stmt, names: list[str]) -> None:
         value = getattr(stmt, "value", None)
         if "DEBUG" in names and self._is_true(value) and SETTINGS_FILE.search(self.rel):
             self._emit("SR-PY-010", stmt, confidence="medium",
                        detail="DEBUG is hardcoded to True in a settings module.")
 
     # ------------------------------------------------------------------ sinks
-    def _scan_calls(self, node: Optional[ast.AST], scope: _Scope, context: str = "") -> None:
+    def _scan_calls(self, node: ast.AST | None, scope: _Scope, context: str = "") -> None:
         if node is None:
             return
         for call in ast.walk(node):
@@ -506,7 +506,7 @@ class PythonAnalyzer:
             elif isinstance(call, ast.keyword) and call.arg == "autoescape" and self._is_false(call.value):
                 self._emit("SR-PY-013", call.value, detail="Template auto-escaping is explicitly disabled.")
 
-    def _first_arg(self, call: ast.Call, index: int = 0, keyword: Optional[str] = None) -> Optional[ast.AST]:
+    def _first_arg(self, call: ast.Call, index: int = 0, keyword: str | None = None) -> ast.AST | None:
         if len(call.args) > index:
             return call.args[index]
         return self._kw(call, keyword) if keyword else None
@@ -675,7 +675,7 @@ class PythonAnalyzer:
             return
 
 
-def analyze_python(text: str, rel_path: str) -> Tuple[List[PyFinding], Dict[str, int]]:
+def analyze_python(text: str, rel_path: str) -> tuple[list[PyFinding], dict[str, int]]:
     """Run the analyzer. Raises SyntaxError when the file cannot be parsed (caller falls back to patterns)."""
     analyzer = PythonAnalyzer(text, rel_path)
     return analyzer.run(), analyzer.suppressed

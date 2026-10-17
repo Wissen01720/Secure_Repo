@@ -9,12 +9,12 @@ mitigation that the rule itself recommends.
 from __future__ import annotations
 
 import re
-from typing import Callable, Dict, Set
+from collections.abc import Callable
 
 _SCRIPT_KEY = re.compile(r"^(?P<indent>\s*)(?:-\s+)?(?P<key>run|script)\s*:(?P<value>.*)$")
 
 
-def ci_script_lines(text: str) -> Set[int]:
+def ci_script_lines(text: str) -> set[int]:
     """1-based numbers of the lines that belong to the value of a ``run:`` or ``script:`` key.
 
     Handles the inline form (``run: echo ...``), block scalars (``run: |`` / ``>``) and plain scalars continued on
@@ -22,7 +22,7 @@ def ci_script_lines(text: str) -> Set[int]:
     deeper than its key.
     """
     lines = text.split("\n")
-    inside: Set[int] = set()
+    inside: set[int] = set()
     index = 0
     while index < len(lines):
         match = _SCRIPT_KEY.match(lines[index])
@@ -47,9 +47,9 @@ def ci_script_lines(text: str) -> Set[int]:
 _PRE_CODE_OPEN = re.compile(r"<(pre|code)\b[^>]*>", re.I)
 
 
-def markup_example_lines(text: str) -> Set[int]:
+def markup_example_lines(text: str) -> set[int]:
     """1-based numbers of the lines inside ``<pre>`` / ``<code>`` blocks (documentation examples in HTML)."""
-    inside: Set[int] = set()
+    inside: set[int] = set()
     for match in _PRE_CODE_OPEN.finditer(text):
         closing = re.compile(r"</" + match.group(1) + r"\s*>", re.I).search(text, match.end())
         end = closing.start() if closing else match.end()
@@ -59,6 +59,6 @@ def markup_example_lines(text: str) -> Set[int]:
     return inside
 
 
-REGIONS: Dict[str, Callable[[str], Set[int]]] = {
+REGIONS: dict[str, Callable[[str], set[int]]] = {
     "ci-scripts": ci_script_lines,
 }

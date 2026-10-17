@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Optional, Tuple
 
 from rich import box
 from rich.panel import Panel
@@ -24,14 +23,14 @@ STATUS_STYLE = {"open": "white", "confirmed": f"bold {MAGENTA}", "accepted_risk"
                 "disabled_by_config": "grey50", "suppressed_inline": "grey50"}
 
 
-def _load_report(path: str) -> Tuple[Dict, str]:
+def _load_report(path: str) -> tuple[dict, str]:
     folder = path if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
     with open(os.path.join(folder, "report.json"), encoding="utf-8") as handle:
         return json.load(handle), folder
 
 
 # ---------------------------------------------------------------------- interactive triage
-def interactive_triage(report: Dict, report_dir: Optional[str]) -> None:
+def interactive_triage(report: dict, report_dir: str | None) -> None:
     """Loop used by the post-scan menu: mark findings and watch the score/report update."""
     knowledge = KnowledgeBase()
     section("TRIAGE - TEACH SECURE REPO", NEON)

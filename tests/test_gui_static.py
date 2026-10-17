@@ -7,7 +7,7 @@ STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 # Operands that are known to return safe markup or plain numbers.
 SAFE_CALLS = ("esc(", "SR.esc(", "SR.sevTag(", "SR.num(", "SR.bytes(", "SR.clock(", "SR.trunc(",
-              "ring(", "vulnTable(", "refsHTML(")      # the last three build markup and are checked as well (return '<...)
+              "ring(", "vulnTable(", "refsHTML(", "A.ring(", "A.vulnTable(", "A.refsHTML(")      # the last three build markup and are checked as well (return '<...)
 SAFE_NAMES = {"html", "risk", "adv"}   # accumulators / locals whose own assignments are checked by this test
 ARROW_MAP = re.compile(r".+?\.map\(\s*\(?[\w, ]*\)?\s*=>\s*(.+)\)\.join\([^)]*\)", re.DOTALL)
 STRING_LITERAL = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")

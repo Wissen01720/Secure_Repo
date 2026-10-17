@@ -8,7 +8,6 @@ generated code) and - the learning part - the triage history of the rule in your
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional
 
 BASE = {"high": 80, "medium": 60, "low": 40}
 LEVELS = (("high", 70), ("medium", 45), ("low", 0))
@@ -28,7 +27,7 @@ def label(score: int) -> str:
     return next(name for name, threshold in LEVELS if score >= threshold)
 
 
-def assess(finding: Dict, knowledge=None) -> None:
+def assess(finding: dict, knowledge=None) -> None:
     score = BASE.get(finding.get("confidence", "medium"), 60)
     reasons = []
     bonus = ENGINE_BONUS.get(finding.get("engine", "pattern"))
@@ -72,7 +71,7 @@ def assess(finding: Dict, knowledge=None) -> None:
     finding.setdefault("extra", {})["confidence_reasons"] = reasons
 
 
-def meets(finding: Dict, minimum: Optional[str]) -> bool:
+def meets(finding: dict, minimum: str | None) -> bool:
     if not minimum or minimum == "low":
         return True
     order = {"low": 0, "medium": 1, "high": 2}

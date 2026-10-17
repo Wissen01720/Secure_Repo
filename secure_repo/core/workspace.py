@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from secure_repo.core import gitops
 from secure_repo.core.events import EventBus
@@ -15,12 +14,12 @@ from secure_repo.core.events import EventBus
 class Target:
     kind: str  # "remote" or "local"
     location: str
-    branch: Optional[str] = None
+    branch: str | None = None
     # Access token for private repositories - memory only, never serialized or printed.
-    credentials: Optional[gitops.GitCredentials] = field(default=None, repr=False, compare=False)
+    credentials: gitops.GitCredentials | None = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def parse(cls, value: Optional[str], branch: Optional[str] = None) -> Target:
+    def parse(cls, value: str | None, branch: str | None = None) -> Target:
         value = (value or ".").strip()
         if gitops.is_git_url(value):
             clean, credentials = gitops.split_credentials(value)
@@ -33,13 +32,13 @@ class Workspace:
     path: str
     name: str
     target: Target
-    branch: Optional[str]
+    branch: str | None
     commit: str
     mode: str
-    repo_root: Optional[str] = None
+    repo_root: str | None = None
     remote: str = ""
-    temp_dir: Optional[str] = None
-    notes: List[str] = field(default_factory=list)
+    temp_dir: str | None = None
+    notes: list[str] = field(default_factory=list)
 
     def cleanup(self) -> None:
         if self.temp_dir:
@@ -47,7 +46,7 @@ class Workspace:
             self.temp_dir = None
 
 
-def discover_branches(target: Target, interactive: bool = False) -> List[gitops.Branch]:
+def discover_branches(target: Target, interactive: bool = False) -> list[gitops.Branch]:
     """List branches for a target; an empty list means 'not a git repository'."""
     if target.kind == "remote":
         return gitops.list_remote_branches(target.location, interactive=interactive, credentials=target.credentials)

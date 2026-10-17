@@ -8,7 +8,6 @@ the comment-free source and look at the whole option object.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
 
 RULE_COOKIE_FLAGS = "SR-JS-027"
 RULE_EXPRESS_CSRF = "SR-JS-028"
@@ -22,7 +21,7 @@ _SECURE_SET = re.compile(r"\bsecure\s*:\s*(?!false\b)\S")
 _SAMESITE_NONE = re.compile(r"\bsameSite\s*:\s*['\"]none['\"]", re.I)
 
 
-def _block(text: str, brace: int) -> Optional[Tuple[int, int]]:
+def _block(text: str, brace: int) -> tuple[int, int] | None:
     """(start, end) of the {...} block whose opening brace is at ``brace``; strings are skipped."""
     depth, quote, i = 0, None, brace
     while i < len(text):
@@ -44,10 +43,10 @@ def _block(text: str, brace: int) -> Optional[Tuple[int, int]]:
     return None
 
 
-def cookie_flag_issues(text: str) -> List[Tuple[int, str]]:
+def cookie_flag_issues(text: str) -> list[tuple[int, str]]:
     """(offset, detail) for every session / cookie configuration with weak flags."""
-    issues: List[Tuple[int, str]] = []
-    covered: List[Tuple[int, int]] = []
+    issues: list[tuple[int, str]] = []
+    covered: list[tuple[int, int]] = []
 
     for call in _SESSION_CALL.finditer(text):
         span = _block(text, call.end() - 1)
@@ -96,14 +95,14 @@ _STATE_CHANGING = re.compile(r"\b(?:app|router|server)\.(?:post|put|patch|delete
 _CSRF_MARKERS = re.compile(r"(?i)csurf|csrf|xsrf|lusca|doublecsrf|crumb")
 
 
-def express_facts(text: str) -> Dict:
+def express_facts(text: str) -> dict:
     """What one JavaScript file says about the CSRF posture of an Express application (see express_csrf_findings)."""
     session = _SESSION_USE.search(text)
     return {"express": bool(_EXPRESS.search(text)), "session_offset": session.start() if session else -1,
             "state_routes": _STATE_CHANGING.search(text) is not None, "csrf": _CSRF_MARKERS.search(text) is not None}
 
 
-def express_csrf_findings(facts: List[Dict]) -> List[Dict]:
+def express_csrf_findings(facts: list[dict]) -> list[dict]:
     """Project-level: cookie sessions + state-changing routes, and no CSRF middleware in any file.
 
     The session setup, the routes and the middleware usually live in different files, so the verdict needs every
@@ -123,7 +122,7 @@ def express_csrf_findings(facts: List[Dict]) -> List[Dict]:
 _DJANGO_MIDDLEWARE = re.compile(r"(?m)^\s*(MIDDLEWARE(?:_CLASSES)?)\s*=\s*[\[(]")
 
 
-def django_csrf_issues(text: str) -> List[Tuple[int, str]]:
+def django_csrf_issues(text: str) -> list[tuple[int, str]]:
     """A Django MIDDLEWARE list that has sessions but no CsrfViewMiddleware."""
     match = _DJANGO_MIDDLEWARE.search(text)
     if match is None or "django" not in text.lower():

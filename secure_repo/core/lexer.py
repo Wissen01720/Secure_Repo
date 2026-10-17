@@ -15,7 +15,6 @@ comments, docstrings and messages - including multi-line ones - without losing p
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
 
 C_LIKE = {"Java", "Kotlin", "Scala", "Groovy", "Gradle", "C#", "C", "C++", "Objective-C", "Go", "Rust", "Swift",
           "Dart", "Solidity", "F#"}
@@ -69,7 +68,7 @@ _INTERPOLATION = {
 }
 
 
-def family(language: str) -> Optional[str]:
+def family(language: str) -> str | None:
     if language in JS_LIKE:
         return "js"
     if language == "Python":
@@ -93,7 +92,7 @@ _PATTERNS = {"js": _JS_PATTERN, "python": _PY_PATTERN, "ruby": _RUBY_PATTERN, "p
              "go": _GO_PATTERN, "rust": _RUST_PATTERN, "c": _C_PATTERN, "html": _HTML_PATTERN}
 
 
-def _blank(chars: List[str], start: int, end: int, keep: Optional[List[Tuple[int, int]]] = None) -> None:
+def _blank(chars: list[str], start: int, end: int, keep: list[tuple[int, int]] | None = None) -> None:
     keep = keep or []
     for index in range(start, end):
         if chars[index] == "\n":
@@ -103,7 +102,7 @@ def _blank(chars: List[str], start: int, end: int, keep: Optional[List[Tuple[int
         chars[index] = " "
 
 
-def _string_interior(text: str, start: int, end: int) -> Tuple[int, int]:
+def _string_interior(text: str, start: int, end: int) -> tuple[int, int]:
     """Return the span between the opening and closing delimiters of a string literal."""
     segment = text[start:end]
     prefix = len(segment) - len(segment.lstrip("rRbBuUfF@$"))
@@ -116,7 +115,7 @@ def _string_interior(text: str, start: int, end: int) -> Tuple[int, int]:
     return start, end
 
 
-def mask(text: str, language: str) -> Optional[Dict[str, str]]:
+def mask(text: str, language: str) -> dict[str, str] | None:
     """Return {'code': ..., 'no_comments': ...} or None when the language is not masked."""
     fam = family(language)
     if fam is None:
@@ -132,7 +131,7 @@ def mask(text: str, language: str) -> Optional[Dict[str, str]]:
             _blank(no_comments, start, end)
             continue
         inner_start, inner_end = _string_interior(text, start, end)
-        keep: List[Tuple[int, int]] = []
+        keep: list[tuple[int, int]] = []
         if kind == "tpl":
             keep = [(m.start(), m.end()) for m in _INTERPOLATION["tpl"].finditer(text, inner_start, inner_end)]
         elif fam == "ruby" and kind == "dq":
@@ -141,7 +140,7 @@ def mask(text: str, language: str) -> Optional[Dict[str, str]]:
     return {"code": "".join(code), "no_comments": "".join(no_comments)}
 
 
-def string_spans(text: str, language: str) -> List[Tuple[int, int]]:
+def string_spans(text: str, language: str) -> list[tuple[int, int]]:
     """Spans (start, end) of string literal interiors - used to test whether a match is inside a string."""
     fam = family(language)
     if fam is None:

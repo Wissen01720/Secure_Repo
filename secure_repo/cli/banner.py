@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import List, Sequence, Tuple
+from collections.abc import Sequence
 
 from rich.align import Align
 from rich.live import Live
@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from secure_repo import __author__, __version__
-from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, VIOLET, console
+from secure_repo.cli.theme import CYAN, DIM, MAGENTA, NEON, PLAIN_TITLES, VIOLET, console, is_plain
 
 GLYPHS = {
     "S": ["███████╗", "██╔════╝", "███████╗", "╚════██║", "███████║", "╚══════╝"],
@@ -86,7 +86,7 @@ TAGLINES = [
 ]
 
 
-def banner_lines(width: int) -> List[str]:
+def banner_lines(width: int) -> list[str]:
     word = "SECURE REPO"
     rows = ["".join(GLYPHS[ch][row] for ch in word) for row in range(6)]
     if width >= len(rows[0]) + 4:
@@ -153,6 +153,11 @@ def art_panel(art: Sequence[str], color: str = CYAN) -> Text:
 
 
 def show_banner(animate: bool = True) -> None:
+    if is_plain():
+        console.print()
+        console.print(Text(f"Secure Repo {__version__}", style="bold white") +
+                      Text(" - repository security auditor (read-only, authorized use)", style=DIM))
+        return
     console.print()
     if animate:
         matrix_rain()
@@ -176,9 +181,10 @@ def show_banner(animate: bool = True) -> None:
     console.print(info)
 
 
-def boot_sequence(checks: List[Tuple[str, str, str]], animate: bool = True) -> None:
+def boot_sequence(checks: list[tuple[str, str, str]], animate: bool = True) -> None:
     """Print '[ OK ] name ....... value' lines, optionally with a small delay."""
     width = 44
+    animate = animate and not is_plain()
     for status, name, value in checks:
         label = {"ok": ("[  OK  ]", NEON), "warn": ("[ WARN ]", "#ffd23f"), "fail": ("[ FAIL ]", "#ff2e63"),
                  "info": ("[ INFO ]", CYAN)}[status]
@@ -195,10 +201,16 @@ def boot_sequence(checks: List[Tuple[str, str, str]], animate: bool = True) -> N
 
 def section(title: str, color: str = NEON) -> None:
     console.print()
+    if is_plain():
+        console.rule(Text(PLAIN_TITLES.get(title, title).title(), style="bold white"), style="grey30", characters="─")
+        return
     console.rule(Text(f"⟦ {title} ⟧", style=f"bold {color}"), style="grey30", characters="─")
 
 
 def big_status(ok: bool, text: str) -> None:
+    if is_plain():
+        console.print(Text(text.replace("\n", " - "), style=f"bold {NEON if ok else '#ff2e63'}"))
+        return
     art = ART_SHIELD if ok else ART_SKULL
     color = NEON if ok else "#ff2e63"
     grid = Table.grid(padding=(0, 3))

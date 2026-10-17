@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import getpass
-from typing import Dict, List, Optional
 
 from secure_repo.core import summary as summarymod
 from secure_repo.core.models import TRIAGE_STATUSES
@@ -16,7 +15,7 @@ SCOPES = {
 }
 
 
-def _author(author: Optional[str]) -> str:
+def _author(author: str | None) -> str:
     """Who took the decision: explicit name, else the Git identity, else the OS account."""
     if author:
         return author
@@ -35,8 +34,8 @@ def _author(author: Optional[str]) -> str:
         return ""
 
 
-def triage(report: Dict, finding_ids: List[str], status: str, reason: str = "", scope: str = "finding",
-           author: str = "", knowledge: Optional[KnowledgeBase] = None, report_dir: Optional[str] = None) -> Dict:
+def triage(report: dict, finding_ids: list[str], status: str, reason: str = "", scope: str = "finding",
+           author: str = "", knowledge: KnowledgeBase | None = None, report_dir: str | None = None) -> dict:
     """Record a decision for one or more findings, re-apply learning and refresh the report in place."""
     if status not in TRIAGE_STATUSES:
         raise ValueError(f"Unknown status '{status}'. Use: {', '.join(TRIAGE_STATUSES)}")

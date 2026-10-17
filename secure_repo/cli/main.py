@@ -6,7 +6,6 @@ import argparse
 import os
 import platform
 import sys
-from typing import List, Optional
 
 from rich import box
 from rich.table import Table
@@ -18,7 +17,7 @@ from secure_repo.cli.banner import boot_sequence, section, show_banner
 from secure_repo.cli import updates as update_views
 from secure_repo.cli.menu import (SessionState, choose_branch, confirm_authorization, discover_with_auth, main_menu,
                                   open_path, post_scan_menu, run_scan)
-from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say
+from secure_repo.cli.theme import CYAN, DIM, NEON, VIOLET, console, say, set_theme
 from secure_repo.core import compliance, gitops, triage, updater
 from secure_repo.core.models import SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES
@@ -49,6 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
                     "supply chain and optional compliance audit).")
     parser.add_argument("--version", action="version", version=f"Secure Repo {__version__} by {__author__}")
     parser.add_argument("--no-anim", dest="root_no_anim", action="store_true", help="disable terminal animations")
+    parser.add_argument("--theme", choices=("hacker", "plain"), default=None,
+                        help="'plain' removes the banner art, animations and mission-style wording "
+                             "(also: SECURE_REPO_THEME=plain)")
     parser.add_argument("--no-update-check", action="store_true",
                         help="do not check for new versions of Secure Repo (also: SECURE_REPO_NO_UPDATE_CHECK=1)")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -385,9 +387,13 @@ def cmd_frameworks() -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.theme:
+        set_theme(args.theme)
+    elif os.environ.get("SECURE_REPO_THEME"):
+        set_theme(os.environ["SECURE_REPO_THEME"].strip().lower())
     state = _state_from_args(args)
     if args.command in (None, "scan", "gui") and not args.no_update_check:
         updater.start_background_check()

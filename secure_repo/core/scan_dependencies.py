@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 import os
 import urllib.error
-from typing import Dict, List, Tuple
 
 from secure_repo.core import checks, intel, resolver
 from secure_repo.core import deps as depmod
@@ -16,10 +15,10 @@ from secure_repo.core.walker import FileInfo, read_text
 
 
 class DependencyMixin(ScannerBase):
-    def _stage_dependencies(self, files: List[FileInfo]) -> Tuple[List[Dependency], List[depmod.ParseIssue], List[str]]:
+    def _stage_dependencies(self, files: list[FileInfo]) -> tuple[list[Dependency], list[depmod.ParseIssue], list[str]]:
         manifests = [f for f in files if depmod.is_manifest(f.rel)]
-        issues: List[depmod.ParseIssue] = []
-        parsed: List[Tuple[Dependency, bool]] = []
+        issues: list[depmod.ParseIssue] = []
+        parsed: list[tuple[Dependency, bool]] = []
         for index, info in enumerate(manifests, 1):
             self._check_cancel()
             found = depmod.parser_for(info.rel)
@@ -53,7 +52,7 @@ class DependencyMixin(ScannerBase):
             self.bus.progress("dependencies", index, len(manifests), info.rel)
 
         # A requirements file where every registry dependency is pinned (==) behaves like a lockfile.
-        by_manifest: Dict[str, List[Dependency]] = {}
+        by_manifest: dict[str, list[Dependency]] = {}
         for dep, _is_lock in parsed:
             by_manifest.setdefault(dep.manifest, []).append(dep)
         pinned_requirements = {
@@ -63,15 +62,15 @@ class DependencyMixin(ScannerBase):
         }
 
         # Link lockfile versions to direct declarations.
-        lock_index: Dict[Tuple[str, str, str], List[str]] = {}
-        lock_dirs: Dict[str, set] = {}
+        lock_index: dict[tuple[str, str, str], list[str]] = {}
+        lock_dirs: dict[str, set] = {}
         for dep, is_lock in parsed:
             if is_lock or dep.manifest in pinned_requirements:
                 directory = os.path.dirname(dep.manifest)
                 lock_index.setdefault((dep.ecosystem, directory, depmod.normalize_name(dep.ecosystem, dep.name)), []).append(dep.version or "")
                 lock_dirs.setdefault(dep.ecosystem, set()).add(directory)
 
-        def ancestors(path: str) -> List[str]:
+        def ancestors(path: str) -> list[str]:
             chain, current = [], os.path.dirname(path)
             while True:
                 chain.append(current)
@@ -91,7 +90,7 @@ class DependencyMixin(ScannerBase):
                         dep.resolved_by = "lockfile"
                     break
 
-        inventory: Dict[Tuple[str, str, str], Dependency] = {}
+        inventory: dict[tuple[str, str, str], Dependency] = {}
         for dep, _is_lock in sorted(parsed, key=lambda item: item[1]):
             identity = dep.version or f"spec:{dep.spec}"
             key = (dep.ecosystem, depmod.normalize_name(dep.ecosystem, dep.name), identity)
@@ -106,7 +105,7 @@ class DependencyMixin(ScannerBase):
                 existing.locked = existing.locked or dep.locked
         return list(inventory.values()), issues, [m.rel for m in manifests]
 
-    def _mark_private(self, inventory: List[Dependency]) -> int:
+    def _mark_private(self, inventory: list[Dependency]) -> int:
         """Flag dependencies whose names must never be sent anywhere (``--private`` and ``[intel] private``)."""
         patterns = [p.lower() for p in list(self.options.private) + list(self.config.intel_private) if p]
         if not patterns:
@@ -120,7 +119,7 @@ class DependencyMixin(ScannerBase):
             self.bus.log(f"{count} private package(s) are excluded from every network lookup", "ok")
         return count
 
-    def _confusion_findings(self, inventory: List[Dependency]) -> None:
+    def _confusion_findings(self, inventory: list[Dependency]) -> None:
         """Opt-in: a private package name that also exists in the public registry invites dependency confusion."""
         rule = RULES_BY_ID["SR-DEP-010"]
         for dep in inventory:
@@ -135,7 +134,7 @@ class DependencyMixin(ScannerBase):
                                                   extra={"package": dep.name, "ecosystem": dep.ecosystem}))
                 dep.issues.append("Private name also exists in the public registry")
 
-    def _stage_resolve(self, inventory: List[Dependency], root: str) -> Dict[str, int]:
+    def _stage_resolve(self, inventory: list[Dependency], root: str) -> dict[str, int]:
         counts = {"environment": 0, "registry": 0, "graph": 0}
         if not self.options.resolve_versions or not inventory:
             return counts
@@ -152,8 +151,8 @@ class DependencyMixin(ScannerBase):
                 self.bus.log(f"Registry resolution unavailable: {getattr(exc, 'reason', exc)}", "warn")
         return counts
 
-    def _dependency_findings(self, inventory: List[Dependency], issues: List[depmod.ParseIssue]) -> None:
-        unlocked: Dict[str, List[Dependency]] = {}
+    def _dependency_findings(self, inventory: list[Dependency], issues: list[depmod.ParseIssue]) -> None:
+        unlocked: dict[str, list[Dependency]] = {}
         for dep in inventory:
             if dep.direct and not dep.locked and dep.source == "registry" and dep.resolved_by not in ("manifest", "lockfile") \
                     and dep.ecosystem not in ("Go",) and dep.spec not in ("managed",):
@@ -192,7 +191,7 @@ class DependencyMixin(ScannerBase):
                                               checks.redact_text(issue.snippet or issue.detail),
                                               detail=checks.redact_text(issue.detail)))
 
-    def _vulnerability_findings(self, inventory: List[Dependency]) -> None:
+    def _vulnerability_findings(self, inventory: list[Dependency]) -> None:
         rule = RULES_BY_ID["SR-DEP-001"]
         for dep in inventory:
             if dep.vulnerabilities:
@@ -232,7 +231,7 @@ class DependencyMixin(ScannerBase):
                         detail=f"{dep.name} is licensed under {', '.join(dep.licenses)}.",
                         title=f"License review: {dep.name}", extra={"package": dep.name, "ecosystem": dep.ecosystem}))
 
-    def _range_findings(self, inventory: List[Dependency]) -> None:
+    def _range_findings(self, inventory: list[Dependency]) -> None:
         candidates = [d for d in inventory if d.resolved_by == "registry" and d.range_lowest
                       and d.range_lowest != d.version and not d.vulnerabilities]
         if not candidates:

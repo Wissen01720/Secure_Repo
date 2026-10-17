@@ -7,14 +7,14 @@ concrete release a package manager would install, when a project has no lockfile
 from __future__ import annotations
 
 import re
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
-Key = Tuple
+Key = tuple
 _VERSION_RE = re.compile(r"^\s*[vV=]?\s*(\d+(?:\.\d+)*)(.*)$")
 _PRE_RE = re.compile(r"(?i)(a|alpha|b|beta|rc|c|pre|preview|dev|snapshot|m|milestone|canary|next|nightly)")
 
 
-def parse(version: str) -> Optional[Key]:
+def parse(version: str) -> Key | None:
     match = _VERSION_RE.match(str(version or ""))
     if not match:
         return None
@@ -30,7 +30,7 @@ def parse(version: str) -> Optional[Key]:
     return release + (1, _parts(tag))
 
 
-def _parts(tag: str) -> Tuple:
+def _parts(tag: str) -> tuple:
     items = []
     for part in re.findall(r"\d+|[A-Za-z]+", tag):
         items.append((0, int(part), "") if part.isdigit() else (1, 0, part.lower()))
@@ -42,7 +42,7 @@ def is_prerelease(version: str) -> bool:
     return bool(key) and key[6] == 1
 
 
-def _release(version: str) -> List[int]:
+def _release(version: str) -> list[int]:
     match = _VERSION_RE.match(version)
     return [int(p) for p in match.group(1).split(".")] if match else []
 
@@ -55,7 +55,7 @@ def _key_from(parts: Sequence[int]) -> Key:
 Predicate = Callable[[Key], bool]
 
 
-def _cmp(op: str, version: str) -> Optional[Predicate]:
+def _cmp(op: str, version: str) -> Predicate | None:
     target = parse(version)
     if target is None:
         return None
@@ -80,7 +80,7 @@ def _between(lower: Sequence[int], upper: Sequence[int]) -> Predicate:
     return lambda k: low <= k < high
 
 
-def _wildcard(spec: str) -> Optional[Predicate]:
+def _wildcard(spec: str) -> Predicate | None:
     parts = re.split(r"\.", spec.strip().lstrip("=v"))
     fixed = []
     for part in parts:
@@ -95,7 +95,7 @@ def _wildcard(spec: str) -> Optional[Predicate]:
     return _between(fixed, upper)
 
 
-def _caret(version: str) -> Optional[Predicate]:
+def _caret(version: str) -> Predicate | None:
     parts = _release(version)
     if not parts:
         return None
@@ -112,7 +112,7 @@ def _caret(version: str) -> Optional[Predicate]:
     return lambda k: lower_key <= k < high
 
 
-def _tilde(version: str, composer: bool = False) -> Optional[Predicate]:
+def _tilde(version: str, composer: bool = False) -> Predicate | None:
     parts = _release(version)
     if not parts:
         return None
@@ -127,7 +127,7 @@ def _tilde(version: str, composer: bool = False) -> Optional[Predicate]:
     return lambda k: lower_key <= k < high
 
 
-def _pessimistic(version: str) -> Optional[Predicate]:
+def _pessimistic(version: str) -> Predicate | None:
     """RubyGems ``~>`` and PEP 440 ``~=``: the last given component may grow."""
     parts = _release(version)
     if len(parts) < 2:
@@ -138,18 +138,18 @@ def _pessimistic(version: str) -> Optional[Predicate]:
     return lambda k: lower_key <= k < high
 
 
-def _all(predicates: List[Predicate]) -> Predicate:
+def _all(predicates: list[Predicate]) -> Predicate:
     return lambda k: all(p(k) for p in predicates)
 
 
-def _any(alternatives: List[Predicate]) -> Predicate:
+def _any(alternatives: list[Predicate]) -> Predicate:
     return lambda k: any(p(k) for p in alternatives)
 
 
 _COMPARATOR = re.compile(r"^(~>|~=|===|==|!=|>=|<=|>|<|=|\^|~)?\s*(.+)$")
 
 
-def _simple(term: str, ecosystem: str) -> Optional[Predicate]:
+def _simple(term: str, ecosystem: str) -> Predicate | None:
     term = term.strip()
     if not term or term in ("*", "x", "X", "latest", "any", "next"):
         return lambda k: True
@@ -172,7 +172,7 @@ def _simple(term: str, ecosystem: str) -> Optional[Predicate]:
     return _cmp(op or "==", version)
 
 
-def _maven_interval(spec: str) -> Optional[Predicate]:
+def _maven_interval(spec: str) -> Predicate | None:
     intervals = re.findall(r"([\[(])\s*([^,\])]*)\s*(?:,\s*([^\])]*))?\s*([\])])", spec)
     if not intervals:
         return None
@@ -191,7 +191,7 @@ def _maven_interval(spec: str) -> Optional[Predicate]:
     return _any(alternatives)
 
 
-def matcher(spec: str, ecosystem: str) -> Optional[Predicate]:
+def matcher(spec: str, ecosystem: str) -> Predicate | None:
     """Build a predicate over parsed version keys, or None when the spec cannot be understood."""
     spec = (spec or "").strip()
     if ecosystem in ("Maven", "NuGet") and spec[:1] in ("[", "("):
@@ -236,7 +236,7 @@ def matcher(spec: str, ecosystem: str) -> Optional[Predicate]:
     return _any(built) if built else None
 
 
-def resolve(spec: str, versions: Sequence[str], ecosystem: str) -> Tuple[Optional[str], Optional[str]]:
+def resolve(spec: str, versions: Sequence[str], ecosystem: str) -> tuple[str | None, str | None]:
     """Return (version the package manager would pick, lowest version admitted) for a range."""
     predicate = matcher(spec, ecosystem)
     if predicate is None:

@@ -17,7 +17,6 @@ from __future__ import annotations
 import os
 import subprocess
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core.events import EventBus
 from secure_repo.core.scanner import Scanner, ScanOptions
@@ -37,7 +36,7 @@ class Known:
     id: str
     title: str
     file: str
-    rules: List[str]
+    rules: list[str]
     cwe: str = ""
     line: int = 0
 
@@ -59,8 +58,8 @@ class Manifest:
     kind: str               # "vulnerable" | "clean"
     language: str
     description: str = ""
-    known: List[Known] = field(default_factory=list)
-    verdicts: List[Verdict] = field(default_factory=list)
+    known: list[Known] = field(default_factory=list)
+    verdicts: list[Verdict] = field(default_factory=list)
 
 
 @dataclass
@@ -72,9 +71,9 @@ class RepoResult:
     fp_confident: int = 0
     tp_production: int = 0      # findings outside test code
     fp_production: int = 0
-    unlabeled: List[str] = field(default_factory=list)
-    found: List[str] = field(default_factory=list)
-    missed: List[str] = field(default_factory=list)
+    unlabeled: list[str] = field(default_factory=list)
+    found: list[str] = field(default_factory=list)
+    missed: list[str] = field(default_factory=list)
     seconds: float = 0.0
 
     @property
@@ -92,12 +91,12 @@ class RepoResult:
         return self.tp_production / total if total else 1.0
 
     @property
-    def recall(self) -> Optional[float]:
+    def recall(self) -> float | None:
         total = len(self.found) + len(self.missed)
         return len(self.found) / total if total else None
 
 
-def load_manifests(directory: str = EXTERNAL_DIR) -> List[Manifest]:
+def load_manifests(directory: str = EXTERNAL_DIR) -> list[Manifest]:
     manifests = []
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".toml"):
@@ -120,7 +119,7 @@ def load_manifests(directory: str = EXTERNAL_DIR) -> List[Manifest]:
     return manifests
 
 
-def _git(args: List[str], cwd: str) -> None:
+def _git(args: list[str], cwd: str) -> None:
     subprocess.run(["git"] + args, cwd=cwd, check=True, capture_output=True, text=True, timeout=600)
 
 
@@ -143,7 +142,7 @@ def fetch(manifest: Manifest, cache_dir: str) -> str:
     return path
 
 
-def _verdict_for(manifest: Manifest, finding: Dict) -> Optional[Verdict]:
+def _verdict_for(manifest: Manifest, finding: dict) -> Verdict | None:
     exact = [v for v in manifest.verdicts if v.rule == finding["rule_id"] and v.file == finding["file"]]
     for verdict in exact:
         if verdict.line and verdict.line == finding["line"]:
@@ -154,7 +153,7 @@ def _verdict_for(manifest: Manifest, finding: Dict) -> Optional[Verdict]:
     return None
 
 
-def reportable(finding: Dict) -> bool:
+def reportable(finding: dict) -> bool:
     """Findings that a reviewer is asked to judge: code, secrets and dependencies - not repository hygiene facts."""
     return finding["status"] == "open" and finding["source"] != "hygiene" and finding["severity"] != "info"
 
@@ -194,8 +193,8 @@ def evaluate(manifest: Manifest, path: str) -> RepoResult:
     return result
 
 
-def run(cache_dir: str, names: Optional[List[str]] = None, directory: str = EXTERNAL_DIR,
-        download: bool = False) -> List[RepoResult]:
+def run(cache_dir: str, names: list[str] | None = None, directory: str = EXTERNAL_DIR,
+        download: bool = False) -> list[RepoResult]:
     results = []
     for manifest in load_manifests(directory):
         if names and manifest.name not in names:
@@ -207,7 +206,7 @@ def run(cache_dir: str, names: Optional[List[str]] = None, directory: str = EXTE
     return results
 
 
-def totals(results: List[RepoResult]) -> Dict[str, object]:
+def totals(results: list[RepoResult]) -> dict[str, object]:
     tp = sum(r.tp for r in results)
     fp = sum(r.fp for r in results)
     tp_c = sum(r.tp_confident for r in results)
@@ -226,8 +225,8 @@ def totals(results: List[RepoResult]) -> Dict[str, object]:
     }
 
 
-def by_language(results: List[RepoResult]) -> List[Tuple[str, Dict[str, object]]]:
-    groups: Dict[str, List[RepoResult]] = {}
+def by_language(results: list[RepoResult]) -> list[tuple[str, dict[str, object]]]:
+    groups: dict[str, list[RepoResult]] = {}
     for result in results:
         groups.setdefault(result.manifest.language or "other", []).append(result)
     return [(language, totals(group)) for language, group in sorted(groups.items())]

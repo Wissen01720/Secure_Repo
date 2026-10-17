@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
 
 LIBRARIES = (
     "jquery", "jquery-ui", "jquery.ui", "bootstrap", "angular", "angularjs", "lodash", "underscore", "moment",
@@ -34,7 +33,7 @@ _LIB_DIRS = re.compile(r"(?i)(^|/)(third[_-]?party|thirdparty|vendors?|externals
 _ASSET_EXT = (".js", ".mjs", ".css")
 
 
-def detect(rel_path: str, language: str, text: str) -> Optional[str]:
+def detect(rel_path: str, language: str, text: str) -> str | None:
     """Why this file is considered a bundled third-party library, or None."""
     lowered = rel_path.lower()
     if not lowered.endswith(_ASSET_EXT):

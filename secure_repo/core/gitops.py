@@ -10,7 +10,6 @@ import stat
 import subprocess
 import tarfile
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -73,7 +72,7 @@ class Branch:
     current: bool = False
     default: bool = False
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return asdict(self)
 
 
@@ -142,7 +141,7 @@ def default_username(url: str) -> str:
             "azure": "pat"}.get(provider_of(url), "git")
 
 
-def split_credentials(url: str) -> Tuple[str, Optional[GitCredentials]]:
+def split_credentials(url: str) -> tuple[str, GitCredentials | None]:
     """Remove ``user:token@`` from an https URL so the secret never reaches reports or logs."""
     url = url.strip()
     if not is_https(url):
@@ -157,7 +156,7 @@ def split_credentials(url: str) -> Tuple[str, Optional[GitCredentials]]:
     return clean, GitCredentials(parts.password, parts.username or "")
 
 
-def credentials_from_env(url: str) -> Optional[GitCredentials]:
+def credentials_from_env(url: str) -> GitCredentials | None:
     """SECURE_REPO_GIT_TOKEN (any host) or the usual CI variable of the provider."""
     token = os.environ.get("SECURE_REPO_GIT_TOKEN", "")
     if token:
@@ -173,7 +172,7 @@ def _env_config_supported() -> bool:
     return bool(match) and (int(match.group(1)), int(match.group(2))) >= (2, 31)
 
 
-def auth_config(url: str, credentials: Optional[GitCredentials], env: Dict[str, str]) -> List[str]:
+def auth_config(url: str, credentials: GitCredentials | None, env: dict[str, str]) -> list[str]:
     """Inject an Authorization header scoped to the repository host. Returns extra ``-c`` args (old Git only)."""
     if not credentials:
         return []
@@ -194,7 +193,7 @@ def auth_config(url: str, credentials: Optional[GitCredentials], env: Dict[str, 
     return ["-c", f"{key}={value}"]  # Git < 2.31 has no GIT_CONFIG_COUNT
 
 
-def _scrub(message: str, credentials: Optional[GitCredentials] = None) -> str:
+def _scrub(message: str, credentials: GitCredentials | None = None) -> str:
     if credentials and credentials.token:
         message = message.replace(credentials.token, "****")
         for candidate in {credentials.username, "x-access-token", "oauth2", "x-token-auth", "pat", "git"}:
@@ -225,8 +224,8 @@ def validate_branch(branch: str) -> str:
     return branch
 
 
-def _run(args: List[str], cwd: Optional[str] = None, timeout: int = 120, interactive: bool = False,
-         url: Optional[str] = None, credentials: Optional[GitCredentials] = None) -> str:
+def _run(args: list[str], cwd: str | None = None, timeout: int = 120, interactive: bool = False,
+         url: str | None = None, credentials: GitCredentials | None = None) -> str:
     env = os.environ.copy()
     env["GIT_LFS_SKIP_SMUDGE"] = "1"
     env["GIT_TERMINAL_PROMPT"] = "1" if interactive else "0"
@@ -264,7 +263,7 @@ def validate_ref(ref: str) -> str:
     return ref
 
 
-def changed_files(root: str, ref: str) -> Set[str]:
+def changed_files(root: str, ref: str) -> set[str]:
     """Files that differ from ``ref`` in the working tree, plus untracked ones (forward-slash relative paths)."""
     ref = validate_ref(ref)
     if not head_commit(root, ref):
@@ -274,7 +273,7 @@ def changed_files(root: str, ref: str) -> Set[str]:
     return {name for name in (changed + "\0" + untracked).split("\0") if name}
 
 
-def find_repo_root(path: str) -> Optional[str]:
+def find_repo_root(path: str) -> str | None:
     if not git_available() or not os.path.isdir(path):
         return None
     try:
@@ -284,7 +283,7 @@ def find_repo_root(path: str) -> Optional[str]:
     return os.path.normpath(root) if root else None
 
 
-def current_branch(root: str) -> Optional[str]:
+def current_branch(root: str) -> str | None:
     try:
         name = _run(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], timeout=20).strip()
     except GitError:
@@ -306,14 +305,14 @@ def remote_url(root: str) -> str:
         return ""
 
 
-def list_local_branches(root: str) -> List[Branch]:
+def list_local_branches(root: str) -> list[Branch]:
     output = _run([
         "-C", root, "for-each-ref",
         "--format=%(refname)%09%(objectname:short)%09%(committerdate:short)",
         "refs/heads", "refs/remotes",
     ], timeout=30)
     current = current_branch(root)
-    branches: List[Branch] = []
+    branches: list[Branch] = []
     local_names = set()
     for line in output.splitlines():
         parts = line.split("\t")
@@ -344,12 +343,12 @@ def list_local_branches(root: str) -> List[Branch]:
 
 
 def list_remote_branches(url: str, interactive: bool = False,
-                         credentials: Optional[GitCredentials] = None) -> List[Branch]:
+                         credentials: GitCredentials | None = None) -> list[Branch]:
     url = validate_url(url)
     output = _run(["ls-remote", "--symref", "--", url, "HEAD", "refs/heads/*"], timeout=90, interactive=interactive,
                   url=url, credentials=credentials or credentials_from_env(url))
     default = None
-    branches: List[Branch] = []
+    branches: list[Branch] = []
     for line in output.splitlines():
         if line.startswith("ref:"):
             target = line.split()[1]
@@ -365,8 +364,8 @@ def list_remote_branches(url: str, interactive: bool = False,
     return branches
 
 
-def clone(url: str, branch: Optional[str], dest: str, interactive: bool = False,
-          credentials: Optional[GitCredentials] = None) -> str:
+def clone(url: str, branch: str | None, dest: str, interactive: bool = False,
+          credentials: GitCredentials | None = None) -> str:
     url = validate_url(url)
     args = ["clone", "--depth", "1", "--single-branch", "--no-tags", "--quiet"]
     if branch:

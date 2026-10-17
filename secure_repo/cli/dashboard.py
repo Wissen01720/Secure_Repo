@@ -6,7 +6,6 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
-from typing import Deque, Dict, Optional
 
 from rich import box
 from rich.columns import Columns
@@ -31,16 +30,16 @@ class LiveDashboard:
         self.plain = plain or not console.is_terminal
         self.lock = threading.Lock()
         self.started = time.time()
-        self.stages: Dict[str, Dict] = {sid: {"title": title, "status": "pending", "detail": "", "start": 0.0,
+        self.stages: dict[str, dict] = {sid: {"title": title, "status": "pending", "detail": "", "start": 0.0,
                                               "end": 0.0} for sid, title in STAGES}
-        self.progress: Dict[str, tuple] = {}
-        self.feed: Deque[Text] = deque(maxlen=7)
+        self.progress: dict[str, tuple] = {}
+        self.feed: deque[Text] = deque(maxlen=7)
         self.counts = {s: 0 for s in SEVERITIES}
         self.files_done = 0
         self.files_total = 0
         self.current_file = ""
-        self.tops: Dict[str, Dict] = {}
-        self.live: Optional[Live] = None
+        self.tops: dict[str, dict] = {}
+        self.live: Live | None = None
         self.finished = False
 
     # ------------------------------------------------------------------ events
@@ -49,7 +48,7 @@ class LiveDashboard:
             return "(repository)"
         return path.split("/", 1)[0] if "/" in path else "(root files)"
 
-    def handle(self, event: Dict) -> None:
+    def handle(self, event: dict) -> None:
         kind = event["type"]
         with self.lock:
             if kind == "stage":
@@ -125,7 +124,7 @@ class LiveDashboard:
         stamp = Text(datetime.now().strftime("%H:%M:%S "), style="grey42")
         self.feed.append(stamp + text)
 
-    def _plain_stage(self, stage: Dict) -> None:
+    def _plain_stage(self, stage: dict) -> None:
         status = stage["status"]
         kind = {"start": "run", "done": "ok", "skip": "warn", "error": "error"}.get(status, "info")
         detail = f" - {stage['detail']}" if stage["detail"] else ""

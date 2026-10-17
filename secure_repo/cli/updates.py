@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
 
 from rich import box
 from rich.console import Group
@@ -49,7 +48,7 @@ def render_available(info: updater.UpdateInfo) -> None:
                         box=box.DOUBLE, padding=(1, 2)))
 
 
-def render_post_update(notice: Dict) -> None:
+def render_post_update(notice: dict) -> None:
     body = Text()
     body.append("  UPDATE INSTALLED  ", style=f"bold black on {VIOLET}")
     body.append(f"   now running Secure Repo {notice.get('to') or ''}", style="bold white")
@@ -63,13 +62,13 @@ def render_post_update(notice: Dict) -> None:
     console.print(Panel(body, border_style=VIOLET, box=box.ROUNDED, padding=(1, 2)))
 
 
-def render_compact(info: Optional[updater.UpdateInfo]) -> None:
+def render_compact(info: updater.UpdateInfo | None) -> None:
     if info and info.available:
         say(Text.assemble((info.summary, f"bold {NEON}"), (" - run ", DIM), ("secure-repo update", f"bold {CYAN}"),
                           (" to install it.", DIM)), "warn")
 
 
-def install(info: Optional[updater.UpdateInfo] = None, assume_yes: bool = False) -> Optional[updater.UpdateResult]:
+def install(info: updater.UpdateInfo | None = None, assume_yes: bool = False) -> updater.UpdateResult | None:
     """Interactive installation. Returns the result (None if the user declined or nothing to install)."""
     with console.status(Text(" Checking the upstream repository...", style=DIM), spinner="dots12", spinner_style=NEON):
         info = info if (info and info.available) else updater.check(force=True)

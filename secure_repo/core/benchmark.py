@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
 
 from secure_repo.core.events import EventBus
 from secure_repo.core.languages import detect_language
@@ -32,7 +31,7 @@ class RuleScore:
     tp: int = 0
     fp: int = 0
     fn: int = 0
-    samples: List[str] = field(default_factory=list)
+    samples: list[str] = field(default_factory=list)
 
     @property
     def precision(self) -> float:
@@ -43,9 +42,9 @@ class RuleScore:
         return self.tp / (self.tp + self.fn) if self.tp + self.fn else 1.0
 
 
-def _annotations(text: str) -> Tuple[Set[Tuple[int, str]], Set[str]]:
-    expected: Set[Tuple[int, str]] = set()
-    forbidden: Set[str] = set()
+def _annotations(text: str) -> tuple[set[tuple[int, str]], set[str]]:
+    expected: set[tuple[int, str]] = set()
+    forbidden: set[str] = set()
     for number, line in enumerate(text.splitlines(), 1):
         for match in EXPECT_RE.finditer(line):
             for rule_id in re.split(r"\s*,\s*", match.group(1)):
@@ -55,7 +54,7 @@ def _annotations(text: str) -> Tuple[Set[Tuple[int, str]], Set[str]]:
     return expected, forbidden
 
 
-def case_files(extra_dirs: Optional[List[str]] = None) -> List[str]:
+def case_files(extra_dirs: list[str] | None = None) -> list[str]:
     files = []
     for directory in [CORPUS_DIR] + list(extra_dirs or []):
         if not os.path.isdir(directory):
@@ -67,9 +66,9 @@ def case_files(extra_dirs: Optional[List[str]] = None) -> List[str]:
     return files
 
 
-def run(extra_dirs: Optional[List[str]] = None, rule_filter: str = "", semantic: bool = True) -> Dict:
+def run(extra_dirs: list[str] | None = None, rule_filter: str = "", semantic: bool = True) -> dict:
     scanner = Scanner(ScanOptions(offline=True, learning=False, semantic=semantic), EventBus())
-    scores: Dict[str, RuleScore] = {}
+    scores: dict[str, RuleScore] = {}
     cases = []
     for path in case_files(extra_dirs):
         with open(path, encoding="utf-8", errors="replace") as handle:

@@ -48,6 +48,24 @@ def _make_console() -> Console:
 
 console = _make_console()
 
+# --theme plain: the same tool without the hacker staging (banner art, animations, "mission" vocabulary) for
+# environments where a sober console is expected (audits, shared terminals, screenshots for management).
+_THEME_STATE = {"name": os.environ.get("SECURE_REPO_THEME", "hacker").strip().lower() or "hacker"}
+PLAIN_TITLES = {
+    "MISSION REPORT": "SCAN REPORT", "ENGAGEMENT STARTED": "SCAN STARTED", "EVIDENCE LOCKER": "REPORT FILES",
+    "BRANCH RECON": "BRANCH SELECTION", "MAIN CONSOLE": "MENU", "POST-SCAN ACTIONS": "ACTIONS",
+    "SCAN SETTINGS": "SETTINGS", "REPOSITORY STRUCTURE MAP": "REPOSITORY STRUCTURE",
+    "TRIAGE - TEACH SECURE REPO": "TRIAGE", "VIRTUAL LOCKFILE": "VERSION RESOLUTION",
+}
+
+
+def set_theme(name: str) -> None:
+    _THEME_STATE["name"] = name if name in ("hacker", "plain") else "hacker"
+
+
+def is_plain() -> bool:
+    return _THEME_STATE["name"] == "plain"
+
 
 def sev_badge(severity: str) -> Text:
     return Text(f"[{SEVERITY_TAG.get(severity, severity.upper()[:4])}]", style=SEVERITY_STYLE.get(severity, ""))

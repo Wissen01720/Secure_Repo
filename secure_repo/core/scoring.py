@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, List
 
 from secure_repo.core.models import SEVERITY_WEIGHT, SUPPRESSED_STATUSES
 
@@ -13,8 +12,8 @@ CAP_HIGH = 74      # highest score (grade C) allowed while a high-severity findi
 SURFACE = 0.25     # extra penalty per e-fold of distinct files a weakness appears in (attack surface)
 
 
-def compute_score(findings: List[Dict]) -> Dict:
-    per_rule: Dict[str, Dict] = {}
+def compute_score(findings: list[dict]) -> dict:
+    per_rule: dict[str, dict] = {}
     for finding in findings:
         status = finding.get("status", "open")
         if status in SUPPRESSED_STATUSES:

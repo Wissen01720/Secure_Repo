@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Tuple
 
 from secure_repo.core import confidence, gitops, triage
 from secure_repo.core.config import load_config
@@ -16,7 +15,7 @@ from secure_repo.core.workspace import Workspace
 
 
 class QualityMixin(ScannerBase):
-    def _files_since(self, workspace: Workspace, files: List[FileInfo]) -> List[FileInfo]:
+    def _files_since(self, workspace: Workspace, files: list[FileInfo]) -> list[FileInfo]:
         """Restrict the analysis to the files that changed relative to ``options.since`` (local working tree only)."""
         if workspace.mode != "working-tree":
             raise ValueError("--since works on the working tree of a local Git repository (not on remote repositories, "
@@ -29,7 +28,7 @@ class QualityMixin(ScannerBase):
                      f"{len(files) - len(selected)} unchanged file(s) are not analyzed", "ok")
         return selected
 
-    def _apply_baseline(self, findings: List[Dict]) -> Optional[Dict]:
+    def _apply_baseline(self, findings: list[dict]) -> dict | None:
         """Mark each finding as new or already present in the baseline report (matched by fingerprint)."""
         if not self.options.baseline:
             return None
@@ -43,7 +42,7 @@ class QualityMixin(ScannerBase):
                      f"{sum(1 for f in findings if f['extra']['baseline'] == 'existing')} already known", "ok")
         return {"file": os.path.basename(self.options.baseline), "known_fingerprints": len(known), "new_open": new}
 
-    def _stage_hygiene(self, files: List[FileInfo], workspace_path: str, has_deps: bool) -> Dict[str, bool]:
+    def _stage_hygiene(self, files: list[FileInfo], workspace_path: str, has_deps: bool) -> dict[str, bool]:
         paths = {f.rel.lower() for f in files}
         root_names = {p for p in paths if "/" not in p}
         facts = {
@@ -71,7 +70,7 @@ class QualityMixin(ScannerBase):
         facts["gitignore_secrets"] = bool(re.search(r"(?m)^\s*(?:\*\*/)?/?\.env(?:\*|\.\*|\b)|^\s*\*\.env\b|^\s*\*\.pem\b|^\s*\*\.key\b", content))
         facts["lockfiles"] = not any(f.rule_id == "SR-DEP-004" for f in self.findings)
 
-        def missing(rule_id: str, detail: str, severity: Optional[str] = None) -> None:
+        def missing(rule_id: str, detail: str, severity: str | None = None) -> None:
             self._add(self._finding_from_rule(RULES_BY_ID[rule_id], ".", 0, detail=detail, severity=severity))
 
         if not facts["security_policy"]:
@@ -132,7 +131,7 @@ class QualityMixin(ScannerBase):
         if self.config.min_confidence != "low" and self.options.min_confidence == "low":
             self.options.min_confidence = self.config.min_confidence
 
-    def _apply_quality(self, findings: List[Dict], meta: Dict, workspace_path: str) -> Dict[str, int]:
+    def _apply_quality(self, findings: list[dict], meta: dict, workspace_path: str) -> dict[str, int]:
         disabled = set(self.config.disable)
         for finding in findings:
             rule_id = finding["rule_id"]
@@ -176,17 +175,17 @@ class QualityMixin(ScannerBase):
                 counts["below_min_confidence"] += 1
         return counts
 
-    def _repo_influence(self, findings: List[Dict], workspace: Workspace, excluded: List[str]) -> Dict:
+    def _repo_influence(self, findings: list[dict], workspace: Workspace, excluded: list[str]) -> dict:
         """Everything the audited repository itself did to shape the result (so the analyst can judge it)."""
-        ignored: List[str] = []
+        ignored: list[str] = []
         if self.config.ignored_source:
             ignored.append(f"{os.path.basename(self.config.ignored_source)} (project configuration)")
         if not self.trusted and os.path.isfile(os.path.join(workspace.path, triage.REPO_TRIAGE_FILE)):
             ignored.append(".securerepo/triage.json (shared triage decisions)")
         if not self.trusted and self.inline_ignored:
             ignored.append(f"{self.inline_ignored} inline suppression comment(s) (nosec / securerepo:ignore)")
-        disabled: Dict[str, Dict] = {}
-        overrides: Dict[Tuple[str, str, str], Dict] = {}
+        disabled: dict[str, dict] = {}
+        overrides: dict[tuple[str, str, str], dict] = {}
         counts = {"allowlisted": 0, "repo_decisions": 0, "repo_patterns": 0, "inline": 0, "inline_without_rule_id": 0}
         for finding in findings:
             origin = (finding.get("triage") or {}).get("origin")

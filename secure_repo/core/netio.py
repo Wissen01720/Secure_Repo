@@ -26,7 +26,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterator, List, Optional
+from collections.abc import Callable, Iterator
 
 from secure_repo import __version__
 
@@ -58,9 +58,9 @@ class NetworkStats:
     retries: int = 0
     failures: int = 0
     oversized: int = 0
-    notes: List[str] = field(default_factory=list)       # human-readable gaps ("2 OSV batches failed", limits...)
+    notes: list[str] = field(default_factory=list)       # human-readable gaps ("2 OSV batches failed", limits...)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {"requests": self.requests, "cache_hits": self.cache_hits, "retries": self.retries,
                 "failures": self.failures, "oversized": self.oversized, "notes": list(self.notes)}
 
@@ -68,7 +68,7 @@ class NetworkStats:
 class NetworkSession:
     """Settings and counters of one scan."""
 
-    def __init__(self, settings: Optional[NetworkSettings] = None):
+    def __init__(self, settings: NetworkSettings | None = None):
         self.settings = settings or NetworkSettings()
         self.stats = NetworkStats()
         self.lock = threading.Lock()
@@ -175,7 +175,7 @@ def _cache_path(key: str) -> str:
     return os.path.join(base, key[:2], key + ".json")
 
 
-def _cache_key(url: str, payload: Optional[Dict]) -> str:
+def _cache_key(url: str, payload: dict | None) -> str:
     material = url + "\n" + (json.dumps(payload, sort_keys=True) if payload is not None else "")
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
@@ -227,7 +227,7 @@ def _retry_delay(error: Exception, attempt: int, backoff: float) -> float:
     return min(delay, MAX_RETRY_AFTER)
 
 
-def http_json(url: str, payload: Optional[Dict] = None, timeout: int = 20, cache: bool = False):
+def http_json(url: str, payload: dict | None = None, timeout: int = 20, cache: bool = False):
     """GET (or POST when ``payload`` is given) a JSON document, with limits, retries and an optional disk cache."""
     session = current()
     settings = session.settings
@@ -239,7 +239,7 @@ def http_json(url: str, payload: Optional[Dict] = None, timeout: int = 20, cache
             return cached
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     attempts = max(1, settings.retries)
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     for attempt in range(attempts):
         request = urllib.request.Request(url, data=data, method="POST" if data else "GET", headers={
             "User-Agent": USER_AGENT, "Accept": "application/json", "Content-Type": "application/json"})

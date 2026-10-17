@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional
 
 from secure_repo.core import triage
 
@@ -31,9 +30,9 @@ MAX_PER_RULE_PER_FILE = 50
 class ScanOptions:
     offline: bool = False
     compliance: bool = False
-    frameworks: List[str] = field(default_factory=lambda: ["all"])
+    frameworks: list[str] = field(default_factory=lambda: ["all"])
     max_file_size: int = 2 * 1024 * 1024
-    exclude: List[str] = field(default_factory=list)
+    exclude: list[str] = field(default_factory=list)
     include_tests: bool = True
     enrich: bool = True
     auditor: str = ""
@@ -44,8 +43,8 @@ class ScanOptions:
     semantic: bool = True          # lexical masking + syntax tree + data flow (False = legacy pattern-only engine)
     # Does the audited repository's own configuration (.securerepo.toml, .securerepo/triage.json, nosec comments)
     # get authority over the result? None = automatic: only for the working tree of a local Git repository.
-    trust_repo_config: Optional[bool] = None
-    private: List[str] = field(default_factory=list)  # package-name globs that are never sent to any service
+    trust_repo_config: bool | None = None
+    private: list[str] = field(default_factory=list)  # package-name globs that are never sent to any service
     no_registry: bool = False      # do not resolve versions or fetch metadata from package registries (OSV still runs)
     check_confusion: bool = False  # opt in: look private names up in the public registry (sends those names)
     ca_bundle: str = ""            # certificate authority bundle for HTTPS lookups (corporate TLS inspection)
@@ -58,7 +57,7 @@ class ScanOptions:
     jobs: int = 0                  # worker processes for file analysis: 0 = automatic, 1 = single process
     parallel_threshold: int = 400  # below this many files a single process is faster than starting workers
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return asdict(self)
 
 
