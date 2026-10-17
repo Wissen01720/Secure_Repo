@@ -11,7 +11,7 @@
 | Internet | optional | Only for vulnerability intelligence. Everything else works with `--offline`. |
 | Browser | any modern one | Only for the GUI and the HTML report |
 
-Python dependencies: [`rich`](https://github.com/Textualize/rich) (and `tomli` on Python < 3.11). Nothing else.
+Python dependencies: [`rich`](https://github.com/Textualize/rich), [`defusedxml`](https://github.com/tiran/defusedxml) (safe XML parsing) and `tomli` on Python < 3.11. Nothing else.
 
 ## Installation
 

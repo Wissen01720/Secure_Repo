@@ -25,6 +25,9 @@ All notable changes to Secure Repo are documented here.
   `scan_quality`) and the GUI `app.js` into `app-*.js` modules.
 
 ### Fixed
+- Self-audit alerts: the GUI session token is no longer stored in Web Storage (it stays in the URL fragment and in
+  memory); `defusedxml` is now a required dependency (no `xml.etree` fallback); a hash-pinned `requirements.lock`
+  (with line continuations) is recognised as a lockfile; inline suppressions are exported to SARIF as `inSource`.
 - Two scans running at the same time in the GUI no longer share network counters: each scan owns a network session
   bound to its context, so intelligence notes and statistics cannot mix.
 
