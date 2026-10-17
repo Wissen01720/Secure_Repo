@@ -72,11 +72,11 @@ rules = ["SR-JS-025"]
 
 [[known]]
 id = "NG-09"
-title = "CSRF protection commented out (absent setting, no rule covers it yet)"
+title = "CSRF protection commented out (the session is created at this line, without CSRF middleware)"
 file = "server.js"
-line = 106
+line = 78
 cwe = "CWE-352"
-rules = []
+rules = ["SR-JS-028"]
 
 [[known]]
 id = "NG-10"
@@ -202,3 +202,15 @@ rule = "SR-GEN-004"
 file = "test/e2e/plugins/index.js"
 verdict = "FP"
 note = "URL assembled from a host variable in end-to-end test configuration"
+
+[[verdict]]
+rule = "SR-JS-017"
+file = "app/routes/research.js"
+verdict = "TP"
+note = "needle.get() on a URL built from req.query.url"
+
+[[verdict]]
+rule = "SR-JS-028"
+file = "server.js"
+verdict = "TP"
+note = "cookie sessions and POST routes with the CSRF middleware commented out"

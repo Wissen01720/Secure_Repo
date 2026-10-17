@@ -5,13 +5,17 @@
 * **cached**: successful GET-style lookups are kept on disk for a day, so repeated scans are fast and a flaky
   network hurts less (advisory *searches* are never cached: new vulnerabilities must show up the same day);
 * **corporate-friendly**: ``--ca-bundle`` / ``SECURE_REPO_CA_BUNDLE`` / ``REQUESTS_CA_BUNDLE`` / ``SSL_CERT_FILE``
-  select the certificate authority, for networks that inspect TLS.
+  select the certificate authority, for networks that inspect TLS;
+* **isolated per scan**: settings and counters live in a :class:`NetworkSession` that is bound to the running scan
+  through a context variable, so two scans at the same time (the GUI allows two) never mix their notes.
 
 Only package names and versions ever pass through here; source code never does.
 """
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import hashlib
 import json
 import os
@@ -22,7 +26,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 
 from secure_repo import __version__
 
@@ -61,9 +65,59 @@ class NetworkStats:
                 "failures": self.failures, "oversized": self.oversized, "notes": list(self.notes)}
 
 
-SETTINGS = NetworkSettings()
-STATS = NetworkStats()
-_LOCK = threading.Lock()
+class NetworkSession:
+    """Settings and counters of one scan."""
+
+    def __init__(self, settings: Optional[NetworkSettings] = None):
+        self.settings = settings or NetworkSettings()
+        self.stats = NetworkStats()
+        self.lock = threading.Lock()
+
+    def count(self, **amounts: int) -> None:
+        with self.lock:
+            for name, amount in amounts.items():
+                setattr(self.stats, name, getattr(self.stats, name) + amount)
+
+    def note(self, message: str) -> None:
+        with self.lock:
+            if message not in self.stats.notes:
+                self.stats.notes.append(message)
+
+
+_DEFAULT = NetworkSession()
+_CURRENT: contextvars.ContextVar[NetworkSession] = contextvars.ContextVar("secure_repo_network", default=_DEFAULT)
+
+
+def current() -> NetworkSession:
+    return _CURRENT.get()
+
+
+@contextlib.contextmanager
+def active(session: NetworkSession) -> Iterator[NetworkSession]:
+    """Bind ``session`` to the code running inside the ``with`` block (and the threads started from it)."""
+    token = _CURRENT.set(session)
+    try:
+        yield session
+    finally:
+        _CURRENT.reset(token)
+
+
+def in_context(function: Callable) -> Callable:
+    """Wrap ``function`` so a worker thread runs it inside the caller's context (thread pools do not inherit it)."""
+    context = contextvars.copy_context()
+
+    def run(*args, **kwargs):
+        return context.copy().run(function, *args, **kwargs)
+
+    return run
+
+
+def __getattr__(name: str):  # module-level SETTINGS / STATS always refer to the session of the running scan
+    if name == "SETTINGS":
+        return current().settings
+    if name == "STATS":
+        return current().stats
+    raise AttributeError(name)
 
 
 def _sleep(seconds: float) -> None:  # separate function so tests do not really wait
@@ -71,30 +125,23 @@ def _sleep(seconds: float) -> None:  # separate function so tests do not really 
 
 
 def configure(**changes) -> NetworkSettings:
-    """Replace the settings for the next scan and reset the counters."""
-    global SETTINGS, STATS
-    SETTINGS = NetworkSettings(**{**SETTINGS.__dict__, **changes})
-    STATS = NetworkStats()
-    return SETTINGS
+    """Replace the settings of the current session and reset its counters."""
+    session = current()
+    session.settings = NetworkSettings(**{**session.settings.__dict__, **changes})
+    session.stats = NetworkStats()
+    return session.settings
 
 
 def note(message: str) -> None:
-    with _LOCK:
-        if message not in STATS.notes:
-            STATS.notes.append(message)
-
-
-def _count(**amounts: int) -> None:
-    with _LOCK:
-        for name, amount in amounts.items():
-            setattr(STATS, name, getattr(STATS, name) + amount)
+    current().note(message)
 
 
 # ---------------------------------------------------------------------- TLS
 def ca_bundle_path() -> str:
     """The certificate bundle to trust: the explicit setting first, then the environment ('' = system store)."""
-    if SETTINGS.ca_bundle:
-        return SETTINGS.ca_bundle
+    explicit = current().settings.ca_bundle
+    if explicit:
+        return explicit
     for variable in CA_ENVIRONMENT:
         value = os.environ.get(variable, "").strip()
         if value:
@@ -120,7 +167,7 @@ def ssl_context() -> ssl.SSLContext:
 
 # ---------------------------------------------------------------------- cache
 def _cache_path(key: str) -> str:
-    base = SETTINGS.cache_dir
+    base = current().settings.cache_dir
     if not base:
         from secure_repo.core.triage import data_dir
 
@@ -136,7 +183,7 @@ def _cache_key(url: str, payload: Optional[Dict]) -> str:
 def _cache_read(key: str):
     path = _cache_path(key)
     try:
-        if time.time() - os.path.getmtime(path) > SETTINGS.cache_ttl:
+        if time.time() - os.path.getmtime(path) > current().settings.cache_ttl:
             return None
         with open(path, encoding="utf-8") as handle:
             return json.load(handle)
@@ -160,10 +207,10 @@ def clear_cache() -> int:
     """Delete the on-disk cache; returns the number of entries removed."""
     removed = 0
     base = os.path.dirname(os.path.dirname(_cache_path("00")))
-    for current, _dirs, names in os.walk(base):
+    for folder, _dirs, names in os.walk(base):
         for name in names:
             try:
-                os.remove(os.path.join(current, name))
+                os.remove(os.path.join(folder, name))
                 removed += 1
             except OSError:
                 pass
@@ -171,8 +218,8 @@ def clear_cache() -> int:
 
 
 # ---------------------------------------------------------------------- requests
-def _retry_delay(error: Exception, attempt: int) -> float:
-    delay = SETTINGS.backoff * (2 ** attempt)
+def _retry_delay(error: Exception, attempt: int, backoff: float) -> float:
+    delay = backoff * (2 ** attempt)
     if isinstance(error, urllib.error.HTTPError):
         header = error.headers.get("Retry-After") if error.headers else None
         if header and header.strip().isdigit():
@@ -182,24 +229,27 @@ def _retry_delay(error: Exception, attempt: int) -> float:
 
 def http_json(url: str, payload: Optional[Dict] = None, timeout: int = 20, cache: bool = False):
     """GET (or POST when ``payload`` is given) a JSON document, with limits, retries and an optional disk cache."""
-    key = _cache_key(url, payload) if cache and SETTINGS.cache else ""
+    session = current()
+    settings = session.settings
+    key = _cache_key(url, payload) if cache and settings.cache else ""
     if key:
         cached = _cache_read(key)
         if cached is not None:
-            _count(cache_hits=1)
+            session.count(cache_hits=1)
             return cached
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    attempts = max(1, settings.retries)
     last_error: Optional[Exception] = None
-    for attempt in range(max(1, SETTINGS.retries)):
+    for attempt in range(attempts):
         request = urllib.request.Request(url, data=data, method="POST" if data else "GET", headers={
             "User-Agent": USER_AGENT, "Accept": "application/json", "Content-Type": "application/json"})
-        _count(requests=1)
+        session.count(requests=1)
         try:
             with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response:  # nosec - https
-                body = response.read(SETTINGS.max_bytes + 1)
-            if len(body) > SETTINGS.max_bytes:
-                _count(oversized=1)
-                raise NetworkError(f"the response from {url.split('?')[0]} is larger than {SETTINGS.max_bytes} bytes")
+                body = response.read(settings.max_bytes + 1)
+            if len(body) > settings.max_bytes:
+                session.count(oversized=1)
+                raise NetworkError(f"the response from {url.split('?')[0]} is larger than {settings.max_bytes} bytes")
             parsed = json.loads(body.decode("utf-8"))
             if key:
                 _cache_write(key, parsed)
@@ -212,8 +262,8 @@ def http_json(url: str, payload: Optional[Dict] = None, timeout: int = 20, cache
             last_error = exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             last_error = exc
-        if attempt + 1 < max(1, SETTINGS.retries):
-            _count(retries=1)
-            _sleep(_retry_delay(last_error, attempt))
-    _count(failures=1)
+        if attempt + 1 < attempts:
+            session.count(retries=1)
+            _sleep(_retry_delay(last_error, attempt, settings.backoff))
+    session.count(failures=1)
     raise last_error if last_error is not None else NetworkError(f"{url.split('?')[0]} could not be reached")

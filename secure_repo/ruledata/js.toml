@@ -464,7 +464,7 @@ owasp = 'A10'
 languages = ['@JS']
 keywords = ['req.']
 tags = ['ssrf']
-pattern = '\b(?:axios(?:\.\w+)?|fetch|got|needle|superagent\.\w+|https?\.get|https?\.request)\s*\([^)\n]{0,120}req\.(?:query|params|body)'
+pattern = '\b(?:axios(?:\.\w+)?|fetch|got(?:\.\w+)?|needle(?:\.\w+)?|superagent\.\w+|https?\.get|https?\.request)\s*\([^)\n]{0,120}req\.(?:query|params|body)'
 description = 'The server issues HTTP requests to URLs taken from the client, enabling SSRF against internal services and cloud metadata endpoints.'
 recommendation = 'Allow-list destinations, block private address ranges and disable redirects.'
 
@@ -474,6 +474,16 @@ code = '''const axios = require('axios');
 
 app.get('/proxy', async (req, res) => {
   res.send(await axios.get(req.query.url));
+});
+'''
+
+[[rule.example]]
+kind = 'positive'
+code = '''const needle = require('needle');
+
+app.get('/research', (req, res) => {
+  const url = req.query.url + req.query.symbol;
+  needle.get(url, (error, response, body) => res.send(body));
 });
 '''
 
@@ -622,17 +632,17 @@ code = '''swig.setDefaults({ autoescape: true });
 
 [[rule]]
 id = 'SR-JS-026'
-title = 'Hardcoded session or cookie secret'
+title = 'Hardcoded session, cookie or encryption secret'
 severity = 'high'
 category = 'Authentication'
 cwe = 'CWE-798'
 owasp = 'A07'
 languages = ['@JS']
-keywords = ['secret', 'keys']
+keywords = ['secret', 'key']
 tags = ['auth', 'secrets']
 needs_strings = true
-pattern = '''(?i)\b(?:cookie[_-]?secret|session[_-]?secret|secret[_-]?key[_-]?base)['\"]?\s*[:=]\s*['\"][^'\"\n]{4,}['\"]|\b(?:session|cookieSession)\s*\(\s*\{[^}]{0,300}?\b(?:secret|keys)\s*:\s*\[?\s*['\"][^'\"\n]{4,}['\"]'''
-description = 'The secret that signs or encrypts session cookies is a literal in the source code. Anyone who can read the repository can forge session cookies and impersonate users, and the value cannot be rotated without a deployment.'
+pattern = '''(?i)\b(?:cookie[_-]?secret|session[_-]?secret|secret[_-]?key[_-]?base|crypto[_-]?key|encryption[_-]?key|signing[_-]?key|jwt[_-]?secret)['\"]?\s*[:=]\s*['\"][^'\"\n]{4,}['\"]|\b(?:session|cookieSession)\s*\(\s*\{[^}]{0,300}?\b(?:secret|keys)\s*:\s*\[?\s*['\"][^'\"\n]{4,}['\"]'''
+description = 'The secret that signs session cookies, or the key that encrypts data, is a literal in the source code. Anyone who can read the repository can forge session cookies or decrypt data, and the value cannot be rotated without a deployment.'
 recommendation = 'Read the secret from the environment or a secret manager, generate a long random value and rotate the one that was committed.'
 
 [[rule.example]]
@@ -643,9 +653,17 @@ code = '''module.exports = {
 '''
 
 [[rule.example]]
+kind = 'positive'
+code = '''module.exports = {
+  cryptoKey: 'a_secure_key_for_crypto_here'
+};
+'''
+
+[[rule.example]]
 kind = 'negative'
 code = '''module.exports = {
-  cookieSecret: process.env.COOKIE_SECRET
+  cookieSecret: process.env.COOKIE_SECRET,
+  cryptoKey: process.env.CRYPTO_KEY
 };
 '''
 
@@ -674,5 +692,52 @@ kind = 'negative'
 code = '''const session = require('express-session');
 
 app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true } }));
+'''
+
+[[rule]]
+id = 'SR-JS-028'
+title = 'Cookie-session application without CSRF protection'
+severity = 'medium'
+category = 'Misconfiguration'
+cwe = 'CWE-352'
+owasp = 'A01'
+languages = ['@JS']
+source = 'structural'
+confidence = 'low'
+tags = ['csrf', 'session']
+description = 'An Express application keeps its users in a cookie session and exposes state-changing routes (POST, PUT, PATCH, DELETE), but no CSRF middleware (csurf, csrf-csrf, lusca...) appears in the file. Any site the user visits can then make their browser submit those requests with the session cookie. The middleware may live in another file or be replaced by an equivalent such as SameSite cookies and a custom token check: treat this as a lead.'
+recommendation = 'Add CSRF protection (a synchronizer token or the double-submit pattern with csrf-csrf / csrf-sync), keep the session cookie SameSite=Lax or Strict, and verify the token on every state-changing route.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'server.js'
+scope = 'repo'
+code = '''const express = require('express');
+const session = require('express-session');
+const app = express();
+app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true } }));
+app.post('/transfer', (req, res) => { res.send('ok'); });
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''const express = require('express');
+const session = require('express-session');
+const csrf = require('csurf');
+const app = express();
+app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true } }));
+app.post('/transfer', (req, res) => { res.send('ok'); });
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'server.js'
+scope = 'repo'
+code = '''const express = require('express');
+const session = require('express-session');
+// const csrf = require('csurf') was removed
+const app = express();
+app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true } }));
+app.get('/transfer', (req, res) => { res.send('ok'); });
 '''
 

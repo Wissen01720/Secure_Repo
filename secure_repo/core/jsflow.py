@@ -51,7 +51,8 @@ SINKS = [
     ("SR-JS-011", re.compile(r"\.(?:query|execute|raw|whereRaw|\$queryRawUnsafe|\$executeRawUnsafe)\s*\("), "arg0", False),
     ("SR-JS-016", re.compile(r"\b(?:fs\.)?(?:readFile|readFileSync|createReadStream|writeFile|writeFileSync|unlink|"
                              r"unlinkSync|appendFile)\s*\(|\bres\.(?:sendFile|download)\s*\("), "arg0", True),
-    ("SR-JS-017", re.compile(r"\b(?:axios(?:\.(?:get|post|put|delete|request|head|patch))?|fetch|got|needle|"
+    ("SR-JS-017", re.compile(r"\b(?:axios(?:\.(?:get|post|put|delete|request|head|patch))?|fetch|"
+                             r"(?:got|needle)(?:\.(?:get|post|put|delete|request|head|patch))?|"
                              r"superagent\.\w+|https?\.(?:get|request))\s*\("), "arg0", True),
     ("SR-JS-018", re.compile(r"\bres\.redirect\s*\("), "last", True),
     ("SR-JS-023", re.compile(r"\bres\.(?:send|write|end)\s*\("), "arg0", True),

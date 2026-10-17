@@ -82,7 +82,7 @@ exclude = ["secure_repo/benchmark/corpus/"]
 # are type-checked from the first commit.
 [[tool.mypy.overrides]]
 module = [
-    "secure_repo.core.triage", "secure_repo.core.updater", "secure_repo.core.scanner", "secure_repo.core.pyast",
+    "secure_repo.core.triage", "secure_repo.core.updater", "secure_repo.core.pyast",
     "secure_repo.core.versions", "secure_repo.core.checks", "secure_repo.core.compliance", "secure_repo.core.deps",
     "secure_repo.core.gitops", "secure_repo.core.intel", "secure_repo.core.summary", "secure_repo.core.walker",
     "secure_repo.cli.views", "secure_repo.cli.learning", "secure_repo.cli.dashboard", "secure_repo.gui.server",

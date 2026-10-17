@@ -207,7 +207,7 @@ def osv_lookup(deps: List[Dependency], bus: EventBus, workers: int = 8) -> Tuple
             return vuln_id, {"id": vuln_id, "summary": "Details unavailable (network error)."}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for index, (vuln_id, data) in enumerate(pool.map(fetch, unique_ids), 1):
+        for index, (vuln_id, data) in enumerate(pool.map(netio.in_context(fetch), unique_ids), 1):
             details[vuln_id] = data
             if index % 10 == 0 or index == len(unique_ids):
                 bus.progress("intel", index, len(unique_ids), "Advisory details")
@@ -262,7 +262,7 @@ def depsdev_enrich(deps: List[Dependency], bus: EventBus, limit: int = 250, work
 
     done = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for index, ok in enumerate(pool.map(enrich, targets), 1):
+        for index, ok in enumerate(pool.map(netio.in_context(enrich), targets), 1):
             done += int(ok)
             if index % 10 == 0 or index == len(targets):
                 bus.progress("intel", index, len(targets), "Library metadata")

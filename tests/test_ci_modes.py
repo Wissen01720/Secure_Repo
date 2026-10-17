@@ -276,3 +276,44 @@ def test_cli_rejects_a_bad_ca_bundle_before_scanning(tmp_path, capsys):
                      "--ca-bundle", str(tmp_path / "nope.pem")])
     assert code == 2 and "CA bundle not found" in capsys.readouterr().out
     netio.configure(ca_bundle="")
+
+
+# ---------------------------------------------------------------------- scans at the same time (GUI runs two)
+def test_two_simultaneous_scans_do_not_mix_their_network_notes(tmp_path, world):
+    import threading
+
+    limited = python_repo(tmp_path, "".join(f"lib{i}>=1.0\n" for i in range(5)))
+    other = str(tmp_path / "other")
+    write(other, "requirements.txt", "flask==2.0.1\n")
+    write(other, "app.py", "print('hi')\n")
+    reports, errors, start = {}, [], threading.Barrier(2)
+
+    def run(name, root, **options):
+        try:
+            start.wait(timeout=30)
+            reports[name], _ = scan(root, **options)
+        except Exception as exc:  # pragma: no cover - surfaced by the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=("limited", limited), kwargs={"max_registry": 2}),
+               threading.Thread(target=run, args=("other", other))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=120)
+    assert not errors, errors
+    assert any("limit (2)" in note for note in reports["limited"]["analysis"]["not_analyzed"]["intel"])
+    assert reports["other"]["analysis"]["not_analyzed"]["intel"] == []
+    assert reports["other"]["analysis"]["network"]["notes"] == []
+
+
+def test_network_sessions_are_independent_objects():
+    from secure_repo.core import netio
+
+    first, second = netio.NetworkSession(), netio.NetworkSession()
+    with netio.active(first):
+        netio.note("only in the first")
+        with netio.active(second):
+            netio.note("only in the second")
+        assert netio.STATS.notes == ["only in the first"]
+    assert second.stats.notes == ["only in the second"]

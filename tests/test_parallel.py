@@ -3,6 +3,7 @@ import os
 
 import pytest
 
+from secure_repo.core import scan_analysis, scan_common
 from secure_repo.core import scanner as scanner_module
 from secure_repo.core.events import EventBus
 from secure_repo.core.scanner import ScanCancelled, Scanner, ScanOptions
@@ -67,7 +68,7 @@ def test_worker_count_follows_the_options():
     assert scanner._worker_count(2) == 1
     assert Scanner(ScanOptions(jobs=1, parallel_threshold=1), EventBus())._worker_count(10_000) == 1
     auto = Scanner(ScanOptions(jobs=0, parallel_threshold=1), EventBus())._worker_count(10_000)
-    assert 1 <= auto <= scanner_module.MAX_AUTO_JOBS
+    assert 1 <= auto <= scan_common.MAX_AUTO_JOBS
 
 
 def test_the_scan_falls_back_to_one_process_when_workers_cannot_start(repo, monkeypatch):
@@ -75,7 +76,7 @@ def test_the_scan_falls_back_to_one_process_when_workers_cannot_start(repo, monk
         def __init__(self, *args, **kwargs):
             raise OSError("no processes available")
 
-    monkeypatch.setattr(scanner_module, "ProcessPoolExecutor", Broken)
+    monkeypatch.setattr(scan_analysis, "ProcessPoolExecutor", Broken)
     expected, _ = run(repo, jobs=1)
     report, scanner = run(repo, jobs=3, parallel_threshold=1)
     assert comparable(report) == comparable(expected)

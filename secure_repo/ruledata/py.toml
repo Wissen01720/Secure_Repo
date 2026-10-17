@@ -734,3 +734,35 @@ def hi():
     return '<h1>Hello ' + str(escape(request.args.get('name'))) + '</h1>'
 '''
 
+[[rule]]
+id = 'SR-PY-025'
+title = 'Django CSRF middleware removed'
+severity = 'high'
+category = 'Misconfiguration'
+cwe = 'CWE-352'
+owasp = 'A01'
+languages = ['@PY']
+source = 'structural'
+confidence = 'medium'
+tags = ['csrf', 'django']
+description = 'The MIDDLEWARE setting of a Django project that uses sessions does not include django.middleware.csrf.CsrfViewMiddleware, so POST requests are not checked for a CSRF token and any site the user visits can submit forms on their behalf.'
+recommendation = 'Add django.middleware.csrf.CsrfViewMiddleware to MIDDLEWARE (after SessionMiddleware) and exempt only endpoints that authenticate with something other than cookies.'
+
+[[rule.example]]
+kind = 'positive'
+file = 'settings.py'
+code = '''MIDDLEWARE = [
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+]
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = 'settings.py'
+code = '''MIDDLEWARE = [
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+]
+'''
+

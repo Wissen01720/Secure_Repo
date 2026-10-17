@@ -49,7 +49,7 @@ optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIS
 |---|---|
 | **Runs where you are** | Launched inside a Git repository it detects it automatically and audits it. Outside a repository you give it a Git URL or a path. |
 | **Branch recon** | Lists every branch (local + remote-tracking, or remote via `git ls-remote`) and lets you pick the one to audit - in the CLI **and** the GUI. Other branches are exported with `git archive`, so your working tree is never touched. |
-| **Static analysis** | 173 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
+| **Static analysis** | 175 detection rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, Shell/PowerShell, Dockerfiles, Kubernetes, Terraform/CloudFormation and CI/CD pipelines. |
 | **Layered engine** | Comments and strings are masked, Python is analyzed on its syntax tree with taint tracking, JavaScript/TypeScript get a data-flow pass. Findings confirmed by data flow show the **source → sink** trace. |
 | **Learns from you** | Mark false positives, accepted risks or confirmed findings; decisions, learned code patterns and per-rule statistics are re-applied on every scan. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files (`.env`, keystores, dumps, Terraform state) and payment card numbers (Luhn). Always **redacted** in the output. |
@@ -205,7 +205,7 @@ repository.
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
   [5]  Settings  [compliance: OFF · intel: ON · output: ~/.local/share/secure-repo/reports]
-  [6]  List detection rules (173)
+  [6]  List detection rules (175)
   [7]  Usage guide
   [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
   [0]  Exit
@@ -438,7 +438,7 @@ How to read it, honestly:
 - 28 weaknesses and 86 findings in four projects is a small sample. Treat the numbers as a floor of evidence, not as a
   guarantee, and expect results to differ in your code. The benchmark runs in CI and fails if precision (medium+
   confidence) drops below 65 % or recall below 80 %; every new finding must be labelled before it can pass.
-- Rules are tested one by one as well: each of the 173 rules ships a positive and a negative example in its data file
+- Rules are tested one by one as well: each of the 175 rules ships a positive and a negative example in its data file
   (`secure_repo/ruledata/`), and the test suite runs all of them.
 
 ```bash
@@ -877,7 +877,7 @@ contradicts it in the code it could read, not that the control is satisfied.
 Secure_Repo/
 ├── secure_repo/
 │   ├── cli/          banner & ASCII art, live dashboard, menus, result views, entry point
-│   ├── core/         scanner, updater, 173 rules, lexical masking, Python AST/taint and JS data-flow engines,
+│   ├── core/         scanner, updater, 175 rules, lexical masking, Python AST/taint and JS data-flow engines,
 │   │                 dependency parsers, version resolver (virtual lockfile), vulnerability intelligence,
 │   │                 triage knowledge base, confidence model, compliance frameworks, scoring
 │   ├── ruledata/     the detection rules as TOML (pattern, explanation and positive/negative examples)

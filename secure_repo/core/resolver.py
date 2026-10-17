@@ -24,7 +24,8 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
-from secure_repo.core import netio, versions as vmod
+from secure_repo.core import netio
+from secure_repo.core import versions as vmod
 from secure_repo.core.deps import normalize_name
 from secure_repo.core.events import EventBus
 from secure_repo.core.intel import DEPSDEV_SYSTEMS, DEPSDEV_URL, _http_json
@@ -164,7 +165,7 @@ def resolve_from_registry(deps: List[Dependency], bus: EventBus, workers: int = 
 
     resolved = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for index, ok in enumerate(pool.map(work, targets), 1):
+        for index, ok in enumerate(pool.map(netio.in_context(work), targets), 1):
             resolved += int(ok)
             if index % 10 == 0 or index == len(targets):
                 bus.progress("resolve", index, len(targets), "Registry resolution")
@@ -204,7 +205,7 @@ def resolve_graph(deps: List[Dependency], bus: EventBus, workers: int = 8, limit
     existing = {(d.ecosystem, normalize_name(d.ecosystem, d.name), d.version) for d in deps}
     added: List[Dependency] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for index, (root, nodes) in enumerate(zip(roots, pool.map(work, roots)), 1):
+        for index, (root, nodes) in enumerate(zip(roots, pool.map(netio.in_context(work), roots)), 1):
             for name, version in nodes:
                 identity = (root.ecosystem, normalize_name(root.ecosystem, name), version)
                 if identity in existing:
