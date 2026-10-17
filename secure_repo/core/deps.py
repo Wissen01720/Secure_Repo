@@ -1,7 +1,7 @@
 """Dependency manifest and lockfile parsers for the most common ecosystems.
 
 Every parser is defensive: malformed files never abort the scan, and XML is
-parsed with DOCTYPE declarations stripped to avoid entity-expansion attacks.
+parsed with defusedxml, after DOCTYPE declarations are stripped, to avoid entity-expansion attacks.
 """
 
 from __future__ import annotations
@@ -12,10 +12,7 @@ import os
 import re
 from collections.abc import Callable
 
-try:  # prefer the hardened parser when available
-    import defusedxml.ElementTree as ET  # type: ignore
-except ModuleNotFoundError:
-    import xml.etree.ElementTree as ET  # nosec - DOCTYPE/ENTITY declarations are stripped first (_safe_xml)
+import defusedxml.ElementTree as ET  # type: ignore
 
 from secure_repo.core.models import Dependency
 
@@ -84,7 +81,7 @@ def _safe_xml(text: str) -> ET.Element | None:
     cleaned = re.sub(r"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", "", text, flags=re.S | re.I)
     cleaned = re.sub(r"<!ENTITY[^>]*>", "", cleaned, flags=re.I)
     try:
-        root = ET.fromstring(cleaned)  # noqa: S314  DOCTYPE/ENTITY were stripped above; defusedxml is used when installed
+        root = ET.fromstring(cleaned)  # defusedxml rejects entity expansion; DOCTYPE/ENTITY were also stripped above
     except ET.ParseError:
         return None
     for element in root.iter():
@@ -189,7 +186,7 @@ def parse_requirements(text: str, manifest: str, issues: list[ParseIssue]) -> li
                 continue
         if line.startswith("-"):
             continue
-        dep = _pep508(line.split(" --hash")[0], manifest, number, scope)
+        dep = _pep508(line.split(" --hash")[0].rstrip("\\").strip(), manifest, number, scope)
         if dep:
             deps.append(dep)
     return deps
@@ -751,7 +748,7 @@ def parser_for(rel_path: str) -> tuple[Parser, bool] | None:
     """Return (parser, is_lockfile) for a manifest path."""
     name = os.path.basename(rel_path)
     lower = name.lower()
-    if re.fullmatch(r"(.*[-_.])?requirements([-_.][\w.-]*)?\.(txt|in)", lower) or (
+    if re.fullmatch(r"(.*[-_.])?requirements([-_.][\w.-]*)?\.(txt|in|lock)", lower) or (
             "/requirements/" in "/" + rel_path.lower() and lower.endswith(".txt")):
         return parse_requirements, False
     table: dict[str, tuple[Parser, bool]] = {

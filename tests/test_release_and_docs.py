@@ -167,3 +167,20 @@ def test_the_gui_scripts_are_the_split_modules():
         assert os.path.exists(os.path.join(ROOT, "secure_repo", "gui", "static", name)), name
         if name.startswith("app-"):
             assert len(read("secure_repo", "gui", "static", name).splitlines()) < 400, name
+
+
+# ------------------------------------------------------------------ findings Secure Repo raised on itself
+def test_hash_pinned_lock_file_with_continuations_counts_as_a_lock(tmp_path):
+    from secure_repo.core import deps
+
+    cont = " " + chr(92) + chr(10)
+    text = ("rich==15.0.0" + cont + "    --hash=sha256:" + "a" * 64 + chr(10) + "    # via secure-repo" + chr(10)
+            + "tomli==2.5.0 ; python_version < '3.11'" + cont + "    --hash=sha256:" + "b" * 64 + chr(10))
+    parsed = deps.parse_requirements(text, "requirements.lock", [])
+    assert [(d.name, d.version) for d in parsed] == [("rich", "15.0.0"), ("tomli", "2.5.0")]
+    assert deps.parser_for("requirements.lock")[0] is deps.parse_requirements
+
+
+def test_the_gui_keeps_its_session_token_out_of_web_storage():
+    core = read("secure_repo", "gui", "static", "core.js")
+    assert "sessionStorage" not in core and "localStorage" not in core

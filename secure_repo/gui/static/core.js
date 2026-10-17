@@ -67,23 +67,11 @@
   SR.sevTag = (sev) => '<span class="sev-tag" style="--c:' + SR.SEV_COLOR[sev] + '">' + SR.esc(sev) + '</span>';
 
   /* ---------------------------------------------------------------- session token */
+  // The token only lives in the URL fragment of the page (never sent to the server or in a Referer) and in
+  // memory: nothing is written to Web Storage, and the token dies with the local server process.
   (function initToken() {
-    let token = '';
-    const match = /(?:^|[#&])token=([A-Za-z0-9_\-]+)/.exec(window.location.hash || '');
-    try {
-      if (match) {
-        token = match[1];
-        // The local GUI session token is kept per-tab so a reload keeps working; the page has a strict
-        // CSP (no inline or third-party scripts) and the token dies with the local server process.
-        sessionStorage.setItem('sr-token', token); // nosec - reviewed design decision (see comment above)
-        history.replaceState(null, '', window.location.pathname);
-      } else {
-        token = sessionStorage.getItem('sr-token') || '';
-      }
-    } catch (e) {
-      token = match ? match[1] : '';
-    }
-    SR.token = token;
+    const match = /(?:^|[#&])token=([A-Za-z0-9_-]+)/.exec(window.location.hash || '');
+    SR.token = match ? match[1] : '';
   })();
 
   SR.api = async function (path, options) {

@@ -430,7 +430,8 @@ def sarif(report: dict) -> dict:
         if (f.get("extra") or {}).get("baseline"):
             result["baselineState"] = "new" if f["extra"]["baseline"] == "new" else "unchanged"
         if f.get("status") in SUPPRESSED_STATUSES + ("accepted_risk",):
-            result["suppressions"] = [{"kind": "external", "status": "accepted",
+            result["suppressions"] = [{"kind": "inSource" if f.get("status") == "suppressed_inline" else "external",
+                                       "status": "accepted",
                                        "justification": f"{f['status']}: {(f.get('triage') or {}).get('reason', '')}"}]
         results.append(result)
     return {
