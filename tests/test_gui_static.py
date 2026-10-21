@@ -121,3 +121,10 @@ def test_the_guard_itself_catches_an_unescaped_value():
     assert unsafe_operands("'<b>' + esc(name) + '</b>'") == []
     assert unsafe_operands("'<i>' + (x ? esc(a) : '') + '</i>'") == []
     assert unsafe_operands("'<i>' + (x ? a : '') + '</i>'") != []
+
+
+def test_the_html_helper_sanitizes_and_never_uses_inner_html():
+    with open(os.path.join(STATIC, "core.js"), encoding="utf-8") as handle:
+        core = handle.read()
+    assert "innerHTML" not in core and "createContextualFragment" in core and "sanitizeFragment" in core
+    assert "SR.safeUrl" in core

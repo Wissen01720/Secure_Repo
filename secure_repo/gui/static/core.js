@@ -14,9 +14,34 @@
     });
   };
 
-  /* Sets markup that was assembled exclusively from SR.esc()-escaped values. */
+  /* Only web links may be used as a link target (blocks javascript:, data: and similar schemes). */
+  SR.safeUrl = function (value) {
+    const text = String(value === undefined || value === null ? '' : value).trim();
+    return /^https?:\/\//i.test(text) ? text : '#';
+  };
+
+  const FORBIDDEN_TAGS = 'script,iframe,frame,frameset,object,embed,applet,link,meta,base,form,style,template,noscript';
+  const URL_ATTRS = ['href', 'src', 'xlink:href', 'action', 'formaction', 'srcset', 'data'];
+
+  /* Defence in depth: removes anything executable from a parsed fragment before it reaches the page. */
+  function sanitizeFragment(root) {
+    for (const node of Array.from(root.querySelectorAll(FORBIDDEN_TAGS))) node.remove();
+    for (const node of Array.from(root.querySelectorAll('*'))) {
+      for (const attr of Array.from(node.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) node.removeAttribute(attr.name);
+        else if (URL_ATTRS.includes(name) && !/^(https?:|#|\/(?!\/))/i.test(attr.value.trim())) node.removeAttribute(attr.name);
+      }
+    }
+    return root;
+  }
+
+  /* Sets markup that was assembled from SR.esc()-escaped values. The markup is parsed in the context of the
+   * target element, sanitized and then attached as nodes (no HTML-string sink), so even a missed escape cannot run code. */
   SR.setHTML = function (el, markup) {
-    el.innerHTML = markup; // nosec - every dynamic value is passed through SR.esc() by the callers
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    el.replaceChildren(sanitizeFragment(range.createContextualFragment(String(markup))));
     return el;
   };
 
