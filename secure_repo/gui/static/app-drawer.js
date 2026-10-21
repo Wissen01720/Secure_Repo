@@ -26,13 +26,13 @@
   }
 
   function refsHTML(rule) {
-    return (rule.references || []).map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a>').join('');
+    return (rule.references || []).map((u) => '<a href="' + esc(SR.safeUrl(u)) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a>').join('');
   }
 
   function vulnTable(vulns) {
     if (!vulns || !vulns.length) return '';
     return '<h5 class="why">Known vulnerabilities</h5><div class="table-wrap"><table class="data"><thead><tr><th>Advisory</th><th>Severity</th><th>Fixed in</th></tr></thead><tbody>' +
-      vulns.map((v) => '<tr><td class="mono"><a href="' + esc(v.url) + '" target="_blank" rel="noopener noreferrer">' + esc(v.id) + '</a>' +
+      vulns.map((v) => '<tr><td class="mono"><a href="' + esc(SR.safeUrl(v.url)) + '" target="_blank" rel="noopener noreferrer">' + esc(v.id) + '</a>' +
         (v.aliases && v.aliases.length ? '<div class="muted">' + esc(v.aliases.slice(0, 2).join(', ')) + '</div>' : '') + '<div style="font-family:var(--font);font-size:12px;color:var(--text-2)">' +
         esc(v.summary) + '</div></td><td>' + SR.sevTag(v.severity) + (v.cvss ? '<div class="mono muted">CVSS ' + esc(v.cvss) + '</div>' : '') + '</td><td class="mono">' +
         esc((v.fixed || []).join(', ') || '-') + '</td></tr>').join('') + '</tbody></table></div>';
