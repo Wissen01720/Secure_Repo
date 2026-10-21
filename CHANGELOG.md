@@ -2,6 +2,15 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.3.1] - 2026-10-20
+
+### Security
+- **GUI HTML helper hardened:** `SR.setHTML` no longer assigns `innerHTML`. Markup is parsed in the context of the target
+  element, stripped of scripts, frames, forms, `on*` attributes and non-web URLs, and attached as nodes, so a missed
+  escape cannot run code (defence in depth on top of the strict CSP). Link targets coming from advisories and rule
+  references are limited to `http(s)` (`SR.safeUrl`). Closes the code-scanning alert `SR-JS-002`; the repository now
+  audits itself with no findings.
+
 ## [1.3.0] - 2026-10-16
 
 ### Added
