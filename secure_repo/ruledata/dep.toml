@@ -295,3 +295,30 @@ code = '''six==1.16.0
 '''
 options = {private = ['six']}
 
+
+[[rule]]
+id = 'SR-DEP-011'
+title = 'Runtime past end of life'
+severity = 'medium'
+category = 'Supply Chain'
+cwe = 'CWE-1104'
+owasp = 'A06'
+languages = ["*"]
+source = 'dependency'
+tags = ['supply-chain', 'vulnerable-dependency']
+description = 'The project pins a language runtime (Python, Node.js, PHP or Ruby) in a version file, a Dockerfile or a CI workflow, and that release line no longer receives security fixes. Every vulnerability found in the interpreter or its bundled libraries (TLS, XML, archive handling) after the end-of-life date remains open, whatever the application does.'
+recommendation = 'Move to a supported release line, update the pinned version in the version file, Dockerfile and CI matrix, and subscribe to the security announcements of the runtime.'
+
+[[rule.example]]
+kind = 'positive'
+file = '.python-version'
+scope = 'repo'
+code = '''3.9.18
+'''
+
+[[rule.example]]
+kind = 'negative'
+file = '.python-version'
+scope = 'repo'
+code = '''3.14
+'''

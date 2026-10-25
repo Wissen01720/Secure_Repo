@@ -202,7 +202,7 @@ class AnalysisMixin(ScannerBase):
                     if self._inside_string(line_text, end):
                         self._count_noise("match entirely inside a string literal")
                         continue
-                if is_doc and rule.source == "code":
+                if is_doc and rule.source == "code" and not rule.scan_docs:
                     continue  # code patterns inside documentation are examples, not code
                 if rule.id == "SR-SEC-018" and match.groups() and checks.is_placeholder_value(match.group(1)):
                     self._count_noise("credentials in URL: placeholder password")

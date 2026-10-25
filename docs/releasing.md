@@ -17,6 +17,9 @@ release, a PyPI upload) is a deliberate action of the maintainer.
 
 1. Make sure `main` is green in CI (lint, types, tests on Linux/Windows/macOS, accuracy benchmark, self-audit).
 2. Update `CHANGELOG.md`, the version in both files, and the numbers quoted in the README if the benchmark moved.
+   Review the standards baseline too (`docs/analysis.md`, "Standards and sources tracked"): OWASP editions, CWE Top 25,
+   PCI DSS, ISO 27001, NIST SSDF, HIPAA, and the end-of-life dates in `secure_repo/core/runtimes.py` and the Python
+   versions supported by the project itself.
 3. Commit, push, wait for CI.
 4. Tag and publish the release (the notes are the matching CHANGELOG section):
 

@@ -78,7 +78,7 @@ def test_release_notes_come_from_the_changelog():
 
 def test_package_metadata_is_modern_and_there_is_one_command():
     pyproject = read("pyproject.toml")
-    assert 'requires-python = ">=3.10"' in pyproject
+    assert 'requires-python = ">=3.11"' in pyproject
     assert 'license = "LicenseRef-SecureRepo-Ethical-Source-Available"' in pyproject and 'license-files = ["LICENSE"]' in pyproject
     assert "License ::" not in pyproject and "setuptools>=77" in pyproject
     scripts = pyproject.split("[project.scripts]")[1].split("[", 1)[0]

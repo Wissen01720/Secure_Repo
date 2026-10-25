@@ -156,3 +156,21 @@ rule = "SR-PY-006"
 file = "tests/e2e_zap.py"
 verdict = "TP"
 note = "TLS verification disabled in a test client (low impact)"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = ".github/workflows/zap_test.yml"
+verdict = "TP"
+note = "CI pinned to Python 3.7, past end of life"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = ".python-version"
+verdict = "TP"
+note = "Python 2.7.15, past end of life since 2020"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = "Dockerfile"
+verdict = "TP"
+note = "python:2.7 base image"

@@ -15,10 +15,7 @@ from secure_repo.core import redos
 from secure_repo.core.models import SEVERITIES
 from secure_repo.core.rules import RULES_BY_ID, Rule, canonical_rule_id
 
-try:  # Python 3.11+
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as _toml  # type: ignore
+import tomllib as _toml
 
 CONFIG_NAMES = (".securerepo.toml", "securerepo.toml")
 CONFIDENCE_LEVELS = ("low", "medium", "high")

@@ -22,17 +22,17 @@ data in `secure_repo/benchmark/extdata/*.toml`, so they can be disputed).
 
 | Project | Kind | Findings reviewed | Precision (all) | Precision (medium+ confidence) | Documented weaknesses found |
 |---|---|---:|---:|---:|---:|
-| NodeGoat (JavaScript) | vulnerable by design | 39 | 67 % | 100 % | 12 of 12 |
-| DVPWA (Python) | vulnerable by design | 10 | 70 % | 100 % | 6 of 7 |
-| Vulnerable-Flask-App (Python) | vulnerable by design | 24 | 75 % | 75 % | 8 of 9 |
+| NodeGoat (JavaScript) | vulnerable by design | 43 | 70 % | 100 % | 12 of 12 |
+| DVPWA (Python) | vulnerable by design | 11 | 64 % | 100 % | 6 of 7 |
+| Vulnerable-Flask-App (Python) | vulnerable by design | 27 | 78 % | 78 % | 8 of 9 |
 | requests (Python) | clean, mature library | 16 | 12 % (all but two are test fixtures) | 12 % | n/a |
-| **Total** | | **89** | **60 %** | **73 %** | **26 of 28 (93 %)** |
+| **Total** | | **97** | **62 %** | **75 %** | **26 of 28 (93 %)** |
 
 How to read it, honestly:
 
 - **Precision** is the share of reported findings that are real weaknesses. Counting *every* finding, including
-  low-confidence ones and findings in test code, it is 60 %; counting only findings of medium or high confidence it is
-  73 %. In `requests`, a library audited for years, nothing is reported in its production code: the false positives are
+  low-confidence ones and findings in test code, it is 62 %; counting only findings of medium or high confidence it is
+  75 %. In `requests`, a library audited for years, nothing is reported in its production code: the false positives are
   throw-away test certificates, URL-parsing test data and pickle/TLS tests.
 - **Recall** is the share of weaknesses that really exist in the vulnerable projects and that were found at the exact
   line. The two misses are a CSRF middleware commented out in an aiohttp application (the CSRF rules cover Express
@@ -44,7 +44,7 @@ How to read it, honestly:
 - 28 weaknesses and 89 findings in four projects is a small sample. Treat the numbers as a floor of evidence, not as a
   guarantee, and expect results to differ in your code. The benchmark runs in CI and fails if precision (medium+
   confidence) drops below 65 % or recall below 80 %; every new finding must be labelled before it can pass.
-- Rules are tested one by one as well: each of the 175 rules ships a positive and a negative example in its data file
+- Rules are tested one by one as well: each of the 193 rules ships a positive and a negative example in its data file
   (`secure_repo/ruledata/`), and the test suite runs all of them.
 
 ```bash
@@ -167,13 +167,32 @@ automatable controls with no issue found, not a compliance percentage.
 
 | Framework | Scope evaluated |
 |---|---|
-| OWASP Top 10 (2021) | A01-A10. Rules keep their 2021 codes; reports show the equivalent OWASP Top 10:2025 category next to it (for example A03:2021 Injection is A05:2025, and SSRF now belongs to A01:2025) |
-| PCI DSS 4.0.1 | 2.2.6, 3.5.1, 3.6.1, 4.2.1, 6.2.4, 6.3.1-6.3.3, 8.3.2, 8.6.2, 10.2.1, 11.3.1 |
-| ISO/IEC 27001:2022 Annex A | A.5.32, A.8.4, A.8.8, A.8.9, A.8.12, A.8.15, A.8.20, A.8.24-A.8.26, A.8.28, A.8.29, A.8.32 |
+| OWASP Top 10:2025 | A01-A10 of the 2025 edition, including the new A03 Software Supply Chain Failures and A10 Mishandling of Exceptional Conditions. Rules keep their stable 2021 codes (reports show both, for example A03:2021 Injection is A05:2025, and SSRF now belongs to A01:2025); the previous edition stays available as `owasp-2021` |
+| OWASP Top 10 for LLM Applications (2025) | LLM01-LLM10. Checked from code: prompt injection patterns, model output executed or rendered, exposed keys, model supply chain, excessive agency. The rest is marked MANUAL. Only offered when the repository uses AI libraries (or an `SR-AI-*` rule fires) |
+| OWASP Top 10 for Agentic Applications (2026) | ASI01-ASI10. Checked from code: tool permissions, code execution, MCP server supply chain, agent instruction files. Governance and runtime controls are marked MANUAL. Same applicability rule as the LLM list |
+| PCI DSS 4.0.1 | 2.2.6, 3.5.1, 3.6.1, 4.2.1, 6.2.3, 6.2.4, 6.3.1-6.3.3, 8.3.2, 8.6.2, 10.2.1, 11.3.1 |
+| ISO/IEC 27001:2022 Annex A (with Amendment 1:2024) | A.5.21, A.5.32, A.8.4, A.8.8, A.8.9, A.8.12, A.8.15, A.8.20, A.8.24-A.8.26, A.8.28, A.8.29, A.8.32 |
 | SOC 2 (TSC) | CC6.1, CC6.6, CC6.7, CC6.8, CC7.1, CC7.2, CC8.1, C1.1 |
 | GDPR | Art. 5(1)(f), 25, 30, 32(1)(a), 32(1)(b), 32(1)(d), 33 |
 | HIPAA Security Rule | 164.308(a)(1)(ii)(A), 164.308(a)(5)(ii)(B), 164.312(a)(1), (a)(2)(iv), (b), (c)(1), (d), (e)(1) |
-| NIST SSDF (SP 800-218) | PO.1, PO.3, PS.1, PS.3, PW.4, PW.5, PW.7, PW.9, RV.1 |
+| NIST SSDF (SP 800-218 v1.1) | PO.1, PO.3, PS.1, PS.2, PS.3, PW.4, PW.5, PW.7, PW.9, RV.1, RV.2. Version 1.2 is a draft (December 2025); it is followed and will be adopted when final |
+
+
+## Standards and sources tracked
+
+The knowledge behind the reports is reviewed against the published standards with each release. Current baseline (reviewed 2026-10-25):
+
+| Source | Edition used | Notes |
+|---|---|---|
+| OWASP Top 10 | 2025 (2021 mapped) | SSRF merged into A01; A03 and A10 are new |
+| OWASP Top 10 for LLM Applications | 2025 (v2.0) | |
+| OWASP Top 10 for Agentic Applications | 2026 | published December 2025 |
+| MITRE CWE Top 25 | 2025 | each finding shows its rank when its weakness class is listed |
+| PCI DSS | 4.0.1 | the current revision; future-dated requirements have applied since 31 March 2025 |
+| ISO/IEC 27001 | 2022 + Amendment 1:2024 | no newer edition |
+| NIST SSDF | SP 800-218 v1.1 | v1.2 is a public draft |
+| HIPAA Security Rule | current rule | the January 2025 proposed update is not final |
+| Language runtimes | end-of-life dates of Python, Node.js, PHP and Ruby | see `secure_repo/core/runtimes.py` |
 
 The results are **technical evidence that helps you comply** - they are not a certification, attestation or
 legal opinion and they do not replace a qualified auditor. The audit itself respects audit principles: it is

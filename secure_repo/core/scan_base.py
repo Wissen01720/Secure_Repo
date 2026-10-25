@@ -7,7 +7,7 @@ from datetime import datetime
 from secure_repo.core import netio, triage
 from secure_repo.core.config import ProjectConfig
 from secure_repo.core.events import EventBus
-from secure_repo.core.models import Finding, owasp_key
+from secure_repo.core.models import Finding, cwe_top25_rank, owasp_2025_code, owasp_key
 from secure_repo.core.rules import PATTERN_RULES, Rule
 from secure_repo.core.scan_common import ScanCancelled, ScanOptions
 
@@ -72,6 +72,8 @@ class ScannerBase:
             default_engine = "custom"
         return Finding(rule_id=rule.id, title=title or rule.title, severity=severity or rule.severity,
                        category=rule.category, file=info_rel, line=line, snippet=snippet, detail=detail,
-                       cwe=rule.cwe, owasp=owasp_key(rule.owasp), tags=list(rule.tags),
+                       cwe=rule.cwe, owasp=owasp_key(rule.owasp),
+                       owasp_2025=owasp_2025_code(owasp_key(rule.owasp), rule.owasp_2025),
+                       cwe_top25=cwe_top25_rank(rule.cwe), tags=list(rule.tags),
                        confidence=confidence_label or rule.confidence, source=rule.source, in_test=in_test,
                        extra=extra or {}, engine=engine or default_engine, flow=flow or [])

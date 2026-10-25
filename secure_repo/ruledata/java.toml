@@ -255,3 +255,47 @@ file = 'application.properties'
 code = '''management.endpoints.web.exposure.include=health,info
 '''
 
+
+[[rule]]
+id = 'SR-JAVA-011'
+title = 'Exception silently ignored (empty catch)'
+severity = 'low'
+category = 'Error Handling'
+cwe = 'CWE-390'
+owasp = 'A09'
+owasp_2025 = 'A10'
+languages = ['@JVM']
+keywords = ['catch']
+tags = ['exceptions']
+confidence = 'low'
+skip_in_tests = true
+scan_comments = true   # a comment inside the block means the choice to ignore is documented
+pattern = '\bcatch\s*\(\s*(?:final\s+)?(?:Exception|Throwable|RuntimeException)\s+\w+\s*\)\s*\{\s*\}'
+description = 'A catch block for Exception or Throwable with an empty body discards the error. A failed security check or authorization call is then treated as a success (fail-open) and the fault stays invisible. OWASP Top 10:2025 lists mishandling of exceptional conditions as its own category (A10).'
+recommendation = 'Catch the specific exceptions you expect, log the unexpected ones and make the failure path deny access or abort the operation.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''class Gate {
+    boolean allowed(User user) {
+        try {
+            policy.check(user);
+        } catch (Exception e) {}
+        return true;
+    }
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''class Gate {
+    boolean allowed(User user) {
+        try {
+            policy.check(user);
+        } catch (SecurityException e) {
+            return false;
+        }
+        return true;
+    }
+}
+'''

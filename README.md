@@ -5,11 +5,11 @@
 **Repository security auditor with a command-line console and a neural-map GUI.**
 
 Static code analysis · secret detection · library & supply-chain intelligence · repository structure mapping ·
-optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIST SSDF)
+optional compliance evidence (OWASP Top 10:2025, OWASP LLM and Agentic, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIST SSDF)
 
-![Python](https://img.shields.io/badge/python-3.10%2B-00e5ff?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.11%2B-00e5ff?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
-![Precision](https://img.shields.io/badge/precision%20on%20third--party%20code-73%25-ff2e97?style=flat-square)
+![Precision](https://img.shields.io/badge/precision%20on%20third--party%20code-75%25-ff2e97?style=flat-square)
 ![Recall](https://img.shields.io/badge/recall%20on%20documented%20weaknesses-93%25-ff2e97?style=flat-square)
 ![License](https://img.shields.io/badge/license-Ethical%20Source--Available-9d7bff?style=flat-square)
 
@@ -28,14 +28,14 @@ Point it at a Git repository (the one you are in, a local path or a Git URL, inc
 
 | Capability | Details |
 |---|---|
-| **Static analysis** | 175 rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, shell, Dockerfiles, Kubernetes, Terraform and CI pipelines. Python gets syntax-tree analysis with taint tracking, JavaScript/TypeScript a data-flow pass. |
+| **Static analysis** | 193 rules for Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust, shell, Dockerfiles, Kubernetes, Terraform and CI pipelines. Python gets syntax-tree analysis with taint tracking, JavaScript/TypeScript a data-flow pass. |
 | **Secrets** | Cloud keys, tokens, private keys, connection strings, high-entropy credentials, sensitive files. Always redacted in the output. |
 | **Libraries** | 25+ manifest and lock formats; every library checked against OSV.dev and deps.dev; versions resolved even without a lockfile. Private package names can be kept off the network. |
 | **Reports** | A timestamped folder with HTML, JSON, SARIF, Markdown, CSV, a CycloneDX SBOM and an integrity manifest, written outside the audited repository by default. |
 | **Console and GUI** | A live terminal dashboard (`--theme plain` for a sober one) and a local web app with a neural map and a structure treemap that explain each weakness and its fix. |
 | **CI-friendly** | `--fail-on`, `--baseline` (fail only on new findings), `--since origin/main` (only changed files), SARIF for code scanning. |
 | **Learns from you** | Mark false positives and accepted risks once; they are re-applied on every scan. |
-| **Optional compliance evidence** | Maps findings to 7 frameworks as supporting evidence, never as a certification. |
+| **Optional compliance evidence** | Maps findings to 8 frameworks (OWASP Top 10:2025 and, for AI projects, the OWASP LLM and Agentic lists) as supporting evidence, never as a certification. |
 
 ## Quick start
 
@@ -47,7 +47,7 @@ cd Secure_Repo
 ```
 
 The launcher creates a private virtual environment on the first run. Inside a Git repository, `./run.sh` alone opens
-the interactive console. Python 3.10 or newer and Git are required. More options (pipx, from source, updating):
+the interactive console. Python 3.11 or newer and Git are required. More options (pipx, from source, updating):
 [Installation](docs/installation.md).
 
 ```bash
@@ -61,8 +61,8 @@ Vulnerable-Flask-App and the clean library `requests`), every finding reviewed b
 
 | | Result |
 |---|---|
-| Precision, findings of medium/high confidence | **73 %** |
-| Precision, every finding (tests and low confidence included) | 60 % |
+| Precision, findings of medium/high confidence | **75 %** |
+| Precision, every finding (tests and low confidence included) | 62 % |
 | Documented weaknesses found | **26 of 28 (93 %)** |
 
 Small sample, so read it as a floor of evidence and not as a guarantee: the details, the misses and how to reproduce

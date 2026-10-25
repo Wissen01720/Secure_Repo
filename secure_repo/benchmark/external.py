@@ -22,10 +22,7 @@ from secure_repo.core.events import EventBus
 from secure_repo.core.scanner import Scanner, ScanOptions
 from secure_repo.core.workspace import Target
 
-try:  # Python 3.11+
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as _toml  # type: ignore
+import tomllib as _toml
 
 EXTERNAL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extdata")
 LINE_TOLERANCE = 0

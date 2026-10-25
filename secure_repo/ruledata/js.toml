@@ -741,3 +741,44 @@ app.use(session({ secret: process.env.S, cookie: { secure: true, httpOnly: true 
 app.get('/transfer', (req, res) => { res.send('ok'); });
 '''
 
+
+[[rule]]
+id = 'SR-JS-029'
+title = 'Exception silently ignored (empty catch)'
+severity = 'low'
+category = 'Error Handling'
+cwe = 'CWE-390'
+owasp = 'A09'
+owasp_2025 = 'A10'
+languages = ['@JS']
+keywords = ['catch']
+tags = ['exceptions']
+confidence = 'low'
+skip_in_tests = true
+scan_comments = true   # a comment inside the block means the choice to ignore is documented
+exclude = '^.{300,}$'   # minified bundles: one huge line is not code a person wrote
+pattern = '\bcatch\s*(?:\(\s*\w*\s*\))?\s*\{\s*\}'
+description = 'An empty catch block discards the error. If the failing operation was a security check, a verification or an authorization call, execution continues as if it had succeeded (fail-open) and nobody learns about the fault. OWASP Top 10:2025 lists mishandling of exceptional conditions as its own category (A10).'
+recommendation = 'Handle the specific errors you expect, log or report the rest, and make the failure path deny access or abort the operation instead of continuing.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''async function verify(token) {
+  try {
+    await checkToken(token);
+  } catch (err) {}
+  return true;
+}
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''async function verify(token) {
+  try {
+    await checkToken(token);
+  } catch (err) {
+    return false;
+  }
+  return true;
+}
+'''

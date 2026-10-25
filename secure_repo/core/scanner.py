@@ -21,7 +21,7 @@ import platform
 import time
 import urllib.error
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from secure_repo import __author__, __version__
@@ -36,7 +36,7 @@ from secure_repo.core import (
 from secure_repo.core import summary as summarymod
 from secure_repo.core.config import ProjectConfig
 from secure_repo.core.events import EventBus
-from secure_repo.core.models import OWASP_2025, OWASP_TOP10, SEVERITY_RANK, SUPPRESSED_STATUSES
+from secure_repo.core.models import OWASP_2025, OWASP_TOP10, OWASP_TOP10_2025, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import PATTERN_RULES, RULES
 from secure_repo.core.scan_analysis import AnalysisMixin
 from secure_repo.core.scan_common import MAX_AUTO_JOBS, ScanCancelled, ScanOptions, load_baseline  # noqa: F401
@@ -74,7 +74,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
         from secure_repo.report.writer import write_reports as write_all  # local import avoids cycles
 
         started = time.time()
-        started_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        started_iso = datetime.now(UTC).isoformat(timespec="seconds")
         bus = self.bus
         workspace: Workspace | None = None
         try:
@@ -127,6 +127,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             else:
                 bus.stage("resolve", "skip", "every version already pinned" if inventory else "no dependencies")
             self._dependency_findings(inventory, issues)
+            self._runtime_findings(analyzed_files)
 
             online = not self.options.offline
             queried = 0
@@ -193,7 +194,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             bus.stage("compliance", "start")
             bus.stage("scoring", "start")
             finished = time.time()
-            meta["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            meta["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             meta["duration_seconds"] = round(finished - started, 2)
             vulnerable_deps = [d for d in inventory if d.vulnerabilities]
             ecosystems: dict[str, int] = {}
@@ -210,7 +211,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
                 "findings": findings,
                 "rules": {},
                 "owasp": OWASP_TOP10,
-                "owasp_2025": OWASP_2025,
+                "owasp_2025": OWASP_2025, "owasp_top10_2025": OWASP_TOP10_2025,
                 "dependencies": [d.to_dict() for d in inventory],
                 "dependency_summary": {
                     "total": len(inventory), "direct": direct, "transitive": len(inventory) - direct,

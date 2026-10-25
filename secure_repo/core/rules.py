@@ -11,13 +11,9 @@ import re
 from dataclasses import dataclass, field
 from re import Pattern
 
-try:  # Python 3.11+
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover
-    try:
-        import tomli as _toml  # type: ignore
-    except ModuleNotFoundError:
-        _toml = None  # type: ignore
+import tomllib as _toml
+
+from secure_repo.core.models import OWASP_TOP10_2025, owasp_2025_code
 
 # ---------------------------------------------------------------------------
 # Language groups
@@ -79,6 +75,8 @@ class Rule:
     needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
     region: str = ""             # only report matches inside this structural region (see core/regions.py)
     skip_in_tests: bool = False  # not applied to test code (e.g. plain-HTTP URLs of local test servers)
+    scan_docs: bool = False      # also apply this code rule to documentation files (e.g. agent instruction files)
+    owasp_2025: str = ""         # explicit OWASP Top 10:2025 category when it cannot be derived from the 2021 code
     examples: list[RuleExample] = field(default_factory=list, compare=False, repr=False)
     _regex: Pattern | None = field(default=None, repr=False, compare=False)
     _path_re: Pattern | None = field(default=None, repr=False, compare=False)
@@ -115,6 +113,9 @@ class Rule:
         links = list(self.references)
         if self.cwe.startswith("CWE-"):
             links.insert(0, f"https://cwe.mitre.org/data/definitions/{self.cwe[4:]}.html")
+        code_2025 = owasp_2025_code(self.owasp, self.owasp_2025)
+        if code_2025:
+            links.append(f"https://owasp.org/Top10/2025/{OWASP_TOP10_2025[code_2025]['slug']}")
         if self.owasp and self.owasp.startswith("A"):
             links.append(f"https://owasp.org/Top10/{OWASP_SLUGS.get(self.owasp, '')}")
         return links
@@ -122,7 +123,8 @@ class Rule:
     def to_dict(self) -> dict:
         return {
             "id": self.id, "title": self.title, "severity": self.severity, "category": self.category,
-            "cwe": self.cwe, "owasp": self.owasp, "description": self.description,
+            "cwe": self.cwe, "owasp": self.owasp, "owasp_2025": owasp_2025_code(self.owasp, self.owasp_2025),
+            "description": self.description,
             "recommendation": self.recommendation, "tags": list(self.tags),
             "confidence": self.confidence, "references": self.reference_links(),
             "languages": list(self.languages), "source": self.source,
@@ -149,7 +151,7 @@ _LANGUAGE_GROUPS = {"CODE": CODE, "PY": PY, "JS": JS, "WEB": WEB, "JVM": JVM, "C
                     "CC": CC, "RS": RS, "SHELLISH": SHELLISH, "IAC": IAC, "CONFIG": CONFIG}
 _RULE_KEYS = {"id", "title", "severity", "category", "cwe", "owasp", "description", "recommendation", "pattern",
               "languages", "path", "exclude", "keywords", "tags", "confidence", "scan_comments", "redact", "source",
-              "references", "flags", "needs_strings", "region", "skip_in_tests", "example"}
+              "references", "flags", "needs_strings", "region", "skip_in_tests", "owasp_2025", "scan_docs", "example"}
 _REQUIRED_KEYS = ("id", "title", "severity", "category", "description", "recommendation")
 _SEVERITIES = ("critical", "high", "medium", "low", "info")
 
@@ -201,7 +203,8 @@ def _rule_from_table(table: dict, origin: str) -> Rule:
         confidence=table.get("confidence", "medium"), scan_comments=bool(table.get("scan_comments", False)),
         redact=bool(table.get("redact", False)), source=table.get("source", "code"),
         references=tuple(table.get("references", ())), flags=flags, needs_strings=bool(table.get("needs_strings", False)),
-        region=table.get("region", ""), skip_in_tests=bool(table.get("skip_in_tests", False)), examples=examples)
+        region=table.get("region", ""), skip_in_tests=bool(table.get("skip_in_tests", False)),
+        owasp_2025=table.get("owasp_2025", ""), scan_docs=bool(table.get("scan_docs", False)), examples=examples)
     if rule.pattern:
         try:
             re.compile(rule.pattern, re.MULTILINE | rule.flags)
@@ -212,8 +215,6 @@ def _rule_from_table(table: dict, origin: str) -> Rule:
 
 def load_rules(directory: str = RULE_DATA_DIR) -> list[Rule]:
     """Read every ``*.toml`` file of the rule data directory; rules are ordered by ID."""
-    if _toml is None:  # pragma: no cover - Python < 3.11 without tomli
-        raise RuleDataError("TOML support is missing: install 'tomli' (pip install tomli)")
     loaded: list[Rule] = []
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".toml"):

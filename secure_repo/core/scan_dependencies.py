@@ -6,7 +6,7 @@ import fnmatch
 import os
 import urllib.error
 
-from secure_repo.core import checks, intel, resolver
+from secure_repo.core import checks, intel, resolver, runtimes
 from secure_repo.core import deps as depmod
 from secure_repo.core.models import SEVERITY_RANK, Dependency
 from secure_repo.core.scan_base import ScannerBase
@@ -150,6 +150,31 @@ class DependencyMixin(ScannerBase):
             except (urllib.error.URLError, OSError, ValueError) as exc:
                 self.bus.log(f"Registry resolution unavailable: {getattr(exc, 'reason', exc)}", "warn")
         return counts
+
+    def _runtime_findings(self, files: list[FileInfo]) -> int:
+        """SR-DEP-011: language runtimes pinned in version files, Dockerfiles or CI that no longer get security fixes."""
+        rule = RULES_BY_ID["SR-DEP-011"]
+        names = {".python-version", "runtime.txt", ".nvmrc", ".node-version", ".tool-versions"}
+        count = 0
+        for info in files:
+            base = os.path.basename(info.rel).lower()
+            candidate = (base in names or base == "dockerfile" or base.startswith("dockerfile.")
+                         or base.endswith(".dockerfile")
+                         or (base.endswith((".yml", ".yaml")) and "/workflows/" in "/" + info.rel.lower()))
+            if not candidate:
+                continue
+            text = read_text(info, 2 * 1024 * 1024)
+            if text is None:
+                continue
+            for line, runtime, version, end in runtimes.scan_text(info.rel, text):
+                name = runtimes.DISPLAY[runtime]
+                self._add(self._finding_from_rule(
+                    rule, info.rel, line, f"{name} {version}", title=f"{rule.title}: {name} {version}",
+                    detail=f"{name} {version} reached end of life on {end}; it no longer receives security fixes, "
+                           f"so every vulnerability found in it from that date stays open.",
+                    extra={"runtime": runtime, "version": version, "end_of_life": end}))
+                count += 1
+        return count
 
     def _dependency_findings(self, inventory: list[Dependency], issues: list[depmod.ParseIssue]) -> None:
         unlocked: dict[str, list[Dependency]] = {}

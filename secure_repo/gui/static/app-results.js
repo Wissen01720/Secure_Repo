@@ -126,13 +126,18 @@
       S.fState.sev = new Set([s]); openTab('findings'); A.renderFindings();
     })));
     // OWASP
-    const owCard = el('div', { class: 'card' }, [el('h3', { text: 'OWASP Top 10 (2021)' })]);
-    const owMax = Math.max(1, ...Object.values(sum.by_owasp));
-    Object.keys(r.owasp).forEach((code) => {
-      if (!sum.by_owasp[code]) return;
-      owCard.appendChild(hbar((code === 'OTHER' ? '' : code + ' ') + r.owasp[code].name, sum.by_owasp[code], owMax, '#9d7bff'));
+    const owCard = el('div', { class: 'card' }, [el('h3', { text: 'OWASP Top 10:2025' })]);
+    const byOwasp = sum.by_owasp_2025 || {};
+    const names = r.owasp_top10_2025 || {};
+    const owMax = Math.max(1, ...Object.values(byOwasp));
+    Object.keys(byOwasp).forEach((code) => {
+      const label = code === 'OTHER' ? 'Other / not in the Top 10' : code + ' ' + (names[code] ? names[code].name : '');
+      owCard.appendChild(hbar(label, byOwasp[code], owMax, '#9d7bff'));
     });
-    if (!Object.keys(sum.by_owasp).length) owCard.appendChild(el('p', { class: 'muted', text: 'No findings mapped.' }));
+    if (!Object.keys(byOwasp).length) owCard.appendChild(el('p', { class: 'muted', text: 'No findings mapped.' }));
+    if (sum.cwe_top25_findings) {
+      owCard.appendChild(el('p', { class: 'muted', text: sum.cwe_top25_findings + ' finding(s) belong to the MITRE 2025 CWE Top 25.' }));
+    }
     // top files
     const filesCard = el('div', { class: 'card' }, [el('h3', { text: 'Most exposed files' })]);
     sum.top_files.slice(0, 10).forEach((f) => {

@@ -13,7 +13,7 @@ Secure_Repo/
 │   │                 plus the engines (lexer, pyast, jsflow, webchecks), dependency parsers, resolver,
 │   │                 netio.py (the only module that talks to public services), triage, confidence,
 │   │                 compliance frameworks and scoring
-│   ├── ruledata/     the 175 detection rules as TOML (pattern, explanation, positive and negative examples)
+│   ├── ruledata/     the 193 detection rules as TOML (pattern, explanation, positive and negative examples)
 │   ├── data/         versioned package lists (compromised / deprecated) with source and date
 │   ├── benchmark/    labeled corpus, rule-example runner and the external benchmark (extdata/ manifests)
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML
@@ -40,7 +40,7 @@ mypy secure_repo              # types (modules with known type debt are listed i
 npx eslint@8.57.0 --no-eslintrc -c .github/eslintrc.gui.json secure_repo/gui/static/*.js   # undefined names in the GUI
 ```
 
-The supported Python versions are 3.10 and newer (tested on 3.10 and 3.13 in CI).
+The supported Python versions are 3.11 and newer (tested on 3.11 and 3.14 in CI; 3.10 reached end of life on 1 October 2026).
 
 ### Adding or changing a rule
 
@@ -73,12 +73,12 @@ value at run time (`<<alnum:N>>`, `<<hex:N>>`, `<<digits:N>>`, `<<b64url:N>>`, `
 `python -m pytest tests/test_rules_data.py`. Patterns that could backtrack catastrophically are rejected by the tests.
 
 Continuous integration (`.github/workflows/ci.yml`) runs lint, types and the tests on Linux, Windows and macOS
-with Python 3.10 and 3.13, and then audits this repository with Secure Repo itself (`--fail-on high`), uploading the
+with Python 3.11 and 3.14, and then audits this repository with Secure Repo itself (`--fail-on high`), uploading the
 SARIF report to GitHub code scanning. Every action is pinned to a full commit SHA and the workflow has read-only
 permissions; Dependabot proposes weekly updates for the Python dependencies and the actions.
 
 Regenerate the lock after changing the dependencies in `pyproject.toml`:
 
 ```bash
-uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.10 -o requirements.lock
+uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.11 -o requirements.lock
 ```
