@@ -280,6 +280,8 @@ def render_compliance(report: dict, detailed: bool = False) -> None:
                 controls.add_row(Text(STATUS_WORDS[control["status"]], style=STATUS_STYLE[control["status"]]),
                                  control["id"], evidence)
             console.print(controls)
+    for skipped in report["compliance"].get("not_applicable", []):
+        console.print(Text(f"  {skipped['name']}: not applicable - {skipped['reason']}", style=DIM))
     console.print(Text("  " + report["compliance"]["disclaimer"], style="italic grey50"))
 
 

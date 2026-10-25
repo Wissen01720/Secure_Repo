@@ -590,3 +590,33 @@ file = '.env.example'
 code = '''MODE=production
 '''
 
+
+[[rule]]
+id = 'SR-SEC-021'
+title = 'AI platform access token'
+severity = 'critical'
+category = 'Secrets'
+cwe = 'CWE-798'
+owasp = 'A07'
+languages = ["*"]
+source = 'secret'
+confidence = 'high'
+keywords = ['hf_', 'gsk_', 'r8_', 'xai-']
+tags = ['secrets', 'llm-secrets']
+scan_comments = true
+redact = true
+pattern = '\b(hf_[A-Za-z0-9]{34}|gsk_[A-Za-z0-9]{52}|r8_[A-Za-z0-9]{37}|xai-[A-Za-z0-9]{80})\b'
+description = 'An access token for an AI platform (Hugging Face, Groq, Replicate or xAI) is hardcoded. It can read or overwrite private models and datasets, run paid inference on your account and, for Hugging Face, publish a poisoned model under your name (OWASP LLM02 and LLM03).'
+recommendation = 'Revoke and rotate this token immediately, remove it from the source code and the Git history, and load it at runtime from a secret manager or an environment variable that is never committed.'
+
+[[rule.example]]
+kind = 'positive'
+code = '''HF_TOKEN = "hf_<<alnum:34>>"
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import os
+
+HF_TOKEN = os.environ["HF_TOKEN"]
+'''

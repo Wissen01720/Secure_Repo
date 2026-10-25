@@ -18,7 +18,7 @@ mapa de la estructura del repositorio · evidencia de cumplimiento opcional
 Apuntas la herramienta a un repositorio Git (el que tienes abierto, una ruta local o una URL, también privados) y lo
 audita en **modo solo lectura**: nunca ejecuta el código auditado ni instala sus dependencias.
 
-- **Análisis estático** con 175 reglas para Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust,
+- **Análisis estático** con 193 reglas para Python, JavaScript/TypeScript, Java/Kotlin, C#, PHP, Go, Ruby, C/C++, Rust,
   shell, Dockerfiles, Kubernetes, Terraform y pipelines de CI. Python tiene análisis sobre el árbol sintáctico con
   seguimiento de datos no confiables; JavaScript/TypeScript, un análisis de flujo de datos.
 - **Secretos**: claves de nube, tokens, claves privadas, cadenas de conexión, credenciales de alta entropía y archivos
@@ -31,7 +31,7 @@ audita en **modo solo lectura**: nunca ejecuta el código auditado ni instala su
   con mapa neuronal que explica cada debilidad y cómo corregirla.
 - **Pensado para CI**: `--fail-on`, `--baseline` (falla solo con hallazgos nuevos), `--since origin/main` (solo los
   archivos cambiados) y SARIF para el escaneo de código de GitHub.
-- **Cumplimiento (opcional)**: relaciona los hallazgos con 7 marcos como **evidencia de apoyo**, nunca como
+- **Cumplimiento (opcional)**: relaciona los hallazgos con 8 marcos (OWASP Top 10:2025 y, en proyectos de IA, las listas OWASP LLM y Agentic) como **evidencia de apoyo**, nunca como
   certificación.
 
 ## Inicio rápido
@@ -57,8 +57,8 @@ Vulnerable-Flask-App y la librería limpia `requests`), con cada hallazgo revisa
 
 | | Resultado |
 |---|---|
-| Precisión, hallazgos de confianza media o alta | **73 %** |
-| Precisión, todos los hallazgos (incluye tests y baja confianza) | 60 % |
+| Precisión, hallazgos de confianza media o alta | **75 %** |
+| Precisión, todos los hallazgos (incluye tests y baja confianza) | 62 % |
 | Debilidades documentadas encontradas | **26 de 28 (93 %)** |
 
 Es una muestra pequeña: tómalo como una cifra mínima de evidencia y no como una garantía. Los detalles, los fallos y

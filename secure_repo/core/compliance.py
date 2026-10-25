@@ -379,8 +379,13 @@ def _describe(findings: list[dict]) -> str:
 def evaluate(findings: list[dict], hygiene: dict[str, bool], selection: Sequence[str] | None,
              ai_stack: bool = True) -> dict:
     results = []
+    not_applicable = []
     for framework_id in resolve_frameworks(selection, ai_stack):
         framework = FRAMEWORKS[framework_id]
+        if framework.requires_ai and not ai_stack:
+            not_applicable.append({"id": framework.id, "name": framework.name,
+                                   "reason": "No AI or LLM libraries were detected in this repository."})
+            continue
         controls = []
         tally = {"pass": 0, "warning": 0, "fail": 0, "manual": 0}
         for control in framework.controls:
@@ -420,9 +425,7 @@ def evaluate(findings: list[dict], hygiene: dict[str, bool], selection: Sequence
             })
         automated = tally["pass"] + tally["warning"] + tally["fail"]
         score = round(100 * (tally["pass"] + 0.5 * tally["warning"]) / automated) if automated else 100
-        note = "" if ai_stack or not framework.requires_ai else (
-            " No AI or LLM libraries were detected in this repository, so these results are informational only.")
         results.append({"id": framework.id, "name": framework.name, "version": framework.version,
-                        "description": framework.description + note, "score": score, "summary": tally,
+                        "description": framework.description, "score": score, "summary": tally,
                         "controls": controls})
-    return {"enabled": True, "frameworks": results, "disclaimer": DISCLAIMER}
+    return {"enabled": True, "frameworks": results, "not_applicable": not_applicable, "disclaimer": DISCLAIMER}

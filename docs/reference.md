@@ -25,7 +25,7 @@
 | Flag | Default | Description |
 |---|---|---|
 | `-b, --branch NAME` | picker / current | Branch to audit. Skips the interactive picker. |
-| `--compliance [LIST]` | off | Enable the compliance audit. Without a value: all frameworks. Values: `owasp`, `pci-dss`, `iso27001`, `soc2`, `gdpr`, `hipaa`, `nist-ssdf`. |
+| `--compliance [LIST]` | off | Enable the compliance audit. Without a value: all frameworks. Values: `owasp` (Top 10:2025), `owasp-2021`, `owasp-llm`, `owasp-agentic`, `pci-dss`, `iso27001`, `soc2`, `gdpr`, `hipaa`, `nist-ssdf`. The two AI lists are included in `all` only when the repository uses AI libraries. |
 | `--offline` | off | No network requests (no OSV.dev / deps.dev). |
 | `--no-enrich` | off | Skip license / latest-version lookups but keep vulnerability lookups. |
 | `-o, --output DIR` | `<data folder>/reports` | Where report folders are created. By default **outside** the audited repository (see below). |

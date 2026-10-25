@@ -2,6 +2,39 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.4.0] - 2026-10-25
+
+First refresh of the standards baseline the audits are measured against (reviewed 2026-10-25).
+
+### Added
+- **OWASP Top 10:2025** is now the primary OWASP framework (`--compliance owasp`): A03 Software Supply Chain Failures and
+  A10 Mishandling of Exceptional Conditions are new, and SSRF is part of A01. Rules keep their stable 2021 codes;
+  every finding now carries both (`owasp`, `owasp_2025`) and the rank of its weakness in the **MITRE 2025 CWE Top 25**
+  (`cwe_top25`). The previous edition stays available as `owasp-2021`. Reports, CLI and GUI show the 2025 distribution.
+- **OWASP Top 10 for LLM Applications (2025)** and **OWASP Top 10 for Agentic Applications (2026)** as compliance
+  frameworks (`owasp-llm`, `owasp-agentic`). They are evaluated only when the repository uses AI libraries or an
+  `SR-AI-*` rule fires; controls that code cannot show are marked MANUAL.
+- **11 `SR-AI-*` rules**: model output executed as code, `trust_remote_code`, models loaded through pickle, agent
+  frameworks with safety switches off, coding agents run without permission checks, unpinned MCP servers, untrusted
+  input in system prompts, model output rendered as HTML, LLM keys shipped to the browser, hidden Unicode in agent
+  instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`...), and shell commands inside agent tools.
+- `SR-SEC-021` (Hugging Face, Groq, Replicate and xAI tokens), `SR-PY-026`/`SR-PY-027` (tarfile extraction filters,
+  after the October 2026 CPython security releases), `SR-PY-028`/`SR-JS-029`/`SR-JAVA-011` (swallowed exceptions, the
+  OWASP A10:2025 class) and `SR-DEP-011` (Python, Node.js, PHP or Ruby pinned past end of life in version files,
+  Dockerfiles and CI). 193 rules in total. Rules can set `owasp_2025` and `scan_docs`.
+- A weekly online audit of this repository (`dependency-audit.yml`) that fails on high advisories or dead runtimes.
+- Compliance additions: PCI DSS 6.2.3, ISO 27001 A.5.21, NIST SSDF PS.2 and RV.2; framework versions now name the
+  edition they follow (ISO 27001 with Amendment 1:2024, SSDF v1.1 with the v1.2 draft tracked, HIPAA's pending update).
+
+### Changed
+- **Python 3.11 or newer is required.** Python 3.10 reached end of life on 1 October 2026 (3.10.22 was its last
+  release). CI now tests 3.11 and 3.14, `tomli` is no longer a dependency and the lock file was regenerated.
+- External benchmark after the new rules: precision 62 % (75 % at medium/high confidence), recall 93 %.
+
+### Audit of our own libraries
+- OSV.dev reports no advisories for any locked library (`rich`, `defusedxml`, `markdown-it-py`, `mdurl`, `pygments`),
+  and all of them are at their latest release.
+
 ## [1.3.1] - 2026-10-20
 
 ### Security

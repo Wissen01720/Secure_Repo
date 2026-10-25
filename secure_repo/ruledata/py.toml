@@ -766,3 +766,104 @@ code = '''MIDDLEWARE = [
 ]
 '''
 
+
+[[rule]]
+id = 'SR-PY-026'
+title = 'tarfile extraction without a filter'
+severity = 'medium'
+category = 'Path Traversal'
+cwe = 'CWE-22'
+owasp = 'A01'
+languages = ['@PY']
+keywords = ['extract']
+tags = ['path-traversal', 'access-control']
+confidence = 'medium'
+pattern = '\b(?:\w*_)?(?:tar|tf|tarball|tarfile|tar_?obj)\w*\.extract(?:all)?\s*\((?![^)\n]*\bfilter\s*=)|\btarfile\.open\([^)\n]*\)\.extract(?:all)?\s*\((?![^)\n]*\bfilter\s*=)'
+description = 'TarFile.extract()/extractall() without a filter follow the archive blindly: a crafted tar can write outside the destination (../ paths, absolute paths, links) or create special files. Python added extraction filters (PEP 706) for this, and the 3.11.17, 3.12.15, 3.13.16 and 3.14.8 security releases of October 2026 fixed more tarfile filter bypasses, so an unpatched interpreter is exposed even with filters.'
+recommendation = "Pass filter='data' (the default from Python 3.14), keep the interpreter on the latest security release, and extract untrusted archives into an empty directory as an unprivileged user."
+
+[[rule.example]]
+kind = 'positive'
+code = '''import tarfile
+
+def unpack(path, dest):
+    with tarfile.open(path) as archive_tar:
+        archive_tar.extractall(dest)
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import tarfile
+
+def unpack(path, dest):
+    with tarfile.open(path) as archive_tar:
+        archive_tar.extractall(dest, filter="data")
+'''
+
+[[rule]]
+id = 'SR-PY-027'
+title = 'tarfile extraction filter that trusts the archive'
+severity = 'high'
+category = 'Path Traversal'
+cwe = 'CWE-22'
+owasp = 'A01'
+languages = ['@PY']
+keywords = ['filter']
+tags = ['path-traversal', 'access-control']
+needs_strings = true
+pattern = '''\.extract(?:all)?\s*\([^)\n]*\bfilter\s*=\s*(?:["'](?:tar|fully_trusted)["']|tarfile\.(?:tar_filter|fully_trusted_filter))'''
+description = "The 'tar' and 'fully_trusted' filters keep dangerous members (absolute paths, parent directories, links, device files). They are meant only for archives you produced yourself; applied to downloaded archives they allow files to be written outside the destination."
+recommendation = "Use filter='data' for any archive that does not come from a fully trusted source."
+
+[[rule.example]]
+kind = 'positive'
+code = '''import tarfile
+
+def unpack(archive_tar, dest):
+    archive_tar.extractall(dest, filter="fully_trusted")
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''import tarfile
+
+def unpack(archive_tar, dest):
+    archive_tar.extractall(dest, filter="data")
+'''
+
+[[rule]]
+id = 'SR-PY-028'
+title = 'Broad exception silently ignored'
+severity = 'low'
+category = 'Error Handling'
+cwe = 'CWE-390'
+owasp = 'A09'
+owasp_2025 = 'A10'
+languages = ['@PY']
+keywords = ['except']
+tags = ['exceptions']
+confidence = 'low'
+skip_in_tests = true
+scan_comments = true   # a comment inside the block means the choice to ignore is documented
+pattern = '\bexcept(?:\s+(?:Exception|BaseException)(?:\s+as\s+\w+)?)?\s*:[ \t]*(?:\n[ \t]*)?pass\b'
+description = 'A bare except (or except Exception) followed by pass hides every failure, including the ones raised by security checks. When a check that fails with an exception is ignored, the code continues as if it had passed (fail-open). OWASP Top 10:2025 lists mishandling of exceptional conditions as its own category (A10).'
+recommendation = 'Catch the specific exceptions you expect, log the unexpected ones, and decide explicitly whether the operation must fail closed (deny, abort, return an error).'
+
+[[rule.example]]
+kind = 'positive'
+code = '''def is_allowed(user):
+    try:
+        return check_policy(user)
+    except Exception:
+        pass
+    return True
+'''
+
+[[rule.example]]
+kind = 'negative'
+code = '''def is_allowed(user):
+    try:
+        return check_policy(user)
+    except KeyError:
+        return False
+'''

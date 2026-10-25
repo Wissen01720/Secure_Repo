@@ -214,3 +214,21 @@ rule = "SR-JS-028"
 file = "server.js"
 verdict = "TP"
 note = "cookie sessions and POST routes with the CSRF middleware commented out"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = ".github/workflows/e2e-test.yml"
+verdict = "TP"
+note = "CI matrix with only Node 10, 12 and 14"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = ".github/workflows/lint.yml"
+verdict = "TP"
+note = "CI pinned to Node 14"
+
+[[verdict]]
+rule = "SR-DEP-011"
+file = "Dockerfile"
+verdict = "TP"
+note = "node:12 base image"

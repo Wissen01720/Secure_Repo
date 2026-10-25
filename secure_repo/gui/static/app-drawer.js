@@ -44,7 +44,7 @@
     openDrawer('// finding ' + f.id, (body) => {
       let html = SR.sevTag(f.severity) + ' <span class="tag">' + esc(f.category) + '</span>' + (f.in_test ? '<span class="tag">test code</span>' : '') +
         '<h2>' + esc(f.title) + '</h2><dl class="kv"><dt>Location</dt><dd>' + esc(SR.where(f)) + '</dd><dt>Rule</dt><dd>' + esc(f.rule_id) + ' · confidence ' + esc(f.confidence) +
-        '</dd><dt>CWE</dt><dd>' + esc(f.cwe || '-') + '</dd><dt>OWASP</dt><dd>' + esc((f.owasp || '-') + ' ' + (owasp.name || '') + ((S.report.owasp_2025 || {})[f.owasp] ? ' (2025: ' + S.report.owasp_2025[f.owasp].code + ' ' + S.report.owasp_2025[f.owasp].name + ')' : '')) + '</dd></dl>';
+        '</dd><dt>CWE</dt><dd>' + esc(f.cwe || '-') + '</dd><dt>OWASP</dt><dd>' + esc((f.owasp || '-') + ' ' + (owasp.name || '') + ((S.report.owasp_top10_2025 || {})[f.owasp_2025] ? ' (2025: ' + f.owasp_2025 + ' ' + S.report.owasp_top10_2025[f.owasp_2025].name + ')' : '') + (f.cwe_top25 ? ' · CWE Top 25 (2025) #' + f.cwe_top25 : '')) + '</dd></dl>';
       if (f.snippet) html += '<div class="snippet">' + esc(f.snippet) + '</div>';
       if (f.detail) html += '<h5 class="where">Detail</h5><p>' + esc(f.detail) + '</p>';
       if (f.flow && f.flow.length) {

@@ -13,7 +13,7 @@ Secure_Repo/
 │   │                 plus the engines (lexer, pyast, jsflow, webchecks), dependency parsers, resolver,
 │   │                 netio.py (the only module that talks to public services), triage, confidence,
 │   │                 compliance frameworks and scoring
-│   ├── ruledata/     the 175 detection rules as TOML (pattern, explanation, positive and negative examples)
+│   ├── ruledata/     the 193 detection rules as TOML (pattern, explanation, positive and negative examples)
 │   ├── data/         versioned package lists (compromised / deprecated) with source and date
 │   ├── benchmark/    labeled corpus, rule-example runner and the external benchmark (extdata/ manifests)
 │   ├── report/       report folder writer, Markdown, SARIF, CycloneDX, CSV, self-contained HTML

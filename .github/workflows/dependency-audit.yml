@@ -1,0 +1,42 @@
+name: Weekly dependency audit
+
+# The code does not change between releases, but the advisories about its libraries do. Once a week this job audits
+# the repository ONLINE (OSV.dev and deps.dev) with Secure Repo itself and fails when a library with a known
+# high or critical vulnerability, or a runtime past its end of life, is found. Dependabot opens the update PRs.
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit libraries and runtimes online
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --no-deps -e .
+      - name: Scan with live advisory data (fails on high or critical findings)
+        run: secure-repo --no-update-check scan . --yes --plain --no-menu --fail-on high -o "$RUNNER_TEMP/secure-repo-reports"
+      - name: Locate the report
+        if: always()
+        run: |
+          latest="$(cat "$RUNNER_TEMP/secure-repo-reports/latest.txt")"
+          echo "REPORT_DIR=$RUNNER_TEMP/secure-repo-reports/$latest" >> "$GITHUB_ENV"
+      - name: Keep the full report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-audit-report
+          path: ${{ env.REPORT_DIR }}
+          retention-days: 30

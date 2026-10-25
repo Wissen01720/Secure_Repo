@@ -106,3 +106,9 @@ rule = "SR-JS-002"
 file = "sqli/static/js/materialize.js"
 verdict = "FP"
 note = "bundled third-party library (Materialize)"
+
+[[verdict]]
+rule = "SR-JS-029"
+file = "sqli/static/js/materialize.js"
+verdict = "FP"
+note = "empty catch in a vendored UI library, not code the project maintains"

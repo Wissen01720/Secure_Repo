@@ -30,7 +30,7 @@ repository.
   [3]  Audit a LOCAL repository or folder by path
   [4]  Launch the GRAPHICAL interface (GUI)
   [5]  Settings  [compliance: OFF · intel: ON · output: ~/.local/share/secure-repo/reports]
-  [6]  List detection rules (175)
+  [6]  List detection rules (193)
   [7]  Usage guide
   [U]  INSTALL UPDATE  1.2.0 → 1.3.0  (3 change(s)) - no re-cloning needed
   [0]  Exit

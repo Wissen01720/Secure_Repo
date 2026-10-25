@@ -75,6 +75,7 @@ class Rule:
     needs_strings: bool = False  # the pattern must see string contents (URLs, algorithm names, '*'...)
     region: str = ""             # only report matches inside this structural region (see core/regions.py)
     skip_in_tests: bool = False  # not applied to test code (e.g. plain-HTTP URLs of local test servers)
+    scan_docs: bool = False      # also apply this code rule to documentation files (e.g. agent instruction files)
     owasp_2025: str = ""         # explicit OWASP Top 10:2025 category when it cannot be derived from the 2021 code
     examples: list[RuleExample] = field(default_factory=list, compare=False, repr=False)
     _regex: Pattern | None = field(default=None, repr=False, compare=False)
@@ -150,7 +151,7 @@ _LANGUAGE_GROUPS = {"CODE": CODE, "PY": PY, "JS": JS, "WEB": WEB, "JVM": JVM, "C
                     "CC": CC, "RS": RS, "SHELLISH": SHELLISH, "IAC": IAC, "CONFIG": CONFIG}
 _RULE_KEYS = {"id", "title", "severity", "category", "cwe", "owasp", "description", "recommendation", "pattern",
               "languages", "path", "exclude", "keywords", "tags", "confidence", "scan_comments", "redact", "source",
-              "references", "flags", "needs_strings", "region", "skip_in_tests", "owasp_2025", "example"}
+              "references", "flags", "needs_strings", "region", "skip_in_tests", "owasp_2025", "scan_docs", "example"}
 _REQUIRED_KEYS = ("id", "title", "severity", "category", "description", "recommendation")
 _SEVERITIES = ("critical", "high", "medium", "low", "info")
 
@@ -203,7 +204,7 @@ def _rule_from_table(table: dict, origin: str) -> Rule:
         redact=bool(table.get("redact", False)), source=table.get("source", "code"),
         references=tuple(table.get("references", ())), flags=flags, needs_strings=bool(table.get("needs_strings", False)),
         region=table.get("region", ""), skip_in_tests=bool(table.get("skip_in_tests", False)),
-        owasp_2025=table.get("owasp_2025", ""), examples=examples)
+        owasp_2025=table.get("owasp_2025", ""), scan_docs=bool(table.get("scan_docs", False)), examples=examples)
     if rule.pattern:
         try:
             re.compile(rule.pattern, re.MULTILINE | rule.flags)

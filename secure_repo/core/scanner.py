@@ -127,6 +127,7 @@ class Scanner(AnalysisMixin, DependencyMixin, QualityMixin):
             else:
                 bus.stage("resolve", "skip", "every version already pinned" if inventory else "no dependencies")
             self._dependency_findings(inventory, issues)
+            self._runtime_findings(analyzed_files)
 
             online = not self.options.offline
             queried = 0
