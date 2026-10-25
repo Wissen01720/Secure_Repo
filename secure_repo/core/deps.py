@@ -16,13 +16,7 @@ import defusedxml.ElementTree as ET  # type: ignore
 
 from secure_repo.core.models import Dependency
 
-try:  # Python 3.11+
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover
-    try:
-        import tomli as _toml  # type: ignore
-    except ModuleNotFoundError:  # pragma: no cover
-        _toml = None
+import tomllib as _toml
 
 LOCKFILE_ECOSYSTEM = {
     "package-lock.json": "npm", "npm-shrinkwrap.json": "npm", "yarn.lock": "npm", "pnpm-lock.yaml": "npm",
@@ -62,8 +56,6 @@ def _find_line(lines: list[str], needle: str) -> int:
 
 
 def _load_toml(text: str) -> dict:
-    if _toml is None:
-        return {}
     try:
         return _toml.loads(text)
     except Exception:
@@ -112,11 +104,9 @@ def syntax_error(rel_path: str, text: str) -> str | None:
         except ValueError as exc:
             return f"invalid JSON: {str(exc)[:120]}"
     elif name in _TOML_FILES:
-        if _toml is None:
-            return None
         try:
             _toml.loads(text)
-        except Exception as exc:  # tomllib.TOMLDecodeError (3.11+) / tomli.TOMLDecodeError
+        except Exception as exc:  # tomllib.TOMLDecodeError
             return f"invalid TOML: {str(exc)[:120]}"
     elif name in _XML_FILES or name.endswith((".csproj", ".fsproj", ".vbproj")):
         if _safe_xml(text) is None:

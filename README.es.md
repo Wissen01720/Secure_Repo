@@ -44,7 +44,7 @@ cd Secure_Repo
 ```
 
 El lanzador crea un entorno virtual privado la primera vez. Dentro de un repositorio Git, `./run.sh` a secas abre la
-consola interactiva. Se necesita Python 3.10 o superior y Git.
+consola interactiva. Se necesita Python 3.11 o superior y Git.
 
 ```bash
 secure-repo scan . --yes --plain --no-menu --baseline baseline.json --fail-on high

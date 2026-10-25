@@ -10,11 +10,10 @@ readme = "README.md"
 license = "LicenseRef-SecureRepo-Ethical-Source-Available"
 license-files = ["LICENSE"]
 authors = [{ name = "Wissen01720" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "rich>=13.0",
     "defusedxml>=0.7",
-    "tomli>=1.1; python_version < '3.11'",
 ]
 keywords = ["security", "sast", "secrets", "sbom", "vulnerability", "compliance", "audit", "git"]
 classifiers = [
@@ -27,10 +26,10 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -57,7 +56,7 @@ testpaths = ["tests"]
 # ---------------------------------------------------------------------------------------------- lint
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["secure_repo/benchmark/corpus"]   # deliberately vulnerable / false-positive samples
 
 [tool.ruff.lint]
@@ -75,7 +74,7 @@ ignore = [
 
 # ---------------------------------------------------------------------------------------------- types
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false
 exclude = ["secure_repo/benchmark/corpus/"]

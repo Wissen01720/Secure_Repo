@@ -15,7 +15,7 @@ if not exist "%VENV%\Scripts\python.exe" (
   py -3 -m venv "%VENV%" 2>nul || python -m venv "%VENV%"
 )
 if not exist "%VENV%\Scripts\python.exe" (
-  echo [x] Python 3.10+ is required. Install it from https://www.python.org/downloads/
+  echo [x] Python 3.11+ is required. Install it from https://www.python.org/downloads/
   exit /b 1
 )
 rem Dependencies come from the hashed lock file; the project itself is installed editable so updates apply live.

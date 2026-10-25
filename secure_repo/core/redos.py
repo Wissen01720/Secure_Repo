@@ -12,11 +12,7 @@ alternation with overlapping branches (``(a|a)*``, ``(a|ab)+``, ``(.|x)*``).
 from __future__ import annotations
 
 
-try:  # Python 3.11+
-    from re import _constants as _c, _parser as _p  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover - Python 3.9 / 3.10
-    import sre_constants as _c  # type: ignore
-    import sre_parse as _p  # type: ignore
+from re import _constants as _c, _parser as _p  # type: ignore[attr-defined]
 
 MAX_PATTERN_LENGTH = 1000
 _REPEATS = tuple(getattr(_c, name) for name in ("MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT") if hasattr(_c, name))

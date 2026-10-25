@@ -11,13 +11,7 @@ import re
 from dataclasses import dataclass, field
 from re import Pattern
 
-try:  # Python 3.11+
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover
-    try:
-        import tomli as _toml  # type: ignore
-    except ModuleNotFoundError:
-        _toml = None  # type: ignore
+import tomllib as _toml
 
 # ---------------------------------------------------------------------------
 # Language groups
@@ -212,8 +206,6 @@ def _rule_from_table(table: dict, origin: str) -> Rule:
 
 def load_rules(directory: str = RULE_DATA_DIR) -> list[Rule]:
     """Read every ``*.toml`` file of the rule data directory; rules are ordered by ID."""
-    if _toml is None:  # pragma: no cover - Python < 3.11 without tomli
-        raise RuleDataError("TOML support is missing: install 'tomli' (pip install tomli)")
     loaded: list[Rule] = []
     for name in sorted(os.listdir(directory)):
         if not name.endswith(".toml"):

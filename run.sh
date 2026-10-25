@@ -12,7 +12,7 @@ PYTHON_BIN="${PYTHON:-python3}"
 
 if [ ! -f "$VENV/.installed" ]; then
   if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-    echo "[x] Python 3.10+ is required (set PYTHON=/path/to/python3 to choose one)." >&2
+    echo "[x] Python 3.11+ is required (set PYTHON=/path/to/python3 to choose one)." >&2
     exit 1
   fi
   echo "[*] First run: preparing the virtual environment in $VENV"

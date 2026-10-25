@@ -6,12 +6,12 @@
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Python | 3.10 or newer | <https://www.python.org/downloads/> (on Windows tick *"Add python.exe to PATH"*) |
+| Python | 3.11 or newer | <https://www.python.org/downloads/> (on Windows tick *"Add python.exe to PATH"*) |
 | Git | 2.20 or newer | <https://git-scm.com/downloads> - needed for branches and remote repositories |
 | Internet | optional | Only for vulnerability intelligence. Everything else works with `--offline`. |
 | Browser | any modern one | Only for the GUI and the HTML report |
 
-Python dependencies: [`rich`](https://github.com/Textualize/rich), [`defusedxml`](https://github.com/tiran/defusedxml) (safe XML parsing) and `tomli` on Python < 3.11. Nothing else.
+Python dependencies: [`rich`](https://github.com/Textualize/rich) and [`defusedxml`](https://github.com/tiran/defusedxml) (safe XML parsing). Nothing else.
 
 ## Installation
 

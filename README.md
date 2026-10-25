@@ -7,7 +7,7 @@
 Static code analysis · secret detection · library & supply-chain intelligence · repository structure mapping ·
 optional compliance evidence (OWASP, PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, NIST SSDF)
 
-![Python](https://img.shields.io/badge/python-3.10%2B-00e5ff?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.11%2B-00e5ff?style=flat-square)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-00ff9c?style=flat-square)
 ![Precision](https://img.shields.io/badge/precision%20on%20third--party%20code-73%25-ff2e97?style=flat-square)
 ![Recall](https://img.shields.io/badge/recall%20on%20documented%20weaknesses-93%25-ff2e97?style=flat-square)
@@ -47,7 +47,7 @@ cd Secure_Repo
 ```
 
 The launcher creates a private virtual environment on the first run. Inside a Git repository, `./run.sh` alone opens
-the interactive console. Python 3.10 or newer and Git are required. More options (pipx, from source, updating):
+the interactive console. Python 3.11 or newer and Git are required. More options (pipx, from source, updating):
 [Installation](docs/installation.md).
 
 ```bash
