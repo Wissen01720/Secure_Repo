@@ -92,10 +92,68 @@ OWASP_2025: dict[str, dict[str, str]] = {
 }
 
 
-def owasp_2025_label(code_2021: str) -> str:
-    """'A03:2025 Injection' style label of the 2025 category that corresponds to a 2021 code ('' when none)."""
+# The ten categories of OWASP Top 10:2025 (https://owasp.org/Top10/2025/), with the 2021 categories that feed each one.
+OWASP_TOP10_2025: dict[str, dict[str, Any]] = {
+    "A01": {"name": "Broken Access Control", "from_2021": ("A01", "A10"), "slug": "A01_2025-Broken_Access_Control/",
+            "description": "Users can act outside their intended permissions: missing authorization checks, "
+            "insecure direct object references, CSRF and server-side request forgery (merged into this category)."},
+    "A02": {"name": "Security Misconfiguration", "from_2021": ("A05",), "slug": "A02_2025-Security_Misconfiguration/",
+            "description": "Insecure defaults, verbose errors, debug modes, permissive CORS or over-privileged "
+            "containers and infrastructure."},
+    "A03": {"name": "Software Supply Chain Failures", "from_2021": ("A06",),
+            "slug": "A03_2025-Software_Supply_Chain_Failures/",
+            "description": "Vulnerable, outdated or compromised dependencies, unverified build inputs and weak "
+            "controls over the whole chain of tools, packages and pipelines that produce the software."},
+    "A04": {"name": "Cryptographic Failures", "from_2021": ("A02",), "slug": "A04_2025-Cryptographic_Failures/",
+            "description": "Weak or missing cryptography that exposes sensitive data: broken algorithms, cleartext "
+            "transport and poor key management."},
+    "A05": {"name": "Injection", "from_2021": ("A03",), "slug": "A05_2025-Injection/",
+            "description": "Untrusted data is interpreted as code or commands (SQL, OS, template, expression or "
+            "script injection, including Cross-Site Scripting)."},
+    "A06": {"name": "Insecure Design", "from_2021": ("A04",), "slug": "A06_2025-Insecure_Design/",
+            "description": "Missing or ineffective security controls at the design level."},
+    "A07": {"name": "Authentication Failures", "from_2021": ("A07",), "slug": "A07_2025-Authentication_Failures/",
+            "description": "Weak authentication, session management and credential handling, including hardcoded "
+            "credentials and disabled certificate validation."},
+    "A08": {"name": "Software or Data Integrity Failures", "from_2021": ("A08",),
+            "slug": "A08_2025-Software_or_Data_Integrity_Failures/",
+            "description": "Code and data are trusted without integrity checks: insecure deserialization and "
+            "untrusted update channels."},
+    "A09": {"name": "Security Logging & Alerting Failures", "from_2021": ("A09",),
+            "slug": "A09_2025-Security_Logging_and_Alerting_Failures/",
+            "description": "Insufficient logging, or logging that leaks sensitive data, preventing detection of and "
+            "response to active attacks."},
+    "A10": {"name": "Mishandling of Exceptional Conditions", "from_2021": (),
+            "slug": "A10_2025-Mishandling_of_Exceptional_Conditions/",
+            "description": "Errors and unusual conditions are swallowed, ignored or handled in a way that fails open, "
+            "hiding faults and leaving security checks unenforced."},
+}
+
+
+def owasp_2025_code(code_2021: str, explicit: str = "") -> str:
+    """OWASP Top 10:2025 code ('A05') for a 2021 code; ``explicit`` (a rule's own 2025 category) wins."""
+    if explicit in OWASP_TOP10_2025:
+        return explicit
     entry = OWASP_2025.get(code_2021)
-    return f"{entry['code']}:2025 {entry['name']}" if entry else ""
+    return entry["code"] if entry else ""
+
+
+def owasp_2025_label(code_2021: str, explicit: str = "") -> str:
+    """'A05:2025 Injection' style label of the 2025 category of a finding ('' when none)."""
+    code = owasp_2025_code(code_2021, explicit)
+    return f"{code}:2025 {OWASP_TOP10_2025[code]['name']}" if code else ""
+
+
+# MITRE 2025 CWE Top 25 Most Dangerous Software Weaknesses (published 2025-12-10): CWE id -> rank.
+CWE_TOP25_2025: dict[str, int] = {cwe: rank for rank, cwe in enumerate((
+    "CWE-79", "CWE-89", "CWE-352", "CWE-862", "CWE-787", "CWE-22", "CWE-416", "CWE-125", "CWE-78", "CWE-94",
+    "CWE-120", "CWE-434", "CWE-476", "CWE-121", "CWE-502", "CWE-122", "CWE-863", "CWE-20", "CWE-284", "CWE-200",
+    "CWE-306", "CWE-918", "CWE-77", "CWE-639", "CWE-770"), 1)}
+
+
+def cwe_top25_rank(cwe: str) -> int:
+    """Rank (1-25) of a CWE in the 2025 CWE Top 25, or 0 when it is not listed."""
+    return CWE_TOP25_2025.get(cwe or "", 0)
 
 
 def owasp_key(code: str) -> str:
@@ -124,6 +182,8 @@ class Finding:
     detail: str = ""
     cwe: str = ""
     owasp: str = ""
+    owasp_2025: str = ""             # OWASP Top 10:2025 category code (rules keep their stable 2021 code in ``owasp``)
+    cwe_top25: int = 0               # rank in the MITRE 2025 CWE Top 25 (0 = not listed)
     tags: list[str] = field(default_factory=list)
     confidence: str = "medium"
     source: str = "code"

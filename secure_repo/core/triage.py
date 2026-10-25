@@ -21,7 +21,7 @@ import re
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from secure_repo.core.models import TRIAGE_STATUSES
 from secure_repo.core.rules import LEGACY_IDS, canonical_rule_id
@@ -51,7 +51,7 @@ def default_output_dir() -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------------- identity

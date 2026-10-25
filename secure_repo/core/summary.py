@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from secure_repo.core import compliance
 from secure_repo.core.languages import DOCUMENTATION
-from secure_repo.core.models import OWASP_TOP10, REPO_CONTROLLED_ORIGINS, SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
+from secure_repo.core.models import OWASP_TOP10, OWASP_TOP10_2025, REPO_CONTROLLED_ORIGINS, SEVERITIES, SEVERITY_RANK, SUPPRESSED_STATUSES
 from secure_repo.core.rules import RULES_BY_ID
 from secure_repo.core.scoring import compute_score
 
@@ -79,6 +79,8 @@ def build_summary(report: dict) -> None:
     by_severity = {s: 0 for s in SEVERITIES}
     by_category: dict[str, int] = {}
     by_owasp: dict[str, int] = {}
+    by_owasp_2025: dict[str, int] = {}
+    top25 = 0
     by_status: dict[str, int] = {}
     by_engine: dict[str, int] = {}
     per_file: dict[str, dict] = {}
@@ -88,6 +90,9 @@ def build_summary(report: dict) -> None:
         by_severity[finding["severity"]] += 1
         by_category[finding["category"]] = by_category.get(finding["category"], 0) + 1
         by_owasp[finding["owasp"]] = by_owasp.get(finding["owasp"], 0) + 1
+        code_2025 = finding.get("owasp_2025") or "OTHER"
+        by_owasp_2025[code_2025] = by_owasp_2025.get(code_2025, 0) + 1
+        top25 += 1 if finding.get("cwe_top25") else 0
         by_engine[finding.get("engine", "pattern")] = by_engine.get(finding.get("engine", "pattern"), 0) + 1
         entry = per_file.setdefault(finding["file"], {"file": finding["file"], "count": 0, "risk": finding["severity"]})
         entry["count"] += 1
@@ -130,6 +135,8 @@ def build_summary(report: dict) -> None:
         "findings": len(active), "by_severity": by_severity,
         "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
         "by_owasp": {k: by_owasp[k] for k in OWASP_TOP10 if k in by_owasp},
+        "by_owasp_2025": {k: by_owasp_2025[k] for k in (*OWASP_TOP10_2025, "OTHER") if k in by_owasp_2025},
+        "cwe_top25_findings": top25,
         "by_status": by_status, "by_engine": by_engine,
         "suppressed": sum(1 for f in findings if not reportable(f)),
         "score": score["score"], "grade": score["grade"], "grade_cap": score["cap"],
@@ -152,6 +159,9 @@ def finalize(report: dict, custom_rules: dict[str, dict] = None) -> None:
     options = report["meta"].get("options", {})
     if options.get("compliance"):
         active = [f for f in report["findings"] if reportable(f)]
-        report["compliance"] = compliance.evaluate(active, report.get("hygiene", {}), options.get("frameworks") or ["all"])
+        ai_stack = compliance.detect_ai_stack(report.get("dependencies", []), active)
+        report["compliance"] = compliance.evaluate(active, report.get("hygiene", {}),
+                                                   options.get("frameworks") or ["all"], ai_stack)
+        report["compliance"]["ai_stack"] = ai_stack
     else:
         report["compliance"] = {"enabled": False, "frameworks": []}

@@ -6,7 +6,7 @@ import csv
 import io
 import uuid
 
-from secure_repo.core.models import OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES, owasp_2025_label
+from secure_repo.core.models import OWASP_TOP10, OWASP_TOP10_2025, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES, owasp_2025_label
 
 SEVERITY_ICON = {"critical": "🟥", "high": "🟧", "medium": "🟨", "low": "🟦", "info": "⬜"}
 SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
@@ -71,9 +71,15 @@ def markdown_summary(report: dict) -> str:
         f"{len(dep['manifests'])} manifests - {dep['vulnerable']} vulnerable, {dep['vulnerabilities']} unique advisories",
         f"- Vulnerability intelligence: {'online (OSV.dev / deps.dev)' if dep['online'] else 'offline / unavailable'}",
         "",
-        "## OWASP Top 10 (2021) distribution", "",
+        "## OWASP Top 10:2025 distribution", "",
         "| Category | Findings |", "|---|---:|",
     ]
+    for code, count in summary.get("by_owasp_2025", {}).items():
+        name = OWASP_TOP10_2025[code]["name"] if code in OWASP_TOP10_2025 else "Other / not in the Top 10"
+        lines.append(f"| {code}:2025 - {name} | {count} |")
+    lines += ["", f"{summary.get('cwe_top25_findings', 0)} finding(s) belong to a weakness class in the MITRE 2025 "
+              "CWE Top 25.", "", "## OWASP Top 10:2021 distribution (previous edition)", "",
+              "| Category | Findings |", "|---|---:|"]
     for code, count in summary["by_owasp"].items():
         lines.append(f"| {code} - {OWASP_TOP10[code]['name']} | {count} |")
     lines += ["", "## Most affected files", "", "| File | Findings | Worst severity |", "|---|---:|---|"]
@@ -120,7 +126,9 @@ def markdown_findings(report: dict, findings: list[dict], title: str) -> str:
             f"- **Location:** `{_md_escape(_where(finding))}`",
             f"- **Rule:** {finding['rule_id']}  |  **Category:** {finding['category']}  |  "
             f"**CWE:** {finding.get('cwe') or '-'}  |  **OWASP:** {finding.get('owasp') or '-'}:2021"
-            + (f" ({owasp_2025_label(finding['owasp'])})" if owasp_2025_label(finding.get('owasp') or '') else ""),
+            + (f" ({owasp_2025_label(finding['owasp'], finding.get('owasp_2025') or '')})"
+               if owasp_2025_label(finding.get('owasp') or '', finding.get('owasp_2025') or '') else "")
+            + (f"  |  **CWE Top 25 (2025):** #{finding['cwe_top25']}" if finding.get("cwe_top25") else ""),
         ]
         if finding.get("snippet"):
             lines += ["", "```", finding["snippet"].replace("```", "'''"), "```"]

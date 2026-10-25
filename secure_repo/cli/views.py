@@ -16,7 +16,7 @@ from rich.tree import Tree
 from secure_repo.cli.banner import big_status, section
 from secure_repo.cli.theme import (CYAN, DIM, MAGENTA, NEON, SEVERITY_STYLE, SEVERITY_TAG, STATUS_STYLE, VIOLET,
                                    bar, console, sev_badge)
-from secure_repo.core.models import (OWASP_TOP10, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES,
+from secure_repo.core.models import (OWASP_TOP10, OWASP_TOP10_2025, SEVERITIES, SEVERITY_DESCRIPTIONS, SUPPRESSED_STATUSES,
                                      owasp_2025_label)
 
 GRADE_COLOR = {"A": NEON, "B": "#7ee787", "C": "#ffd23f", "D": "#ff8a00", "F": "#ff2e63"}
@@ -94,15 +94,15 @@ def render_summary(report: dict, report_dir: str | None) -> None:
                         title=Text(" SECURITY POSTURE ", style=f"bold {NEON}"), border_style=grade_color,
                         box=box.HEAVY, padding=(1, 2)))
 
-    if summary["by_owasp"]:
+    if summary.get("by_owasp_2025"):
         owasp = Table(box=box.SIMPLE_HEAD, header_style=f"bold {VIOLET}", expand=False)
-        owasp.add_column("OWASP Top 10 (2021)")
+        owasp.add_column("OWASP Top 10:2025")
         owasp.add_column("Findings", justify="right")
         owasp.add_column("")
-        top = max(summary["by_owasp"].values())
-        for code, count in summary["by_owasp"].items():
-            owasp.add_row(f"{code if code != 'OTHER' else '---'}  {OWASP_TOP10[code]['name']}", str(count),
-                          bar(count / top, 20, VIOLET))
+        top = max(summary["by_owasp_2025"].values())
+        for code, count in summary["by_owasp_2025"].items():
+            name = OWASP_TOP10_2025[code]["name"] if code in OWASP_TOP10_2025 else "Other"
+            owasp.add_row(f"{code if code != 'OTHER' else '---'}  {name}", str(count), bar(count / top, 20, VIOLET))
         console.print(owasp)
 
     render_quality(report)
@@ -169,7 +169,8 @@ def render_finding_detail(report: dict, finding: dict, root: str | None = None) 
         meta.add_row("Status", Text(f"{finding['status']} - {triage_info.get('reason', '')}", style=NEON))
     meta.add_row("Standards", f"{finding.get('cwe') or '-'} · OWASP {finding.get('owasp') or '-'} "
                               f"{OWASP_TOP10.get(finding.get('owasp') or '', {}).get('name', '')}"
-                              + (f" (2025: {owasp_2025_label(finding['owasp'])})" if owasp_2025_label(finding.get('owasp') or '') else ""))
+                              + (f" (2025: {owasp_2025_label(finding['owasp'], finding.get('owasp_2025') or '')})"
+                                 if owasp_2025_label(finding.get('owasp') or '', finding.get('owasp_2025') or '') else ""))
     parts = [header, Text(""), meta]
     if finding.get("snippet"):
         parts += [Text(""), Panel(Text(finding["snippet"], style="#e6edf3"), title="evidence (secrets redacted)",
