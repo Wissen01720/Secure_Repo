@@ -144,3 +144,31 @@ def test_oversized_and_invalid_bodies_are_rejected(server):
     with pytest.raises(urllib.error.HTTPError) as error:
         urllib.request.urlopen(request, timeout=30)
     assert error.value.code == 400
+
+
+def test_rejected_post_consumes_its_body_so_the_connection_stays_usable(server, vulnerable_repo):
+    """An early 4xx must not leave the request body in the socket: it would corrupt the next request on the same
+    keep-alive connection and, on Windows, surface as a connection reset (WinError 10053) instead of the 403."""
+    import http.client
+
+    connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=30)
+    try:
+        body = json.dumps({"kind": "local", "location": vulnerable_repo, "authorized": True, "pad": "x" * 4000})
+        headers = {"Origin": "http://evil.example", "Content-Type": "application/json", "X-SR-Token": TOKEN}
+        for _ in range(3):
+            connection.request("POST", "/api/scan", body=body, headers=headers)
+            response = connection.getresponse()
+            assert response.status == 403
+            response.read()
+            connection.request("GET", "/favicon.ico")        # same connection: the stream is still in sync
+            follow_up = connection.getresponse()
+            assert follow_up.status == 204
+            follow_up.read()
+        connection.request("POST", "/api/scan", body=body, headers={"X-SR-Token": secrets.token_urlsafe(16), "Content-Type": "application/json"})
+        denied = connection.getresponse()
+        assert denied.status == 401
+        denied.read()
+        connection.request("GET", "/favicon.ico")
+        assert connection.getresponse().status == 204
+    finally:
+        connection.close()

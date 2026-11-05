@@ -154,7 +154,32 @@ def make_handler(state: AppState):
             if content_type.startswith("text/html"):
                 self.send_header("Content-Security-Policy", CSP)
 
+        def _settle_request_body(self) -> None:
+            """Before an error reply, consume the request body the handler never read.
+
+            The connection is kept alive (HTTP/1.1). Unread bytes left in the socket make the operating system reset
+            the connection when it closes, and on Windows that reset can reach the client before the reply
+            (WinError 10053/10054), so a plain 403 looked like a network failure. A body that is too large to drain
+            closes the connection instead.
+            """
+            if self.command != "POST" or getattr(self, "_body_consumed", False):
+                return
+            self._body_consumed = True
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = MAX_BODY + 1
+            if length > MAX_BODY:
+                self.close_connection = True
+            elif length > 0:
+                try:
+                    self.rfile.read(length)
+                except OSError:
+                    self.close_connection = True
+
         def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
+            if status >= 400:
+                self._settle_request_body()
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -183,8 +208,10 @@ def make_handler(state: AppState):
         def _body(self) -> dict:
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
+                self.close_connection = True   # the body is not read: do not reuse the connection
                 raise ValueError("Request too large")
             raw = self.rfile.read(length) if length else b"{}"
+            self._body_consumed = True
             data = json.loads(raw.decode("utf-8") or "{}")
             if not isinstance(data, dict):
                 raise ValueError("JSON object expected")
@@ -201,6 +228,7 @@ def make_handler(state: AppState):
             self._dispatch("GET")
 
         def do_POST(self):
+            self._body_consumed = False
             if self.headers.get("Origin") not in (None, f"http://127.0.0.1:{state.port}", f"http://localhost:{state.port}"):
                 return self._error(403, "Cross-origin request blocked")
             self._dispatch("POST")

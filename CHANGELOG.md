@@ -2,6 +2,15 @@
 
 All notable changes to Secure Repo are documented here.
 
+## [1.4.1] - 2026-11-05
+
+### Fixed
+- **Local GUI server:** a rejected POST (cross-origin, wrong token, bad host) now consumes the request body before
+  replying. The unread body used to stay in the keep-alive connection, which corrupted the next request on it and, on
+  Windows, could surface as a connection reset (`WinError 10053`) instead of the 403. This was the cause of a flaky CI
+  failure (`test_cross_origin_posts_are_blocked`, Windows with Python 3.14). A regression test reproduces it
+  deterministically.
+
 ## [1.4.0] - 2026-10-25
 
 First refresh of the standards baseline the audits are measured against (reviewed 2026-10-25).
