@@ -164,7 +164,7 @@ def test_rejected_post_consumes_its_body_so_the_connection_stays_usable(server, 
             follow_up = connection.getresponse()
             assert follow_up.status == 204
             follow_up.read()
-        connection.request("POST", "/api/scan", body=body, headers={"X-SR-Token": "wrong", "Content-Type": "application/json"})
+        connection.request("POST", "/api/scan", body=body, headers={"X-SR-Token": secrets.token_urlsafe(16), "Content-Type": "application/json"})
         denied = connection.getresponse()
         assert denied.status == 401
         denied.read()
